@@ -1,0 +1,12 @@
+# Half of these don't work because unstable no worky :( :( :( >:(
+unstable_features = true
+blank_lines_lower_bound = 1
+blank_lines_upper_bound = 5
+hex_literal_case = "Upper"
+normalize_comments = true
+normalize_doc_attributes = true
+reorder_impl_items = true
+group_imports = "StdExternalCrate"
+use_field_init_shorthand = true
+use_try_shorthand = true
+wrap_comments = true

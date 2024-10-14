@@ -1,6 +1,22 @@
 use anyhow::Result;
 use std::io::Write;
 
+pub fn write_varint(mut writer: impl Write, value: i32) -> Result<()> {
+    let mut value = unsafe { std::mem::transmute::<i32, u32>(value) };
+    loop {
+        let mut byte = value as u8 & 0x7F;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        writer.write_all(&[byte])?;
+        if value == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
 pub struct PacketWriter<D: Write> {
     data: D,
 }
@@ -36,19 +52,7 @@ impl<D: Write> PacketWriter<D> {
     }
 
     pub fn write_var_int(&mut self, value: i32) -> Result<()> {
-        let mut value = unsafe { std::mem::transmute::<i32, u32>(value) };
-        loop {
-            let mut byte = value as u8 & 0x7F;
-            value >>= 7;
-            if value != 0 {
-                byte |= 0x80;
-            }
-            self.write_unsigned_byte(byte)?;
-            if value == 0 {
-                break;
-            }
-        }
-        Ok(())
+        Ok(write_varint(&mut self.data, value)?)
     }
 
     pub fn write_string(&mut self, str: &str) -> Result<()> {

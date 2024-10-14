@@ -1,6 +1,39 @@
 use anyhow::Result;
 use std::io::Read;
 
+pub fn read_varint_ret_bytes(mut reader: impl Read) -> std::io::Result<(usize, i32)> {
+    let mut bytes = 0;
+    let mut value = 0;
+    let mut position = 0;
+    loop {
+        let mut byte_buf = [0u8; 1];
+        reader.read_exact(&mut byte_buf)?;
+        let byte = u8::from_be_bytes(byte_buf);
+        bytes += 1;
+        value |= ((byte & 0x7F) as i32) << position;
+        if byte & 0x80 == 0 {
+            break;
+        }
+        position += 7;
+        if position >= 32 {
+            panic!("VarInt is too big");
+        }
+    }
+    Ok((bytes, value))
+}
+
+pub fn read_varint(reader: impl Read) -> std::io::Result<i32> {
+    Ok(read_varint_ret_bytes(reader)?.1)
+}
+
+pub fn try_read_varint_ret_bytes(buf_start: &[u8]) -> Result<Option<(usize, i32)>> {
+    match read_varint_ret_bytes(std::io::Cursor::new(buf_start)) {
+        Ok(varint) => Ok(Some(varint)),
+        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
 pub struct PacketReader<D: Read> {
     data: D,
 }
@@ -35,20 +68,7 @@ impl<D: Read> PacketReader<D> {
     }
 
     pub fn read_var_int(&mut self) -> Result<i32> {
-        let mut value = 0;
-        let mut position = 0;
-        loop {
-            let byte = self.read_unsigned_byte()?;
-            value |= ((byte & 0x7F) as i32) << position;
-            if byte & 0x80 == 0 {
-                break;
-            }
-            position += 7;
-            if position >= 32 {
-                panic!("VarInt is too big");
-            }
-        }
-        Ok(value)
+        Ok(read_varint(&mut self.data)?)
     }
 
     pub fn read_string(&mut self) -> Result<String> {
@@ -61,7 +81,7 @@ impl<D: Read> PacketReader<D> {
 mod test {
     use anyhow::Result;
 
-    use crate::packet_reader::PacketReader;
+    use super::PacketReader;
 
     fn create_reader(data: &[u8]) -> PacketReader<std::io::Cursor<&[u8]>> {
         PacketReader::new(std::io::Cursor::new(data))

@@ -1,5 +1,4 @@
-pub mod packet_reader;
-pub mod packet_writer;
+pub mod packet;
 
 use std::{
     collections::VecDeque,
@@ -9,45 +8,13 @@ use std::{
 
 use anyhow::Result;
 use base64::Engine as _;
-use packet_reader::PacketReader;
-use packet_writer::{write_packet, PacketWriter};
-use serde::Serialize;
+use packet::{
+    reader::{read_varint_ret_bytes, try_read_varint_ret_bytes, PacketReader},
+    writer::PacketWriter,
+    Packet,
+};
 
 static SERVER_ICON: &[u8] = include_bytes!("../server_icon.png");
-
-#[derive(Serialize)]
-struct StatusResponseVersion {
-    name: String,
-    protocol: u64,
-}
-
-#[derive(Serialize)]
-struct StatusResponsePlayers {
-    max: u64,
-    online: u64,
-    sample: Vec<StatusResponsePlayerSample>,
-}
-
-#[derive(Serialize)]
-struct StatusResponsePlayerSample {
-    name: String,
-    id: String,
-}
-
-#[derive(Serialize)]
-struct StatusResponseDescription {
-    text: String,
-}
-
-#[derive(Serialize)]
-struct StatusResponse {
-    version: StatusResponseVersion,
-    players: Option<StatusResponsePlayers>,
-    description: Option<StatusResponseDescription>,
-    favicon: Option<String>,
-    #[serde(rename = "enforcesSecureChat")]
-    enforces_secure_chat: bool,
-}
 
 #[derive(Debug)]
 struct Connection {
@@ -70,7 +37,7 @@ impl Connection {
         })
     }
 
-    pub fn step(&mut self) -> Result<()> {
+    fn recieve_bytes(&mut self) -> Result<()> {
         let mut buf = [0u8; 1024];
         loop {
             match self.stream.read(&mut buf) {
@@ -87,63 +54,101 @@ impl Connection {
                 Err(e) => return Err(e.into()),
             }
         }
+        Ok(())
+    }
 
-        // FIXME: This length is probably varint
-        if let Some(length) = self.bytes.front() {
-            let length = *length as usize;
-            if self.bytes.len() > length {
-                self.bytes.pop_front();
+    pub fn send(&mut self, packet: impl Packet) -> Result<()> {
+        // TODO: Rewrite please, I'm sorry for this, this is pretty dumb.
+        let mut writer_data = PacketWriter::new_empty();
+        packet.packet_write(&mut writer_data)?;
 
-                let mut packet_data = vec![0u8; length];
-                self.bytes.read_exact(&mut packet_data)?;
-                println!("{:?}", packet_data);
+        let mut writer_id = PacketWriter::new_empty();
+        writer_id.write_var_int(packet.id())?;
 
-                let mut reader = PacketReader::new(std::io::Cursor::new(packet_data));
-                match reader.read_unsigned_byte()? {
-                    0x00 => match self.state {
-                        0 => {
-                            reader.read_var_int()?; // VERSION
-                            reader.read_string()?; // ADDRESS
-                            reader.read_unsigned_short()?; // PORT
-                            self.state = reader.read_var_int()?; // NEW_STATE
-                        }
-                        1 => {
-                            let mut writer = PacketWriter::new_empty();
-                            writer.write_string(&serde_json::to_string(&StatusResponse {
-                                version: StatusResponseVersion {
-                                    name: "1.21.1".to_string(),
-                                    protocol: 767,
-                                },
-                                players: Some(StatusResponsePlayers {
-                                    online: 0,
-                                    max: 20,
-                                    sample: Vec::new(),
-                                }),
-                                description: Some(StatusResponseDescription {
-                                    text: "Hello, World!".to_string(),
-                                }),
-                                favicon: Some(format!(
-                                    "data:image/png;base64,{}",
-                                    base64::prelude::BASE64_STANDARD.encode(SERVER_ICON)
-                                )),
-                                enforces_secure_chat: false,
-                            })?)?;
-                            self.stream
-                                .write_all(&write_packet(0x00, &writer.into_inner())?)?;
-                            self.stream.flush()?;
-                        }
-                        _ => panic!(),
-                    },
-                    0x01 => {
-                        let mut writer = PacketWriter::new_empty();
-                        writer.write_long(reader.read_long()?)?;
-                        self.stream
-                            .write_all(&write_packet(0x01, &writer.into_inner())?)?;
-                        self.stream.flush()?;
-                        self.closed = true;
+        let contents = writer_id
+            .into_inner()
+            .into_iter()
+            .chain(writer_data.into_inner())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+
+        PacketWriter::new(&mut self.stream).write_var_int(contents.len() as i32)?;
+        self.stream.write_all(&contents)?;
+        self.stream.flush()?;
+        Ok(())
+    }
+
+    pub fn recieve(&mut self) -> Result<Option<(i32, Box<[u8]>)>> {
+        // TODO: Rewrite please, I'm sorry for this as well, This is way more dumb.
+        let front = [
+            self.bytes.front(),
+            self.bytes.get(1),
+            self.bytes.get(2),
+            self.bytes.get(3),
+            self.bytes.get(4),
+        ]
+        .into_iter()
+        .filter_map(|v| v.cloned())
+        .collect::<Vec<_>>();
+        let Some((length_bytes, length)) = try_read_varint_ret_bytes(&front)? else {
+            return Ok(None);
+        };
+
+        if self.bytes.len() < length_bytes + length as usize {
+            return Ok(None);
+        }
+
+        (0..length_bytes).for_each(|_| {
+            self.bytes.pop_front();
+        });
+
+        let mut data = vec![0u8; length as usize];
+        self.bytes.read_exact(&mut data)?;
+
+        let (id_length, id) = read_varint_ret_bytes(std::io::Cursor::new(&data))?;
+        // ;-;
+        (0..id_length).for_each(|_| {
+            data.remove(0);
+        });
+
+        Ok(Some((id, data.into_boxed_slice())))
+    }
+
+    pub fn step(&mut self) -> Result<()> {
+        self.recieve_bytes()?;
+
+        while let Some((id, data)) = self.recieve()? {
+            let mut reader = PacketReader::new(std::io::Cursor::new(data.as_ref()));
+
+            match id {
+                0 => match self.state {
+                    0 => {
+                        let handshake = packet::server_list::Handshake::packet_read(&mut reader)?;
+                        self.state = handshake.next_state;
                     }
+                    1 => self.send(packet::server_list::StatusResponse {
+                        version: packet::server_list::StatusResponseVersion {
+                            name: "1.21.1".to_string(),
+                            protocol: 767,
+                        },
+                        players: Some(packet::server_list::StatusResponsePlayers {
+                            online: 0,
+                            max: 20,
+                            sample: Vec::new(),
+                        }),
+                        description: Some(packet::server_list::StatusResponseDescription {
+                            text: "Hello, World!".to_string(),
+                        }),
+                        favicon: Some(format!(
+                            "data:image/png;base64,{}",
+                            base64::prelude::BASE64_STANDARD.encode(SERVER_ICON)
+                        )),
+                        enforces_secure_chat: false,
+                    })?,
                     _ => panic!(),
-                }
+                },
+                1 => self.send(packet::server_list::Ping::packet_read(&mut reader)?)?,
+                _ => panic!(),
             }
         }
 

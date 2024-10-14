@@ -147,7 +147,10 @@ impl Connection {
                     })?,
                     _ => panic!(),
                 },
-                1 => self.send(packet::server_list::Ping::packet_read(&mut reader)?)?,
+                1 => {
+                    self.send(packet::server_list::Ping::packet_read(&mut reader)?)?;
+                    self.closed = true;
+                }
                 _ => panic!(),
             }
         }

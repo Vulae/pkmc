@@ -26,7 +26,7 @@ impl Packet for Handshake {
     }
 }
 
-pub struct StatusRequest {}
+pub struct StatusRequest;
 
 impl Packet for StatusRequest {
     const ID: i32 = 0;
@@ -35,7 +35,7 @@ impl Packet for StatusRequest {
     where
         Self: Sized,
     {
-        Ok(Self {})
+        Ok(Self)
     }
 }
 

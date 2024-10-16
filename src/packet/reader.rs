@@ -1,5 +1,7 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::io::Read;
+
+use crate::uuid::UUID;
 
 pub fn read_varint_ret_bytes(mut reader: impl Read) -> std::io::Result<(usize, i32)> {
     let mut bytes = 0;
@@ -55,8 +57,18 @@ impl<D: Read> PacketReader<D> {
         Ok(data.into_boxed_slice())
     }
 
+    pub fn read_vec_to_end(&mut self) -> Result<Box<[u8]>> {
+        let mut data = Vec::new();
+        self.data.read_to_end(&mut data)?;
+        Ok(data.into_boxed_slice())
+    }
+
     pub fn read_unsigned_byte(&mut self) -> Result<u8> {
         Ok(u8::from_be_bytes(self.read_buf()?))
+    }
+
+    pub fn read_signed_byte(&mut self) -> Result<i8> {
+        Ok(i8::from_be_bytes(self.read_buf()?))
     }
 
     pub fn read_unsigned_short(&mut self) -> Result<u16> {
@@ -74,6 +86,23 @@ impl<D: Read> PacketReader<D> {
     pub fn read_string(&mut self) -> Result<String> {
         let length = self.read_var_int()?;
         Ok(String::from_utf8(self.read_vec(length as usize)?.to_vec())?)
+    }
+
+    pub fn read_boolean(&mut self) -> Result<bool> {
+        match self.read_unsigned_byte()? {
+            0 => Ok(false),
+            1 => Ok(true),
+            value => Err(anyhow!(
+                "PacketReader::read_boolean invalid bool value {}",
+                value
+            )),
+        }
+    }
+
+    pub fn read_uuid(&mut self) -> Result<UUID> {
+        // FIXME: This is wrong, but it shouldn't really matter?
+        // https://wiki.vg/Protocol#Type:UUID
+        Ok(UUID(self.read_buf()?))
     }
 }
 

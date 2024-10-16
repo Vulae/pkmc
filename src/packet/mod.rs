@@ -1,3 +1,4 @@
+pub mod login;
 pub mod reader;
 pub mod server_list;
 pub mod writer;
@@ -28,4 +29,11 @@ pub trait Packet {
     fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
         unreachable!()
     }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct Position {
+    pub x: i32,
+    pub y: i16,
+    pub z: i32,
 }

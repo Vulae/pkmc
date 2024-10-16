@@ -1,169 +1,315 @@
+pub mod connection;
+pub mod nbt;
 pub mod packet;
+pub mod uuid;
 
 use std::{
-    collections::VecDeque,
-    io::{self, Read, Write},
-    net::{TcpListener, TcpStream, ToSocketAddrs},
+    collections::HashMap,
+    net::{TcpListener, ToSocketAddrs},
+    time::{Duration, Instant},
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use base64::Engine as _;
-use packet::{
-    reader::{read_varint_ret_bytes, try_read_varint_ret_bytes, PacketReader},
-    writer::PacketWriter,
-    Packet,
-};
+use connection::Connection;
+use nbt::NBT;
+use packet::{reader::PacketReader, Packet};
+use uuid::UUID;
 
 static SERVER_ICON: &[u8] = include_bytes!("../server_icon.png");
 
-#[derive(Debug)]
-struct Connection {
-    connection_id: u64,
-    stream: TcpStream,
-    closed: bool,
-    bytes: VecDeque<u8>,
-    state: i32,
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum HandshakerState {
+    Waiting,  // If waiting for new state
+    Closed,   // If handshaker should be immediately closed
+    Status,   // Request server status state
+    Login,    // Login state
+    Transfer, // File transfer (Resource pack)
 }
 
-impl Connection {
-    pub fn new(connection_id: u64, stream: TcpStream) -> Result<Self> {
-        stream.set_nonblocking(true)?;
-        Ok(Self {
-            connection_id,
-            stream,
-            closed: false,
-            bytes: VecDeque::new(),
-            state: 0,
-        })
-    }
+impl TryFrom<i32> for HandshakerState {
+    type Error = anyhow::Error;
 
-    fn recieve_bytes(&mut self) -> Result<()> {
-        let mut buf = [0u8; 1024];
-        loop {
-            match self.stream.read(&mut buf) {
-                Ok(0) => {
-                    self.closed = true;
-                    return Ok(());
-                }
-                Ok(n) => {
-                    self.bytes.extend(&buf[..n]);
-                }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    break;
-                }
-                Err(e) => return Err(e.into()),
-            }
+    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
+        match value {
+            0 => Err(anyhow!("HandshakerState should never try from 0")),
+            1 => Ok(HandshakerState::Status),
+            2 => Ok(HandshakerState::Login),
+            3 => Ok(HandshakerState::Transfer),
+            _ => Err(anyhow!("HandshakerState unknown value {}", value)),
         }
-        Ok(())
     }
+}
 
-    pub fn send(&mut self, packet: impl Packet) -> Result<()> {
-        // TODO: Rewrite please, I'm sorry for this, this is pretty dumb.
-        let mut writer_data = PacketWriter::new_empty();
-        packet.packet_write(&mut writer_data)?;
+#[derive(Debug)]
+struct Handshaker {
+    connection: Connection,
+    state: HandshakerState,
+}
 
-        let mut writer_id = PacketWriter::new_empty();
-        writer_id.write_var_int(packet.id())?;
-
-        let contents = writer_id
-            .into_inner()
-            .into_iter()
-            .chain(writer_data.into_inner())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-
-        PacketWriter::new(&mut self.stream).write_var_int(contents.len() as i32)?;
-        self.stream.write_all(&contents)?;
-        self.stream.flush()?;
-        Ok(())
-    }
-
-    pub fn recieve(&mut self) -> Result<Option<(i32, Box<[u8]>)>> {
-        // TODO: Rewrite please, I'm sorry for this as well, This is way more dumb.
-        let front = [
-            self.bytes.front(),
-            self.bytes.get(1),
-            self.bytes.get(2),
-            self.bytes.get(3),
-            self.bytes.get(4),
-        ]
-        .into_iter()
-        .filter_map(|v| v.cloned())
-        .collect::<Vec<_>>();
-        let Some((length_bytes, length)) = try_read_varint_ret_bytes(&front)? else {
-            return Ok(None);
-        };
-
-        if self.bytes.len() < length_bytes + length as usize {
-            return Ok(None);
+impl Handshaker {
+    pub fn new(connection: Connection) -> Self {
+        Self {
+            connection,
+            state: HandshakerState::Waiting,
         }
-
-        (0..length_bytes).for_each(|_| {
-            self.bytes.pop_front();
-        });
-
-        let mut data = vec![0u8; length as usize];
-        self.bytes.read_exact(&mut data)?;
-
-        let (id_length, id) = read_varint_ret_bytes(std::io::Cursor::new(&data))?;
-        // ;-;
-        (0..id_length).for_each(|_| {
-            data.remove(0);
-        });
-
-        Ok(Some((id, data.into_boxed_slice())))
     }
 
-    pub fn step(&mut self) -> Result<()> {
-        self.recieve_bytes()?;
+    pub fn into_connection(self) -> Connection {
+        self.connection
+    }
 
-        while let Some((id, data)) = self.recieve()? {
+    pub fn state(&self) -> HandshakerState {
+        self.state
+    }
+
+    pub fn update(&mut self) -> Result<()> {
+        if let Some((id, data)) = self.connection.recieve()? {
             let mut reader = PacketReader::new(std::io::Cursor::new(data.as_ref()));
 
             match id {
                 0 => match self.state {
-                    0 => {
+                    HandshakerState::Waiting => {
                         let handshake = packet::server_list::Handshake::packet_read(&mut reader)?;
-                        self.state = handshake.next_state;
+                        self.state = handshake.next_state.try_into()?;
                     }
-                    1 => self.send(packet::server_list::StatusResponse {
-                        version: packet::server_list::StatusResponseVersion {
-                            name: "1.21.1".to_string(),
-                            protocol: 767,
-                        },
-                        players: Some(packet::server_list::StatusResponsePlayers {
-                            online: 0,
-                            max: 20,
-                            sample: Vec::new(),
-                        }),
-                        description: Some(packet::server_list::StatusResponseDescription {
-                            text: "Hello, World!".to_string(),
-                        }),
-                        favicon: Some(format!(
-                            "data:image/png;base64,{}",
-                            base64::prelude::BASE64_STANDARD.encode(SERVER_ICON)
-                        )),
-                        enforces_secure_chat: false,
-                    })?,
+                    HandshakerState::Status => {
+                        self.connection.send(packet::server_list::StatusResponse {
+                            version: packet::server_list::StatusResponseVersion {
+                                name: "1.21.1".to_string(),
+                                protocol: 767,
+                            },
+                            players: Some(packet::server_list::StatusResponsePlayers {
+                                online: 0,
+                                max: 20,
+                                sample: Vec::new(),
+                            }),
+                            description: Some(packet::server_list::StatusResponseDescription {
+                                text: "Hello, World!".to_string(),
+                            }),
+                            favicon: Some(format!(
+                                "data:image/png;base64,{}",
+                                base64::prelude::BASE64_STANDARD.encode(SERVER_ICON)
+                            )),
+                            enforces_secure_chat: false,
+                        })?
+                    }
+                    HandshakerState::Login => panic!(),
+                    HandshakerState::Transfer => panic!(),
                     _ => panic!(),
                 },
                 1 => {
-                    self.send(packet::server_list::Ping::packet_read(&mut reader)?)?;
-                    self.closed = true;
+                    self.connection
+                        .send(packet::server_list::Ping::packet_read(&mut reader)?)?;
+                    self.state = HandshakerState::Closed;
                 }
                 _ => panic!(),
             }
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum LoginPlayerState {
+    Login,
+    Configuration,
+    Play,
+}
+
+/// A player that is in the process of logging in.
+#[derive(Debug)]
+struct LoginPlayer {
+    connection: Connection,
+    last_recv_configuration_time: Instant,
+    send_final_configuration_packet: bool,
+    state: LoginPlayerState,
+    player: Option<(String, UUID)>,
+}
+
+impl LoginPlayer {
+    pub fn new(connection: Connection) -> Self {
+        Self {
+            connection,
+            last_recv_configuration_time: Instant::now(),
+            send_final_configuration_packet: false,
+            state: LoginPlayerState::Login,
+            player: None,
+        }
+    }
+
+    pub fn into_connection(self) -> Connection {
+        self.connection
+    }
+
+    pub fn update(&mut self) -> Result<()> {
+        if let Some((id, data)) = self.connection.recieve()? {
+            let mut reader = PacketReader::new(std::io::Cursor::new(data.as_ref()));
+
+            match self.state {
+                LoginPlayerState::Login => match id {
+                    0 => {
+                        let login_start = packet::login::LoginStart::packet_read(&mut reader)?;
+                        self.player = Some((login_start.name.clone(), login_start.uuid));
+                        self.connection.send(packet::login::LoginSuccess {
+                            uuid: login_start.uuid,
+                            name: login_start.name,
+                            properties: Vec::new(),
+                            strict_error_handling: false,
+                        })?;
+                    }
+                    3 => {
+                        let _login_acknowledged =
+                            packet::login::LoginAcknowledged::packet_read(&mut reader)?;
+                        self.last_recv_configuration_time = Instant::now();
+                        self.state = LoginPlayerState::Configuration;
+                        self.connection.send(
+                            packet::login::LoginConfigurationClientboundKnownPacks {
+                                packs: vec![packet::login::LoginConfigurationKnownPack {
+                                    namespace: "minecraft:core".to_string(),
+                                    id: "".to_string(),
+                                    version: "1.21".to_string(),
+                                }],
+                            },
+                        )?;
+                    }
+                    _ => {
+                        return Err(anyhow!(
+                            "Recieved unknown packet {} on LoginPlayer with Login state",
+                            id
+                        ))
+                    }
+                },
+                LoginPlayerState::Configuration => {
+                    self.last_recv_configuration_time = Instant::now();
+                    match id {
+                        0 => {
+                            let _login_client_information =
+                                packet::login::LoginConfigurationClientInformation::packet_read(
+                                    &mut reader,
+                                )?;
+                        }
+                        2 => {
+                            let _login_configuration_plugin =
+                                packet::login::LoginConfigurationPluginMessage::packet_read(
+                                    &mut reader,
+                                )?;
+                        }
+                        3 => {
+                            let _login_configuration_finish_acknowledge =
+                                packet::login::LoginConfigurationFinish::packet_read(&mut reader)?;
+                            self.state = LoginPlayerState::Play;
+                            self.connection.send(packet::login::LoginPlay {
+                                entity_id: 0,
+                                is_hardcore: false,
+                                dimensions: vec!["minecraft:overworld".to_string()],
+                                max_players: 20,
+                                view_distance: 16,
+                                simulation_distance: 16,
+                                reduced_debug_info: false,
+                                enable_respawn_screen: true,
+                                do_limited_crafting: false,
+                                dimension_type: 0,
+                                dimension_name: "minecraft:overworld".to_owned(),
+                                hashed_seed: 0,
+                                game_mode: 1,
+                                previous_game_mode: -1,
+                                is_debug: false,
+                                is_flat: false,
+                                death: None,
+                                portal_cooldown: 0,
+                                enforces_secure_chat: false,
+                            })?;
+                        }
+                        7 => {
+                            let _login_client_known_packs = packet::login::LoginConfigurationServerboundKnownPacks::packet_read(&mut reader)?;
+                            let registry_dimensions =
+                                packet::login::LoginConfigurationRegistryData {
+                                    registry_id: "minecraft:dimension_type".to_string(),
+                                    entries: vec![
+                                        packet::login::LoginConfigurationRegistryDataEntry {
+                                            entry_id: "minecraft:overworld".to_string(),
+                                            data: Some(NBT::Compound(
+                                                vec![
+                                                    ("fixed_time", NBT::Long(6000)),
+                                                    ("has_skylight", NBT::Byte(1)),
+                                                    ("has_ceiling", NBT::Byte(0)),
+                                                    ("ultrawarm", NBT::Byte(0)),
+                                                    ("natural", NBT::Byte(1)),
+                                                    ("coordinate_scale", NBT::Double(1.0)),
+                                                    ("bed_works", NBT::Byte(1)),
+                                                    ("respawn_anchor_works", NBT::Byte(0)),
+                                                    ("min_y", NBT::Int(-64)),
+                                                    ("height", NBT::Int(320)),
+                                                    ("logical_height", NBT::Int(256)),
+                                                    ("infiniburn", NBT::String("#".to_string())),
+                                                    (
+                                                        "effects",
+                                                        NBT::String(
+                                                            "minecraft:overworld".to_string(),
+                                                        ),
+                                                    ),
+                                                    ("ambient_light", NBT::Float(0.0)),
+                                                    ("piglin_safe", NBT::Byte(0)),
+                                                    ("has_raids", NBT::Byte(0)),
+                                                    ("monster_spawn_light_level", NBT::Int(0)),
+                                                    (
+                                                        "monster_spawn_block_light_limit",
+                                                        NBT::Int(0),
+                                                    ),
+                                                ]
+                                                .into_iter()
+                                                .map(|(k, v)| (k.to_string(), v))
+                                                .collect::<HashMap<String, NBT>>(),
+                                            )),
+                                        },
+                                    ],
+                                };
+                            self.connection.send(registry_dimensions)?;
+                        }
+                        _ => {
+                            return Err(anyhow!(
+                            "Recieved unknown packet {} on LoginPlayer with Configuration state",
+                            id
+                        ))
+                        }
+                    }
+                }
+                LoginPlayerState::Play => unimplemented!(),
+            }
+        }
+
+        if self.state == LoginPlayerState::Configuration
+            && !self.send_final_configuration_packet
+            && Instant::now().duration_since(self.last_recv_configuration_time)
+                > Duration::from_millis(100)
+        {
+            self.send_final_configuration_packet = true;
+            self.connection
+                .send(packet::login::LoginConfigurationFinish {})?;
+        }
 
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct Player {
+    connection: Connection,
+}
+
+impl Player {
+    pub fn new(connection: Connection) -> Self {
+        Self { connection }
     }
 }
 
 #[derive(Debug)]
 struct Server {
     listener: TcpListener,
-    connection_counter: u64,
-    connections: Vec<Connection>,
+    handshakers: Vec<Handshaker>,
+    login_players: Vec<LoginPlayer>,
+    players: Vec<Player>,
 }
 
 impl Server {
@@ -172,32 +318,50 @@ impl Server {
         listener.set_nonblocking(true)?;
         Ok(Self {
             listener,
-            connection_counter: 0,
-            connections: Vec::new(),
+            handshakers: Vec::new(),
+            login_players: Vec::new(),
+            players: Vec::new(),
         })
     }
 
-    pub fn step(&mut self) -> Result<()> {
-        //println!("{:#?}", std::time::Instant::now());
-
-        if let Ok((stream, _)) = self.listener.accept() {
-            self.connections
-                .push(Connection::new(self.connection_counter, stream)?);
-            println!("Connection {} opened.", self.connection_counter);
-            self.connection_counter += 1;
+    fn handle_handshakers(&mut self) -> Result<()> {
+        while let Ok((stream, _)) = self.listener.accept() {
+            let connection = Connection::new(stream)?;
+            self.handshakers.push(Handshaker::new(connection));
         }
 
-        self.connections
+        // TODO: For each handshaker, try updating until state is either closed or login.
+        self.handshakers
             .iter_mut()
-            .map(|connection| connection.step())
+            .map(|handshaker| handshaker.update())
             .collect::<Result<Vec<_>, _>>()?;
 
-        self.connections.retain(|connection| {
-            if connection.closed {
-                println!("Connection {} closed.", connection.connection_id);
+        self.handshakers
+            .retain(|handshaker| handshaker.state() != HandshakerState::Closed);
+
+        for i in (0..self.handshakers.len()).rev() {
+            if self.handshakers[i].state() == HandshakerState::Login {
+                let handshaker = self.handshakers.remove(i);
+                let login_player = LoginPlayer::new(handshaker.into_connection());
+                self.login_players.push(login_player);
             }
-            !connection.closed
-        });
+        }
+
+        Ok(())
+    }
+
+    pub fn handle_login_players(&mut self) -> Result<()> {
+        self.login_players
+            .iter_mut()
+            .map(|login_player| login_player.update())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(())
+    }
+
+    pub fn step(&mut self) -> Result<()> {
+        self.handle_handshakers()?;
+        self.handle_login_players()?;
 
         Ok(())
     }

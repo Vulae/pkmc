@@ -1,6 +1,10 @@
 use anyhow::Result;
 use std::io::Write;
 
+use crate::uuid::UUID;
+
+use super::Position;
+
 pub fn write_varint(mut writer: impl Write, value: i32) -> Result<()> {
     let mut value = unsafe { std::mem::transmute::<i32, u32>(value) };
     loop {
@@ -41,7 +45,17 @@ impl<D: Write> PacketWriter<D> {
         Ok(())
     }
 
+    pub fn write_signed_byte(&mut self, value: i8) -> Result<()> {
+        self.write_buf(&value.to_be_bytes())?;
+        Ok(())
+    }
+
     pub fn write_unsigned_byte(&mut self, value: u8) -> Result<()> {
+        self.write_buf(&value.to_be_bytes())?;
+        Ok(())
+    }
+
+    pub fn write_int(&mut self, value: i32) -> Result<()> {
         self.write_buf(&value.to_be_bytes())?;
         Ok(())
     }
@@ -58,6 +72,25 @@ impl<D: Write> PacketWriter<D> {
     pub fn write_string(&mut self, str: &str) -> Result<()> {
         self.write_var_int(str.len() as i32)?;
         self.write_buf(str.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn write_uuid(&mut self, uuid: &UUID) -> Result<()> {
+        self.write_buf(&uuid.0)?;
+        Ok(())
+    }
+
+    pub fn write_boolean(&mut self, bool: bool) -> Result<()> {
+        self.write_unsigned_byte(if bool { 0x01 } else { 0x00 })?;
+        Ok(())
+    }
+
+    pub fn write_position(&mut self, position: Position) -> Result<()> {
+        let x = unsafe { std::mem::transmute::<i32, u32>(position.x) } as u64;
+        let y = unsafe { std::mem::transmute::<i16, u16>(position.y) } as u64;
+        let z = unsafe { std::mem::transmute::<i32, u32>(position.z) } as u64;
+        let v: u64 = ((x & 0x3FFFFFF) << 38) | ((z & 0x3FFFFFF) << 12) | (y & 0xFFF);
+        self.write_buf(&v.to_be_bytes())?;
         Ok(())
     }
 }

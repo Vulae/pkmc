@@ -65,6 +65,16 @@ impl<D: Write> PacketWriter<D> {
         Ok(())
     }
 
+    pub fn write_float(&mut self, value: f32) -> Result<()> {
+        self.write_buf(&value.to_be_bytes())?;
+        Ok(())
+    }
+
+    pub fn write_double(&mut self, value: f64) -> Result<()> {
+        self.write_buf(&value.to_be_bytes())?;
+        Ok(())
+    }
+
     pub fn write_var_int(&mut self, value: i32) -> Result<()> {
         Ok(write_varint(&mut self.data, value)?)
     }
@@ -107,7 +117,7 @@ pub fn write_packet(id: u8, data: &[u8]) -> Result<Box<[u8]>> {
 mod test {
     use anyhow::Result;
 
-    use crate::packet_writer::PacketWriter;
+    use super::PacketWriter;
 
     fn create_writer() -> PacketWriter<Vec<u8>> {
         PacketWriter::new(Vec::new())
@@ -127,7 +137,7 @@ mod test {
         assert_eq!(writer_var_int!(0), &[0x00]);
         assert_eq!(writer_var_int!(1), &[0x01]);
         assert_eq!(writer_var_int!(2), &[0x02]);
-        assert_eq!(writer_var_int!(127), &[0x7F]);
+        assert_eq!(writer_var_int!(127), &[0x7f]);
         assert_eq!(writer_var_int!(128), &[0x80, 0x01]);
         assert_eq!(writer_var_int!(255), &[0xff, 0x01]);
         assert_eq!(writer_var_int!(25565), &[0xdd, 0xc7, 0x01]);

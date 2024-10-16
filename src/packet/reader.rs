@@ -122,7 +122,7 @@ mod test {
         assert_eq!(create_reader(&[0x00]).read_var_int()?, 0);
         assert_eq!(create_reader(&[0x01]).read_var_int()?, 1);
         assert_eq!(create_reader(&[0x02]).read_var_int()?, 2);
-        assert_eq!(create_reader(&[0x7F]).read_var_int()?, 127);
+        assert_eq!(create_reader(&[0x7f]).read_var_int()?, 127);
         assert_eq!(create_reader(&[0x80, 0x01]).read_var_int()?, 128);
         assert_eq!(create_reader(&[0xff, 0x01]).read_var_int()?, 255);
         assert_eq!(create_reader(&[0xdd, 0xc7, 0x01]).read_var_int()?, 25565);

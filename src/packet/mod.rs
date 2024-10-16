@@ -1,4 +1,5 @@
 pub mod login;
+pub mod play;
 pub mod reader;
 pub mod server_list;
 pub mod writer;

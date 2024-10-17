@@ -67,8 +67,6 @@ impl Connection {
         self.stream.write_all(&contents)?;
         self.stream.flush()?;
 
-        println!("SENT {}", packet.id());
-
         Ok(())
     }
 
@@ -106,8 +104,6 @@ impl Connection {
         (0..id_length).for_each(|_| {
             data.remove(0);
         });
-
-        println!("RECIEVE {}", id);
 
         Ok(Some((id, data.into_boxed_slice())))
     }

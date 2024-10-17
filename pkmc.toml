@@ -1,0 +1,6 @@
+address = "127.0.0.1:52817"
+
+[server-list]
+text = "https://github.com/Vulae/pkmc"
+# Icon MUST be a 64x64 png
+icon = "server_icon.png"

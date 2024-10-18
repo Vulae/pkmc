@@ -59,6 +59,8 @@ fn main() -> Result<()> {
 
     let mut server = Server::new(config.address, state)?;
 
+    println!("Server running at \"{}\"", server.ip());
+
     loop {
         server.step()?;
         // TODO: Probably use something like mio (https://docs.rs/mio/latest/mio/) for this.

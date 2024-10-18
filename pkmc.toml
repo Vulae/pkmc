@@ -1,5 +1,5 @@
-address = "127.0.0.1:52817"
-# address = "::1:52817"
+# address = "127.0.0.1:52817"
+address = "[::1]:52817"
 
 [server-list]
 text = "https://github.com/Vulae/pkmc"

@@ -1,6 +1,6 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::{
-    net::{TcpListener, ToSocketAddrs},
+    net::{SocketAddr, TcpListener, ToSocketAddrs},
     sync::{Arc, Mutex},
 };
 
@@ -15,6 +15,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Server {
     state: Arc<Mutex<ServerState>>,
+    address: SocketAddr,
     listener: TcpListener,
     clients_handshaker: Vec<ClientHandshake>,
     clients_login: Vec<ClientLogin>,
@@ -23,15 +24,24 @@ pub struct Server {
 
 impl Server {
     pub fn new<S: ToSocketAddrs>(address: S, state: ServerState) -> Result<Self> {
+        let address = address
+            .to_socket_addrs()?
+            .next()
+            .ok_or(anyhow!("Failed to parse socket address"))?;
         let listener = TcpListener::bind(address)?;
         listener.set_nonblocking(true)?;
         Ok(Self {
+            address,
             state: Arc::new(Mutex::new(state)),
             listener,
             clients_handshaker: Vec::new(),
             clients_login: Vec::new(),
             clients: Vec::new(),
         })
+    }
+
+    pub fn ip(&self) -> &SocketAddr {
+        &self.address
     }
 
     fn handle_clients_handshakers(&mut self) -> Result<()> {

@@ -1,16 +1,21 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
-use crate::{nbt::NBT, uuid::UUID};
+use crate::{
+    connection::{ClientboundPacket, ServerboundPacket},
+    nbt::NBT,
+    uuid::UUID,
+};
 
-use super::{reader::PacketReader, Packet, Position};
+use super::reader::PacketReader;
 
+#[derive(Debug)]
 pub struct LoginStart {
     pub name: String,
     pub uuid: UUID,
 }
 
-impl Packet for LoginStart {
-    const ID: i32 = 0;
+impl ServerboundPacket for LoginStart {
+    const SERVERBOUND_ID: i32 = 0x00;
 
     fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
     where
@@ -23,12 +28,14 @@ impl Packet for LoginStart {
     }
 }
 
+#[derive(Debug)]
 pub struct LoginSuccessProperty {
     pub name: String,
     pub value: String,
     pub signature: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct LoginSuccess {
     pub uuid: UUID,
     pub name: String,
@@ -37,8 +44,8 @@ pub struct LoginSuccess {
     pub strict_error_handling: bool,
 }
 
-impl Packet for LoginSuccess {
-    const ID: i32 = 2;
+impl ClientboundPacket for LoginSuccess {
+    const CLIENTBOUND_ID: i32 = 0x02;
 
     fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
         writer.write_uuid(&self.uuid)?;
@@ -59,10 +66,11 @@ impl Packet for LoginSuccess {
     }
 }
 
+#[derive(Debug)]
 pub struct LoginAcknowledged;
 
-impl Packet for LoginAcknowledged {
-    const ID: i32 = 3;
+impl ServerboundPacket for LoginAcknowledged {
+    const SERVERBOUND_ID: i32 = 0x03;
 
     fn packet_read(_reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
     where
@@ -78,8 +86,8 @@ pub enum LoginConfigurationPluginMessage {
     Brand(String),
 }
 
-impl Packet for LoginConfigurationPluginMessage {
-    const ID: i32 = 2;
+impl ServerboundPacket for LoginConfigurationPluginMessage {
+    const SERVERBOUND_ID: i32 = 0x02;
 
     fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
     where
@@ -94,6 +102,10 @@ impl Packet for LoginConfigurationPluginMessage {
             _ => Ok(LoginConfigurationPluginMessage::Unknown { channel, data }),
         }
     }
+}
+
+impl ClientboundPacket for LoginConfigurationPluginMessage {
+    const CLIENTBOUND_ID: i32 = 0x01;
 
     fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
         match self {
@@ -110,34 +122,11 @@ impl Packet for LoginConfigurationPluginMessage {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum LoginConfigurationClientInformationChatMode {
-    Enabled,
-    CommandsOnly,
-    Hidden,
-}
-
-impl TryFrom<i32> for LoginConfigurationClientInformationChatMode {
-    type Error = anyhow::Error;
-
-    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
-        match value {
-            0 => Ok(LoginConfigurationClientInformationChatMode::Enabled),
-            1 => Ok(LoginConfigurationClientInformationChatMode::CommandsOnly),
-            2 => Ok(LoginConfigurationClientInformationChatMode::Hidden),
-            _ => Err(anyhow!(
-                "Could not try from {} for LoginConfigurationClientInformationChatMode",
-                value
-            )),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct LoginConfigurationClientInformation {
     pub locale: String,
     pub view_distance: i8,
-    pub chat_mode: LoginConfigurationClientInformationChatMode,
+    pub chat_mode: i32,
     pub chat_colors: bool,
     pub displayed_skin_parts: u8,
     pub left_handed: bool,
@@ -145,8 +134,8 @@ pub struct LoginConfigurationClientInformation {
     pub allow_server_listings: bool,
 }
 
-impl Packet for LoginConfigurationClientInformation {
-    const ID: i32 = 0;
+impl ServerboundPacket for LoginConfigurationClientInformation {
+    const SERVERBOUND_ID: i32 = 0x00;
 
     fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
     where
@@ -155,7 +144,7 @@ impl Packet for LoginConfigurationClientInformation {
         Ok(Self {
             locale: reader.read_string()?,
             view_distance: reader.read_signed_byte()?,
-            chat_mode: reader.read_var_int()?.try_into()?,
+            chat_mode: reader.read_var_int()?,
             chat_colors: reader.read_boolean()?,
             displayed_skin_parts: reader.read_unsigned_byte()?,
             // TODO: Is this correct?
@@ -174,12 +163,12 @@ pub struct LoginConfigurationKnownPack {
 }
 
 #[derive(Debug)]
-pub struct LoginConfigurationClientboundKnownPacks {
+pub struct LoginConfigurationKnownPacks {
     pub packs: Vec<LoginConfigurationKnownPack>,
 }
 
-impl Packet for LoginConfigurationClientboundKnownPacks {
-    const ID: i32 = 14;
+impl ClientboundPacket for LoginConfigurationKnownPacks {
+    const CLIENTBOUND_ID: i32 = 0x0E;
 
     fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
         writer.write_var_int(self.packs.len() as i32)?;
@@ -192,13 +181,8 @@ impl Packet for LoginConfigurationClientboundKnownPacks {
     }
 }
 
-#[derive(Debug)]
-pub struct LoginConfigurationServerboundKnownPacks {
-    pub packs: Vec<LoginConfigurationKnownPack>,
-}
-
-impl Packet for LoginConfigurationServerboundKnownPacks {
-    const ID: i32 = 7;
+impl ServerboundPacket for LoginConfigurationKnownPacks {
+    const SERVERBOUND_ID: i32 = 0x07;
 
     fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
     where
@@ -230,8 +214,8 @@ pub struct LoginConfigurationRegistryData {
     pub entries: Vec<LoginConfigurationRegistryDataEntry>,
 }
 
-impl Packet for LoginConfigurationRegistryData {
-    const ID: i32 = 7;
+impl ClientboundPacket for LoginConfigurationRegistryData {
+    const CLIENTBOUND_ID: i32 = 0x07;
 
     fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
         writer.write_string(&self.registry_id)?;
@@ -249,78 +233,24 @@ impl Packet for LoginConfigurationRegistryData {
     }
 }
 
+#[derive(Debug)]
 pub struct LoginConfigurationFinish;
 
-impl Packet for LoginConfigurationFinish {
-    const ID: i32 = 3;
-
-    fn packet_read(_reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        Ok(Self)
-    }
+impl ClientboundPacket for LoginConfigurationFinish {
+    const CLIENTBOUND_ID: i32 = 0x03;
 
     fn packet_write(&self, _writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
         Ok(())
     }
 }
 
-pub struct LoginPlay {
-    pub entity_id: i32,
-    pub is_hardcore: bool,
-    pub dimensions: Vec<String>,
-    pub max_players: i32,
-    pub view_distance: i32,
-    pub simulation_distance: i32,
-    pub reduced_debug_info: bool,
-    pub enable_respawn_screen: bool,
-    pub do_limited_crafting: bool,
-    pub dimension_type: i32,
-    pub dimension_name: String,
-    pub hashed_seed: i64,
-    pub game_mode: u8,
-    pub previous_game_mode: i8,
-    pub is_debug: bool,
-    pub is_flat: bool,
-    pub death: Option<(String, Position)>,
-    pub portal_cooldown: i32,
-    pub enforces_secure_chat: bool,
-}
+impl ServerboundPacket for LoginConfigurationFinish {
+    const SERVERBOUND_ID: i32 = 0x03;
 
-impl Packet for LoginPlay {
-    const ID: i32 = 43;
-
-    fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_int(self.entity_id)?;
-        writer.write_boolean(self.is_hardcore)?;
-        writer.write_var_int(self.dimensions.len() as i32)?;
-        for dimension in self.dimensions.iter() {
-            writer.write_string(dimension)?;
-        }
-        writer.write_var_int(self.max_players)?;
-        writer.write_var_int(self.view_distance)?;
-        writer.write_var_int(self.simulation_distance)?;
-        writer.write_boolean(self.reduced_debug_info)?;
-        writer.write_boolean(self.enable_respawn_screen)?;
-        writer.write_boolean(self.do_limited_crafting)?;
-        writer.write_var_int(self.dimension_type)?;
-        writer.write_string(&self.dimension_name)?;
-        writer.write_long(self.hashed_seed)?;
-        writer.write_unsigned_byte(self.game_mode)?;
-        writer.write_signed_byte(self.previous_game_mode)?;
-        writer.write_boolean(self.is_debug)?;
-        writer.write_boolean(self.is_flat)?;
-        if let Some(death) = &self.death {
-            writer.write_boolean(true)?;
-            writer.write_string(&death.0)?;
-            writer.write_position(death.1)?;
-        } else {
-            writer.write_boolean(false)?;
-        }
-        writer.write_var_int(self.portal_cooldown)?;
-        writer.write_boolean(self.enforces_secure_chat)?;
-
-        Ok(())
+    fn packet_read(_reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self)
     }
 }

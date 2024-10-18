@@ -1,15 +1,13 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::{
     collections::HashMap,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use crate::{
-    connection::Connection,
-    nbt::NBT,
-    nbt_compound,
-    packet::{self, reader::PacketReader, Packet as _},
-    uuid::UUID,
+    connection::Connection, create_packet_enum, nbt::NBT, nbt_compound, packet,
+    server_state::ServerState, uuid::UUID,
 };
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -19,9 +17,22 @@ pub enum ClientLoginState {
     Play,
 }
 
+create_packet_enum!(ClientLoginLoginPacket;
+    packet::login::LoginStart, Start;
+    packet::login::LoginAcknowledged, Acknowledged;
+);
+
+create_packet_enum!(ClientLoginConfigurationPacket;
+    packet::login::LoginConfigurationClientInformation, ClientInformation;
+    packet::login::LoginConfigurationPluginMessage, PluginMessage;
+    packet::login::LoginConfigurationKnownPacks, KnownPacks;
+    packet::login::LoginConfigurationFinish, Finish;
+);
+
 /// A player that is in the process of logging in.
 #[derive(Debug)]
 pub struct ClientLogin {
+    server_state: Arc<Mutex<ServerState>>,
     connection: Connection,
     last_recv_configuration_time: Instant,
     send_final_configuration_packet: bool,
@@ -30,8 +41,9 @@ pub struct ClientLogin {
 }
 
 impl ClientLogin {
-    pub fn new(connection: Connection) -> Self {
+    pub fn new(server_state: Arc<Mutex<ServerState>>, connection: Connection) -> Self {
         Self {
+            server_state,
             connection,
             last_recv_configuration_time: Instant::now(),
             send_final_configuration_packet: false,
@@ -49,13 +61,10 @@ impl ClientLogin {
     }
 
     pub fn update(&mut self) -> Result<()> {
-        if let Some((id, data)) = self.connection.recieve()? {
-            let mut reader = PacketReader::new(std::io::Cursor::new(data.as_ref()));
-
+        if let Some(raw_packet) = self.connection.recieve()? {
             match self.state {
-                ClientLoginState::Login => match id {
-                    0 => {
-                        let login_start = packet::login::LoginStart::packet_read(&mut reader)?;
+                ClientLoginState::Login => match ClientLoginLoginPacket::try_from(raw_packet)? {
+                    ClientLoginLoginPacket::Start(login_start) => {
                         self.player = Some((login_start.name.clone(), login_start.uuid));
                         self.connection.send(packet::login::LoginSuccess {
                             uuid: login_start.uuid,
@@ -64,77 +73,39 @@ impl ClientLogin {
                             strict_error_handling: false,
                         })?;
                     }
-                    3 => {
-                        let _login_acknowledged =
-                            packet::login::LoginAcknowledged::packet_read(&mut reader)?;
+                    ClientLoginLoginPacket::Acknowledged(_) => {
                         self.last_recv_configuration_time = Instant::now();
                         self.state = ClientLoginState::Configuration;
-                        self.connection.send(
-                            packet::login::LoginConfigurationClientboundKnownPacks {
+                        self.connection
+                            .send(packet::login::LoginConfigurationKnownPacks {
                                 packs: vec![packet::login::LoginConfigurationKnownPack {
                                     namespace: "minecraft:core".to_string(),
                                     id: "".to_string(),
                                     version: "1.21".to_string(),
                                 }],
-                            },
-                        )?;
-                    }
-                    _ => {
-                        return Err(anyhow!(
-                            "Recieved unknown packet {} on LoginPlayer with Login state",
-                            id
-                        ))
+                            })?;
                     }
                 },
                 ClientLoginState::Configuration => {
                     self.last_recv_configuration_time = Instant::now();
-                    match id {
-                        0 => {
-                            let _login_client_information =
-                                packet::login::LoginConfigurationClientInformation::packet_read(
-                                    &mut reader,
-                                )?;
+                    match ClientLoginConfigurationPacket::try_from(raw_packet)? {
+                        ClientLoginConfigurationPacket::ClientInformation(_) => {
+                            //// FIXME: Broken?
+                            //self.connection.send(
+                            //    packet::login::LoginConfigurationPluginMessage::Brand(
+                            //        "Vulae/pkmc".to_owned(),
+                            //    ),
+                            //)?;
                         }
-                        2 => {
-                            let _login_configuration_plugin =
-                                packet::login::LoginConfigurationPluginMessage::packet_read(
-                                    &mut reader,
-                                )?;
-                        }
-                        3 => {
-                            let _login_configuration_finish_acknowledge =
-                                packet::login::LoginConfigurationFinish::packet_read(&mut reader)?;
-                            self.connection.send(packet::login::LoginPlay {
-                                entity_id: 0,
-                                is_hardcore: false,
-                                dimensions: vec!["minecraft:overworld".to_string()],
-                                max_players: 20,
-                                view_distance: 16,
-                                simulation_distance: 16,
-                                reduced_debug_info: false,
-                                enable_respawn_screen: true,
-                                do_limited_crafting: false,
-                                dimension_type: 0,
-                                dimension_name: "minecraft:overworld".to_owned(),
-                                hashed_seed: 0,
-                                game_mode: 1,
-                                previous_game_mode: -1,
-                                is_debug: false,
-                                is_flat: false,
-                                death: None,
-                                portal_cooldown: 0,
-                                enforces_secure_chat: false,
-                            })?;
-                            self.state = ClientLoginState::Play;
-                        }
-                        7 => {
-                            let _login_client_known_packs = packet::login::LoginConfigurationServerboundKnownPacks::packet_read(&mut reader)?;
+                        ClientLoginConfigurationPacket::PluginMessage(_) => {}
+                        ClientLoginConfigurationPacket::KnownPacks(_) => {
+                            let server_state = self.server_state.lock().unwrap();
                             self.connection.send(
                                 packet::login::LoginConfigurationRegistryData {
                                     registry_id: "minecraft:dimension_type".to_string(),
                                     entries: vec![
                                         packet::login::LoginConfigurationRegistryDataEntry {
-                                            entry_id: "minecraft:overworld".to_string(),
+                                            entry_id: server_state.world_main_name.clone(),
                                             // TODO: Use nbt_compound![]
                                             data: Some(NBT::Compound(
                                                 vec![
@@ -146,9 +117,9 @@ impl ClientLogin {
                                                     ("coordinate_scale", NBT::Double(1.0)),
                                                     ("bed_works", NBT::Byte(1)),
                                                     ("respawn_anchor_works", NBT::Byte(0)),
-                                                    ("min_y", NBT::Int(-64)),
-                                                    ("height", NBT::Int(384)),
-                                                    ("logical_height", NBT::Int(384)),
+                                                    ("min_y", NBT::Int(server_state.world_min_y)),
+                                                    ("height", NBT::Int(server_state.world_max_y)),
+                                                    ("logical_height", NBT::Int(0)),
                                                     (
                                                         "infiniburn",
                                                         NBT::String(
@@ -202,7 +173,7 @@ impl ClientLogin {
                                             entry_id: "minecraft:woods".to_string(),
                                             data: Some(nbt_compound![
                                                 "angry_texture" => NBT::String("minecraft:entity/wolf/wolf_woods_angry".to_string()),
-                                                "biomes" => NBT::String("minecraft:the_void".to_string()), // minecraft:forest
+                                                "biomes" => NBT::String("minecraft:forest".to_string()),
                                                 "tame_texture" => NBT::String("minecraft:entity/wolf/wolf_woods_tame".to_string()),
                                                 "wild_texture" => NBT::String("minecraft:entity/wolf/wolf_woods".to_string()),
                                             ]),
@@ -214,6 +185,7 @@ impl ClientLogin {
                                 packet::login::LoginConfigurationRegistryData {
                                     registry_id: "minecraft:worldgen/biome".to_string(),
                                     entries: [
+                                        "pkmc:test",
                                         "minecraft:badlands",
                                         "minecraft:bamboo_jungle",
                                         "minecraft:basalt_deltas",
@@ -366,15 +338,12 @@ impl ClientLogin {
                                 },
                             )?;
                         }
-                        _ => {
-                            return Err(anyhow!(
-                            "Recieved unknown packet {} on LoginPlayer with Configuration state",
-                            id
-                        ))
+                        ClientLoginConfigurationPacket::Finish(_) => {
+                            self.state = ClientLoginState::Play;
                         }
                     }
                 }
-                ClientLoginState::Play => panic!(),
+                ClientLoginState::Play => unreachable!(),
             }
         }
 

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use std::io::Write;
 
-use crate::uuid::UUID;
+use crate::{nbt::NBT, uuid::UUID};
 
-use super::Position;
+use super::{BitSet, Position};
 
 pub fn write_varint(mut writer: impl Write, value: i32) -> Result<()> {
     let mut value = unsafe { std::mem::transmute::<i32, u32>(value) };
@@ -55,6 +55,11 @@ impl<D: Write> PacketWriter<D> {
         Ok(())
     }
 
+    pub fn write_short(&mut self, value: i16) -> Result<()> {
+        self.write_buf(&value.to_be_bytes())?;
+        Ok(())
+    }
+
     pub fn write_int(&mut self, value: i32) -> Result<()> {
         self.write_buf(&value.to_be_bytes())?;
         Ok(())
@@ -76,7 +81,7 @@ impl<D: Write> PacketWriter<D> {
     }
 
     pub fn write_var_int(&mut self, value: i32) -> Result<()> {
-        Ok(write_varint(&mut self.data, value)?)
+        write_varint(&mut self.data, value)
     }
 
     pub fn write_string(&mut self, str: &str) -> Result<()> {
@@ -101,6 +106,20 @@ impl<D: Write> PacketWriter<D> {
         let z = unsafe { std::mem::transmute::<i32, u32>(position.z) } as u64;
         let v: u64 = ((x & 0x3FFFFFF) << 38) | ((z & 0x3FFFFFF) << 12) | (y & 0xFFF);
         self.write_buf(&v.to_be_bytes())?;
+        Ok(())
+    }
+
+    pub fn write_bitset(&mut self, bitset: &BitSet) -> Result<()> {
+        self.write_var_int(bitset.num_longs() as i32)?;
+        bitset
+            .longs_iter()
+            .map(|l| self.write_buf(&l.to_be_bytes()))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(())
+    }
+
+    pub fn write_nbt(&mut self, nbt: &NBT) -> Result<()> {
+        self.write_buf(&nbt.to_bytes_network()?)?;
         Ok(())
     }
 }

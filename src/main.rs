@@ -52,6 +52,9 @@ fn main() -> Result<()> {
         } else {
             None
         },
+        world_main_name: "pkmc:test".to_owned(),
+        world_min_y: 0,
+        world_max_y: 16,
     };
 
     let mut server = Server::new(config.address, state)?;

@@ -1,7 +1,9 @@
 use anyhow::Result;
 use serde::Serialize;
 
-use super::{reader::PacketReader, writer::PacketWriter, Packet};
+use crate::connection::{ClientboundPacket, ServerboundPacket};
+
+use super::{reader::PacketReader, writer::PacketWriter};
 
 pub struct Handshake {
     pub protocol_version: i32,
@@ -10,8 +12,8 @@ pub struct Handshake {
     pub next_state: i32,
 }
 
-impl Packet for Handshake {
-    const ID: i32 = 0;
+impl ServerboundPacket for Handshake {
+    const SERVERBOUND_ID: i32 = 0x00;
 
     fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
     where
@@ -28,8 +30,8 @@ impl Packet for Handshake {
 
 pub struct StatusRequest;
 
-impl Packet for StatusRequest {
-    const ID: i32 = 0;
+impl ServerboundPacket for StatusRequest {
+    const SERVERBOUND_ID: i32 = 0x00;
 
     fn packet_read(_reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
     where
@@ -73,8 +75,8 @@ pub struct StatusResponse {
     pub enforces_secure_chat: bool,
 }
 
-impl Packet for StatusResponse {
-    const ID: i32 = 0;
+impl ClientboundPacket for StatusResponse {
+    const CLIENTBOUND_ID: i32 = 0x00;
 
     fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
         writer.write_string(&serde_json::to_string(self)?)?;
@@ -86,8 +88,8 @@ pub struct Ping {
     pub payload: i64,
 }
 
-impl Packet for Ping {
-    const ID: i32 = 1;
+impl ServerboundPacket for Ping {
+    const SERVERBOUND_ID: i32 = 0x01;
 
     fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
     where
@@ -97,6 +99,10 @@ impl Packet for Ping {
             payload: reader.read_long()?,
         })
     }
+}
+
+impl ClientboundPacket for Ping {
+    const CLIENTBOUND_ID: i32 = 0x01;
 
     fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
         writer.write_long(self.payload)?;

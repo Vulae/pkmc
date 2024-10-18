@@ -79,6 +79,14 @@ impl<D: Read> PacketReader<D> {
         Ok(i64::from_be_bytes(self.read_buf()?))
     }
 
+    pub fn read_float(&mut self) -> Result<f32> {
+        Ok(f32::from_be_bytes(self.read_buf()?))
+    }
+
+    pub fn read_double(&mut self) -> Result<f64> {
+        Ok(f64::from_be_bytes(self.read_buf()?))
+    }
+
     pub fn read_var_int(&mut self) -> Result<i32> {
         Ok(read_varint(&mut self.data)?)
     }

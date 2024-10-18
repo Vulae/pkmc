@@ -84,19 +84,17 @@ impl ClientLogin {
                                     version: "1.21".to_string(),
                                 }],
                             })?;
+                        self.connection.send(
+                            packet::login::LoginConfigurationPluginMessage::Brand(
+                                "Vulae/pkmc".to_owned(),
+                            ),
+                        )?;
                     }
                 },
                 ClientLoginState::Configuration => {
                     self.last_recv_configuration_time = Instant::now();
                     match ClientLoginConfigurationPacket::try_from(raw_packet)? {
-                        ClientLoginConfigurationPacket::ClientInformation(_) => {
-                            //// FIXME: Broken?
-                            //self.connection.send(
-                            //    packet::login::LoginConfigurationPluginMessage::Brand(
-                            //        "Vulae/pkmc".to_owned(),
-                            //    ),
-                            //)?;
-                        }
+                        ClientLoginConfigurationPacket::ClientInformation(_) => {}
                         ClientLoginConfigurationPacket::PluginMessage(_) => {}
                         ClientLoginConfigurationPacket::KnownPacks(_) => {
                             let server_state = self.server_state.lock().unwrap();

@@ -6,7 +6,7 @@ use crate::{
     uuid::UUID,
 };
 
-use super::reader::PacketReader;
+use super::{reader::PacketReader, writer::PacketWriter};
 
 #[derive(Debug)]
 pub struct LoginStart {
@@ -47,7 +47,7 @@ pub struct LoginSuccess {
 impl ClientboundPacket for LoginSuccess {
     const CLIENTBOUND_ID: i32 = 0x02;
 
-    fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
         writer.write_uuid(&self.uuid)?;
         writer.write_string(&self.name)?;
         writer.write_var_int(self.properties.len() as i32)?;
@@ -94,12 +94,14 @@ impl ServerboundPacket for LoginConfigurationPluginMessage {
         Self: Sized,
     {
         let channel = reader.read_string()?;
-        let data = reader.read_vec_to_end()?;
         match channel.as_ref() {
-            "minecraft:brand" => Ok(LoginConfigurationPluginMessage::Brand(String::from_utf8(
-                data.to_vec(),
-            )?)),
-            _ => Ok(LoginConfigurationPluginMessage::Unknown { channel, data }),
+            "minecraft:brand" => Ok(LoginConfigurationPluginMessage::Brand(
+                reader.read_string()?,
+            )),
+            _ => Ok(LoginConfigurationPluginMessage::Unknown {
+                channel,
+                data: reader.read_vec_to_end()?,
+            }),
         }
     }
 }
@@ -107,7 +109,7 @@ impl ServerboundPacket for LoginConfigurationPluginMessage {
 impl ClientboundPacket for LoginConfigurationPluginMessage {
     const CLIENTBOUND_ID: i32 = 0x01;
 
-    fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
         match self {
             LoginConfigurationPluginMessage::Unknown { channel, data } => {
                 writer.write_string(channel)?;
@@ -115,7 +117,7 @@ impl ClientboundPacket for LoginConfigurationPluginMessage {
             }
             LoginConfigurationPluginMessage::Brand(brand) => {
                 writer.write_string("minecraft:brand")?;
-                writer.write_buf(brand.as_bytes())?;
+                writer.write_string(brand)?;
             }
         }
         Ok(())
@@ -170,7 +172,7 @@ pub struct LoginConfigurationKnownPacks {
 impl ClientboundPacket for LoginConfigurationKnownPacks {
     const CLIENTBOUND_ID: i32 = 0x0E;
 
-    fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
         writer.write_var_int(self.packs.len() as i32)?;
         for pack in self.packs.iter() {
             writer.write_string(&pack.namespace)?;
@@ -217,7 +219,7 @@ pub struct LoginConfigurationRegistryData {
 impl ClientboundPacket for LoginConfigurationRegistryData {
     const CLIENTBOUND_ID: i32 = 0x07;
 
-    fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
         writer.write_string(&self.registry_id)?;
         writer.write_var_int(self.entries.len() as i32)?;
         for entry in self.entries.iter() {
@@ -239,7 +241,7 @@ pub struct LoginConfigurationFinish;
 impl ClientboundPacket for LoginConfigurationFinish {
     const CLIENTBOUND_ID: i32 = 0x03;
 
-    fn packet_write(&self, _writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, _writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
         Ok(())
     }
 }

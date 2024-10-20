@@ -307,3 +307,19 @@ impl ClientboundPacket for ChunkDataAndUpdateLight {
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub struct UnloadChunk {
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+}
+
+impl ClientboundPacket for UnloadChunk {
+    const CLIENTBOUND_ID: i32 = 0x21;
+
+    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
+        writer.write_int(self.chunk_x)?;
+        writer.write_int(self.chunk_z)?;
+        Ok(())
+    }
+}

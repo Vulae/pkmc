@@ -6,6 +6,7 @@ pub mod nbt;
 pub mod packet;
 pub mod server;
 pub mod server_state;
+pub mod util;
 pub mod uuid;
 
 use std::path::{Path, PathBuf};

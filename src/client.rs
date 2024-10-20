@@ -4,8 +4,15 @@ use std::{
 };
 
 use crate::{
-    client_login::ClientLogin, connection::Connection, create_packet_enum, packet,
-    server_state::ServerState, uuid::UUID,
+    client_login::ClientLogin,
+    connection::Connection,
+    create_packet_enum,
+    nbt::NBT,
+    nbt_compound,
+    packet::{self, to_paletted_container, writer::PacketWriter, BitSet, Paletteable},
+    server_state::ServerState,
+    util::VecExt,
+    uuid::UUID,
 };
 use anyhow::{anyhow, Result};
 use rand::{thread_rng, Rng};
@@ -19,6 +26,89 @@ create_packet_enum!(ClientPlayPacket;
 );
 
 const KEEPALIVE_PING_TIME: Duration = Duration::from_millis(10000);
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+struct ChunkPosition {
+    chunk_x: i32,
+    chunk_z: i32,
+}
+
+#[derive(Debug)]
+struct ChunkLoader {
+    center: Option<ChunkPosition>,
+    radius: f64,
+    to_load: Vec<ChunkPosition>,
+    loaded: Vec<ChunkPosition>,
+    to_unload: Vec<ChunkPosition>,
+}
+
+impl ChunkLoader {
+    pub fn new(radius: f64) -> Self {
+        Self {
+            center: None,
+            radius,
+            to_load: Vec::new(),
+            loaded: Vec::new(),
+            to_unload: Vec::new(),
+        }
+    }
+
+    /// Returns if updated center is new.
+    pub fn update_center(&mut self, center: ChunkPosition) -> bool {
+        if let Some(old_center) = self.center {
+            if old_center == center {
+                return false;
+            }
+        }
+
+        let contains = |position: &ChunkPosition| -> bool {
+            (((center.chunk_x - position.chunk_x).pow(2)
+                + (center.chunk_z - position.chunk_z).pow(2)) as f64)
+                .sqrt()
+                <= self.radius
+        };
+
+        // Unload outside chunks
+        self.to_unload
+            .append(&mut self.to_load.retain_returned(contains));
+        self.to_unload
+            .append(&mut self.loaded.retain_returned(contains));
+
+        // Load new chunks in radius
+        for dx in -(self.radius.floor() as i32)..=(self.radius.ceil() as i32) {
+            for dz in -(self.radius.floor() as i32)..=(self.radius.ceil() as i32) {
+                let position = ChunkPosition {
+                    chunk_x: center.chunk_x + dx,
+                    chunk_z: center.chunk_z + dz,
+                };
+                if !contains(&position) {
+                    continue;
+                }
+                if self.to_load.contains(&position) || self.loaded.contains(&position) {
+                    continue;
+                }
+                self.to_load.push(position);
+            }
+        }
+
+        self.center = Some(center);
+
+        true
+    }
+
+    pub fn next_to_load(&mut self) -> Option<ChunkPosition> {
+        if let Some(next) = self.to_load.pop() {
+            self.loaded.push(next);
+            Some(next)
+        } else {
+            None
+        }
+    }
+
+    pub fn next_to_unload(&mut self) -> Option<ChunkPosition> {
+        self.to_unload.pop()
+    }
+}
 
 #[derive(Debug)]
 pub struct Client {
@@ -35,6 +125,7 @@ pub struct Client {
     yaw: f32,
     pitch: f32,
     on_ground: bool,
+    chunk_loader: ChunkLoader,
 }
 
 impl Client {
@@ -64,6 +155,7 @@ impl Client {
             yaw: 0.0,
             pitch: 0.0,
             on_ground: false,
+            chunk_loader: ChunkLoader::new(16.0),
         };
 
         {
@@ -193,6 +285,69 @@ impl Client {
                 }
             }
         }
+
+        let chunk_position = ChunkPosition {
+            chunk_x: (self.x as i32) / 16,
+            chunk_z: (self.z as i32) / 16,
+        };
+        if self.chunk_loader.update_center(chunk_position) {
+            self.connection.send(packet::play::SetCenterChunk {
+                chunk_x: chunk_position.chunk_x,
+                chunk_z: chunk_position.chunk_z,
+            })?;
+
+            while let Some(to_unload) = self.chunk_loader.next_to_unload() {
+                println!("UNLOAD: {:?}", to_unload);
+                self.connection.send(packet::play::UnloadChunk {
+                    chunk_x: to_unload.chunk_x,
+                    chunk_z: to_unload.chunk_z,
+                })?;
+            }
+
+            let server_state = self.server_state.lock().unwrap();
+            let world_height: usize =
+                (server_state.world_max_y - server_state.world_min_y).try_into()?;
+            if world_height % 16 != 0 {
+                panic!("Invalid world height.");
+            }
+            let num_sections = world_height / 16;
+
+            while let Some(to_load) = self.chunk_loader.next_to_load() {
+                println!("LOAD: {:?}", to_load);
+                self.connection
+                    .send(packet::play::ChunkDataAndUpdateLight {
+                        chunk_x: to_load.chunk_x,
+                        chunk_z: to_load.chunk_z,
+                        heightmaps: nbt_compound!(),
+                        data: {
+                            let mut writer = PacketWriter::new_empty();
+
+                            impl Paletteable for u8 {
+                                fn palette_value(&self) -> Result<i32> {
+                                    Ok(*self as i32)
+                                }
+                            }
+
+                            for _ in 0..num_sections {
+                                writer.write_short(0)?;
+                                writer.write_buf(&to_paletted_container(&[0u8; 4096], 7)?)?;
+                                writer.write_buf(&to_paletted_container(&[0u8; 64], 4)?)?;
+                            }
+
+                            writer.into_inner().into_boxed_slice()
+                        },
+                        block_entities: Vec::new(),
+                        // Empty lighting data for now.
+                        sky_light_mask: BitSet::new(num_sections + 2),
+                        block_light_mask: BitSet::new(num_sections + 2),
+                        empty_sky_light_mask: BitSet::new(num_sections + 2),
+                        empty_block_light_mask: BitSet::new(num_sections + 2),
+                        sky_lights_arrays: Vec::new(),
+                        block_lights_arrays: Vec::new(),
+                    })?;
+            }
+        }
+
         Ok(())
     }
 }

@@ -12,8 +12,23 @@ This was originally built to be fully single-threaded, but that *may* change in 
 
 - [X] [Server list ping](https://wiki.vg/Server_List_Ping)
 - [X] Configuration file
+- [ ] Console interface for server
+
+- [ ] Registry & tag data
+- [ ] Server resource pack
+- [ ] World loading
+- [ ] Chat messages & basic commands
+- [ ] Display players
+- [ ] Entities
+- [ ] World interactions
+
+- [ ] Plugins via WASM
+
 - [ ] Online mode
-- [ ] World joining
 - [ ] Packet compression
-- [ ] Console commands
+
+## [License](#license)
+
+`[MIT License](./LICENSE)`
+License is very likely change to MIT-0 or 0BSD in the future, if I feel like it.
 

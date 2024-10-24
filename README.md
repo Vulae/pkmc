@@ -29,6 +29,6 @@ This was originally built to be fully single-threaded, but that *may* change in 
 
 ## [License](#license)
 
-`[MIT License](./LICENSE)`
+[`MIT License`](./LICENSE)
 License is very likely change to MIT-0 or 0BSD in the future, if I feel like it.
 

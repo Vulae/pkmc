@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use pkmc_packet::Connection;
 use std::{
     net::{SocketAddr, TcpListener, ToSocketAddrs},
     sync::{Arc, Mutex},
@@ -8,7 +9,6 @@ use crate::{
     client::Client,
     client_handshake::{ClientHandshake, ClientHandshakeState},
     client_login::{ClientLogin, ClientLoginState},
-    connection::Connection,
     server_state::ServerState,
 };
 

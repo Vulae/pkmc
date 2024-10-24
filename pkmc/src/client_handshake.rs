@@ -1,7 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use crate::{connection::Connection, create_packet_enum, packet, server_state::ServerState};
 use anyhow::{anyhow, Result};
+use pkmc_defs::packet;
+use pkmc_packet::{create_packet_enum, Connection};
+
+use crate::server_state::ServerState;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ClientHandshakeState {
@@ -27,12 +30,12 @@ impl TryFrom<i32> for ClientHandshakeState {
 }
 
 create_packet_enum!(ClientHandshakeWaitingPacket;
-    packet::server_list::Handshake, Handshake;
+    packet::handshake::Handshake, Handshake;
 );
 
 create_packet_enum!(ClientHandshakeStatusPacket;
-    packet::server_list::StatusRequest, StatusRequest;
-    packet::server_list::Ping, Ping;
+    packet::handshake::StatusRequest, StatusRequest;
+    packet::handshake::Ping, Ping;
 );
 
 #[derive(Debug)]
@@ -74,18 +77,18 @@ impl ClientHandshake {
                     match ClientHandshakeStatusPacket::try_from(raw_packet)? {
                         ClientHandshakeStatusPacket::StatusRequest(_) => {
                             let server_state = self.server_state.lock().unwrap();
-                            self.connection.send(packet::server_list::StatusResponse {
-                                version: packet::server_list::StatusResponseVersion {
+                            self.connection.send(packet::handshake::StatusResponse {
+                                version: packet::handshake::StatusResponseVersion {
                                     name: "1.21.1".to_owned(),
                                     protocol: 767,
                                 },
-                                players: Some(packet::server_list::StatusResponsePlayers {
+                                players: Some(packet::handshake::StatusResponsePlayers {
                                     online: 0,
                                     max: 20,
                                     sample: Vec::new(),
                                 }),
                                 description: server_state.server_list_text.as_ref().map(|text| {
-                                    packet::server_list::StatusResponseDescription {
+                                    packet::handshake::StatusResponseDescription {
                                         text: text.to_owned(),
                                     }
                                 }),

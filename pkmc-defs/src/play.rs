@@ -1,10 +1,9 @@
-use crate::{
-    connection::{ClientboundPacket, ServerboundPacket},
-    nbt::NBT,
-};
-
-use super::{reader::PacketReader, writer::PacketWriter, BitSet, Position};
 use anyhow::Result;
+use pkmc_nbt::NBT;
+use pkmc_packet::{
+    connection::{ClientboundPacket, ServerboundPacket},
+    BitSet, PacketReader, PacketWriter, Position,
+};
 
 pub struct LoginPlay {
     pub entity_id: i32,
@@ -31,7 +30,7 @@ pub struct LoginPlay {
 impl ClientboundPacket for LoginPlay {
     const CLIENTBOUND_ID: i32 = 0x2B;
 
-    fn packet_write(&self, writer: &mut super::writer::PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
         writer.write_int(self.entity_id)?;
         writer.write_boolean(self.is_hardcore)?;
         writer.write_var_int(self.dimensions.len() as i32)?;

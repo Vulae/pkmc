@@ -3,19 +3,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{
-    client_login::ClientLogin,
-    connection::Connection,
-    create_packet_enum,
-    nbt::NBT,
-    nbt_compound,
-    packet::{self, to_paletted_container, writer::PacketWriter, BitSet, Paletteable},
-    server_state::ServerState,
-    util::VecExt,
-    uuid::UUID,
-};
 use anyhow::{anyhow, Result};
+use pkmc_defs::packet;
+use pkmc_nbt::nbt_compound;
+use pkmc_packet::{
+    create_packet_enum, to_paletted_container, BitSet, Connection, PacketWriter, Paletteable,
+};
+use pkmc_util::{VecExt as _, UUID};
 use rand::{thread_rng, Rng};
+
+use crate::{client_login::ClientLogin, server_state::ServerState};
 
 create_packet_enum!(ClientPlayPacket;
     packet::play::KeepAlive, KeepAlive;
@@ -322,16 +319,19 @@ impl Client {
                         data: {
                             let mut writer = PacketWriter::new_empty();
 
-                            impl Paletteable for u8 {
+                            #[derive(Eq, PartialEq, Hash, Clone, Copy)]
+                            struct Air;
+                            impl Paletteable for Air {
                                 fn palette_value(&self) -> Result<i32> {
-                                    Ok(*self as i32)
+                                    Ok(0)
                                 }
                             }
 
                             for _ in 0..num_sections {
                                 writer.write_short(0)?;
-                                writer.write_buf(&to_paletted_container(&[0u8; 4096], 7)?)?;
-                                writer.write_buf(&to_paletted_container(&[0u8; 64], 4)?)?;
+                                writer.write_buf(&to_paletted_container(&[Air; 4096], 4, 8)?)?;
+                                // Biome??
+                                writer.write_buf(&to_paletted_container(&[Air; 64], 1, 3)?)?;
                             }
 
                             writer.into_inner().into_boxed_slice()

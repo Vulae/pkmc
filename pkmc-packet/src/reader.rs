@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
+use pkmc_util::UUID;
 use std::io::Read;
-
-use crate::uuid::UUID;
 
 pub fn read_varint_ret_bytes(mut reader: impl Read) -> std::io::Result<(usize, i32)> {
     let mut bytes = 0;

@@ -1,13 +1,15 @@
-[package]
-name = "pkmc"
-description = "Yet another Rust Minecraft server implementation"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
+members = [
+    "pkmc-packet",
+    "pkmc-nbt",
+    "pkmc-defs",
+    "pkmc-util",
+    "pkmc/",
+]
+package.version = "0.1.0"
+package.edition = "2021"
 
-[dependencies]
-anyhow = "1.0.89"
-base64 = "0.22.1"
-rand = "0.8.5"
-serde = { version = "1.0.210", features = ["derive"] }
-serde_json = "1.0.128"
-toml = "0.8.19"
+[workspace.dependencies]
+# TODO: Not this for everything.
+anyhow = "1.0.91"

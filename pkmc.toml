@@ -1,5 +1,6 @@
 # address = "127.0.0.1:52817"
 address = "[::1]:52817"
+brand = "Vulae/pkmc"
 
 [server-list]
 text = "https://github.com/Vulae/pkmc"

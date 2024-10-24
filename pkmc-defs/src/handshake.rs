@@ -1,9 +1,9 @@
 use anyhow::Result;
+use pkmc_packet::{
+    connection::{ClientboundPacket, ServerboundPacket},
+    PacketReader, PacketWriter,
+};
 use serde::Serialize;
-
-use crate::connection::{ClientboundPacket, ServerboundPacket};
-
-use super::{reader::PacketReader, writer::PacketWriter};
 
 pub struct Handshake {
     pub protocol_version: i32,

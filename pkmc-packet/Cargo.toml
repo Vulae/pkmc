@@ -1,0 +1,9 @@
+[package]
+name = "pkmc-packet"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pkmc-util = { path = "../pkmc-util" }
+pkmc-nbt = { path = "../pkmc-nbt" }
+anyhow.workspace = true

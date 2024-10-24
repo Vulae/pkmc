@@ -1,14 +1,15 @@
 use anyhow::Result;
+use pkmc_defs::packet;
+use pkmc_nbt::{nbt_compound, NBT};
+use pkmc_packet::{create_packet_enum, Connection};
+use pkmc_util::UUID;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-use crate::{
-    connection::Connection, create_packet_enum, nbt::NBT, nbt_compound, packet,
-    server_state::ServerState, uuid::UUID,
-};
+use crate::server_state::ServerState;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ClientLoginState {
@@ -84,9 +85,10 @@ impl ClientLogin {
                                     version: "1.21".to_string(),
                                 }],
                             })?;
+                        let server_state = self.server_state.lock().unwrap();
                         self.connection.send(
                             packet::login::LoginConfigurationPluginMessage::Brand(
-                                "Vulae/pkmc".to_owned(),
+                                server_state.server_brand.clone(),
                             ),
                         )?;
                     }

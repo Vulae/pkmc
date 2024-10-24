@@ -5,9 +5,9 @@ use std::{
     net::TcpStream,
 };
 
-use crate::packet::{
-    reader::{read_varint_ret_bytes, try_read_varint_ret_bytes, PacketReader},
-    writer::PacketWriter,
+use crate::{
+    reader::{read_varint_ret_bytes, try_read_varint_ret_bytes},
+    PacketReader, PacketWriter,
 };
 
 pub trait ServerboundPacket {

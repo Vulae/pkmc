@@ -1,13 +1,8 @@
 pub mod client;
 pub mod client_handshake;
 pub mod client_login;
-pub mod connection;
-pub mod nbt;
-pub mod packet;
 pub mod server;
 pub mod server_state;
-pub mod util;
-pub mod uuid;
 
 use std::path::{Path, PathBuf};
 
@@ -27,10 +22,16 @@ fn config_default_address() -> String {
     "127.0.0.1:25565".to_owned()
 }
 
+fn config_default_brand() -> String {
+    "Vulae/pkmc".to_owned()
+}
+
 #[derive(Debug, Deserialize)]
 struct Config {
     #[serde(default = "config_default_address")]
     address: String,
+    #[serde(default = "config_default_brand")]
+    brand: String,
     #[serde(default, rename = "server-list")]
     server_list: ConfigServerList,
 }
@@ -45,6 +46,7 @@ fn main() -> Result<()> {
     let config = Config::load("pkmc.toml")?;
 
     let state = ServerState {
+        server_brand: config.brand,
         server_list_text: config.server_list.text,
         server_list_icon: if let Some(icon_path) = config.server_list.icon {
             let file = std::fs::read(icon_path)?;

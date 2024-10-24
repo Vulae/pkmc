@@ -1,7 +1,7 @@
 use anyhow::Result;
+use pkmc_nbt::NBT;
+use pkmc_util::UUID;
 use std::io::Write;
-
-use crate::{nbt::NBT, uuid::UUID};
 
 use super::{BitSet, Position};
 

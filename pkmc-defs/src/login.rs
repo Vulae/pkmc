@@ -1,12 +1,10 @@
 use anyhow::Result;
-
-use crate::{
+use pkmc_nbt::NBT;
+use pkmc_packet::{
     connection::{ClientboundPacket, ServerboundPacket},
-    nbt::NBT,
-    uuid::UUID,
+    PacketReader, PacketWriter,
 };
-
-use super::{reader::PacketReader, writer::PacketWriter};
+use pkmc_util::UUID;
 
 #[derive(Debug)]
 pub struct LoginStart {

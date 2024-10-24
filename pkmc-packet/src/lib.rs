@@ -1,13 +1,14 @@
-pub mod login;
-pub mod play;
+pub mod connection;
 pub mod reader;
-pub mod server_list;
 pub mod writer;
+
+pub use connection::Connection;
+pub use reader::PacketReader;
+pub use writer::PacketWriter;
 
 use std::{collections::HashMap, hash::Hash};
 
 use anyhow::Result;
-use writer::PacketWriter;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Position {
@@ -54,8 +55,12 @@ pub trait Paletteable: Hash + Eq {
     fn palette_value(&self) -> Result<i32>;
 }
 
-pub fn to_paletted_container<T: Paletteable>(values: &[T], direct_bpe: u8) -> Result<Box<[u8]>> {
-    let mut palette = HashMap::new();
+pub fn to_paletted_container<T: Paletteable>(
+    values: &[T],
+    min_direct_bpe: u8,
+    max_direct_bpe: u8,
+) -> Result<Box<[u8]>> {
+    let mut palette: HashMap<&T, usize> = HashMap::new();
     values.iter().fold(0, |index, value| {
         if palette.contains_key(value) {
             index
@@ -71,19 +76,27 @@ pub fn to_paletted_container<T: Paletteable>(values: &[T], direct_bpe: u8) -> Re
     let bpe: u8 = match palette.len() {
         0 => panic!(),
         1 => 0,
-        entry_count => (usize::BITS - entry_count.leading_zeros()).try_into()?,
+        entry_count => {
+            TryInto::<u8>::try_into(usize::BITS - entry_count.leading_zeros())?.max(min_direct_bpe)
+        }
     };
 
+    writer.write_unsigned_byte(bpe)?;
+
     if bpe == 0 {
-        writer.write_unsigned_byte(0)?;
+        // Single valued (Every entry is same)
         writer.write_var_int(values[0].palette_value()?)?;
-        writer.write_var_int(0)?;
-    } else if bpe < direct_bpe {
-        // Indirect (Every entry is index into values)
+        writer.write_var_int(0)?; // Indices array is always empty on single valued
+    } else if bpe <= max_direct_bpe {
         unimplemented!()
+        // Indirect (Every entry is index into values)
+        //writer.write_var_int(palette.len() as usize)?;
+        //for value in values.iter() {}
     } else {
         // Direct (Every entry is from values, not indexed)
-        unimplemented!()
+        for value in values.iter() {
+            writer.write_var_int(value.palette_value()?)?;
+        }
     }
 
     Ok(writer.into_inner().into_boxed_slice())

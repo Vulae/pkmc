@@ -1,0 +1,16 @@
+[package]
+name = "pkmc"
+description = "Yet another Rust Minecraft server implementation"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pkmc-packet = { path = "../pkmc-packet" }
+pkmc-nbt = { path = "../pkmc-nbt" }
+pkmc-defs = { path = "../pkmc-defs" }
+pkmc-util = { path = "../pkmc-util" }
+anyhow.workspace = true
+base64 = "0.22.1"
+rand = "0.8.5"
+serde = { version = "1.0.213", features = ["derive"] }
+toml = "0.8.19"

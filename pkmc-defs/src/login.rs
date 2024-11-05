@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use pkmc_nbt::NBT;
 use pkmc_packet::{
@@ -229,6 +231,35 @@ impl ClientboundPacket for LoginConfigurationRegistryData {
                 writer.write_boolean(false)?;
             }
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct LoginConfigurationUpdateTags {
+    registries: HashMap<String, HashMap<String, Vec<i32>>>,
+}
+
+impl ClientboundPacket for LoginConfigurationUpdateTags {
+    const CLIENTBOUND_ID: i32 = 0x0D;
+
+    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
+        writer.write_var_int(self.registries.len() as i32)?;
+        self.registries
+            .iter()
+            .try_for_each(|(registry_name, registry_data)| {
+                writer.write_string(registry_name)?;
+                writer.write_var_int(registry_data.len() as i32)?;
+                registry_data.iter().try_for_each(|(tag_name, tag_ids)| {
+                    writer.write_string(tag_name)?;
+                    writer.write_var_int(tag_ids.len() as i32)?;
+                    tag_ids
+                        .iter()
+                        .try_for_each(|id| writer.write_var_int(*id))?;
+                    Ok::<(), anyhow::Error>(())
+                })?;
+                Ok::<(), anyhow::Error>(())
+            })?;
         Ok(())
     }
 }

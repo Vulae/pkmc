@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Deserialize, Serialize)]
 pub struct BannerPattern {
@@ -34,11 +34,16 @@ pub struct DamageType {
 #[derive(Deserialize, Serialize)]
 pub struct DimensionType {
     pub fixed_time: Option<i64>,
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     pub has_skylight: bool,
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     pub has_ceiling: bool,
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     pub ultrawarm: bool,
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     pub natural: bool,
     pub coordinate_scale: f64,
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     pub bed_works: bool,
     pub respawn_anchor_works: bool,
     pub min_y: i32,
@@ -47,7 +52,9 @@ pub struct DimensionType {
     pub infiniburn: String,
     pub effects: String,
     pub ambient_light: f32,
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     pub piglin_safe: bool,
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     pub has_raids: bool,
     // TODO: please implement: https://wiki.vg/Registry_Data#Dimension_Type
     //pub monster_spawn_light_level: _,
@@ -82,6 +89,7 @@ pub struct TrimPattern {
     pub template_item: String,
     // TODO: implement: https://wiki.vg/Text_formatting
     //pub description: _,
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     pub decal: bool,
 }
 
@@ -119,6 +127,7 @@ pub struct WorldgenBiomeEffectsMusic {
     sound: String,
     min_delay: i32,
     max_delay: i32,
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     replace_current_music: bool,
 }
 
@@ -140,6 +149,7 @@ pub struct WorldgenBiomeEffects {
 
 #[derive(Deserialize, Serialize)]
 pub struct WorldgenBiome {
+    #[serde(deserialize_with = "bool_from_num", serialize_with = "bool_to_num")]
     has_precipitation: bool,
     temperature: f32,
     temperature_modifier: Option<String>,
@@ -167,4 +177,28 @@ pub struct Registry {
     minecraft_wolf_variant: HashMap<String, WolfVariant>,
     #[serde(rename = "minecraft:worldgen/biome")]
     minecraft_worldgen_biome: HashMap<String, WorldgenBiome>,
+}
+
+fn bool_from_num<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match u8::deserialize(deserializer)? {
+        0 => Ok(false),
+        1 => Ok(true),
+        other => Err(serde::de::Error::invalid_value(
+            serde::de::Unexpected::Unsigned(other as u64),
+            &"zero or one",
+        )),
+    }
+}
+
+fn bool_to_num<S>(value: &bool, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match *value {
+        false => serializer.serialize_u8(0),
+        true => serializer.serialize_u8(1),
+    }
 }

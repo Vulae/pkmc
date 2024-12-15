@@ -1,8 +1,8 @@
 use anyhow::Result;
-use pkmc_nbt::NBT;
+use pkmc_nbt::{nbt_compound, NBT};
 use pkmc_packet::{
     connection::{ClientboundPacket, ServerboundPacket},
-    BitSet, PacketReader, PacketWriter, Position,
+    to_paletted_container, BitSet, PacketReader, PacketWriter, Paletteable, Position,
 };
 
 pub struct LoginPlay {
@@ -280,6 +280,99 @@ pub struct ChunkDataAndUpdateLight {
     pub block_lights_arrays: Vec<Vec<Vec<u8>>>,
 }
 
+impl ChunkDataAndUpdateLight {
+    pub fn generate_test(chunk_x: i32, chunk_z: i32, num_sections: usize) -> Result<Self> {
+        Ok(Self {
+            chunk_x,
+            chunk_z,
+            heightmaps: nbt_compound!(),
+            data: {
+                let mut writer = PacketWriter::new_empty();
+
+                #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
+                struct Air;
+                impl Paletteable for Air {
+                    fn palette_value(&self) -> Result<i32> {
+                        Ok(0)
+                    }
+                }
+                #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
+                struct Stone;
+                impl Paletteable for Stone {
+                    fn palette_value(&self) -> Result<i32> {
+                        Ok(1)
+                    }
+                }
+                struct Section {
+                    data: Box<[i32; 4096]>,
+                    air: Box<[bool; 4096]>,
+                }
+                #[allow(dead_code)]
+                impl Section {
+                    pub fn new_empty() -> Result<Self> {
+                        Ok(Self {
+                            data: vec![Air.palette_value()?; 4096]
+                                .into_boxed_slice()
+                                .try_into()
+                                .unwrap(),
+                            air: vec![true; 4096].into_boxed_slice().try_into().unwrap(),
+                        })
+                    }
+
+                    pub fn fill<B: Paletteable>(&mut self, block: B, air: bool) -> Result<()> {
+                        self.data.fill(block.palette_value()?);
+                        self.air.fill(air);
+                        Ok(())
+                    }
+
+                    pub fn set<B: Paletteable>(
+                        &mut self,
+                        x: u8,
+                        y: u8,
+                        z: u8,
+                        block: B,
+                        air: bool,
+                    ) -> Result<()> {
+                        let ind = (((y as usize * 16) + z as usize) * 16) + x as usize;
+                        self.data[ind] = block.palette_value()?;
+                        self.air[ind] = air;
+                        Ok(())
+                    }
+
+                    pub fn write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
+                        writer.write_short(self.air.iter().filter(|v| !*v).count() as i16)?;
+                        writer.write_buf(&to_paletted_container(
+                            // ????
+                            &self.data.to_vec(),
+                            4,
+                            8,
+                        )?)?;
+                        Ok(())
+                    }
+                }
+
+                for _ in 0..num_sections {
+                    let mut section = Section::new_empty()?;
+                    section.fill(Stone, false)?;
+                    section.write(&mut writer)?;
+                    // Biome??
+                    writer.write_buf(&to_paletted_container(&[Air; 64], 1, 3)?)?;
+                }
+
+                writer.into_inner().into_boxed_slice()
+            },
+            block_entities: Vec::new(),
+            // Empty lighting data for now.
+            sky_light_mask: BitSet::new(num_sections + 2),
+            block_light_mask: BitSet::new(num_sections + 2),
+            empty_sky_light_mask: BitSet::new(num_sections + 2),
+            empty_block_light_mask: BitSet::new(num_sections + 2),
+            sky_lights_arrays: Vec::new(),
+            block_lights_arrays: Vec::new(),
+        })
+    }
+}
+
 impl ClientboundPacket for ChunkDataAndUpdateLight {
     const CLIENTBOUND_ID: i32 = 0x27;
 
@@ -317,8 +410,26 @@ impl ClientboundPacket for UnloadChunk {
     const CLIENTBOUND_ID: i32 = 0x21;
 
     fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_int(self.chunk_x)?;
         writer.write_int(self.chunk_z)?;
+        writer.write_int(self.chunk_x)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct PlayerAbilities {
+    pub flags: u8,
+    pub flying_speed: f32,
+    pub field_of_view_modifier: f32,
+}
+
+impl ClientboundPacket for PlayerAbilities {
+    const CLIENTBOUND_ID: i32 = 0x38;
+
+    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
+        writer.write_unsigned_byte(self.flags)?;
+        writer.write_float(self.flying_speed)?;
+        writer.write_float(self.field_of_view_modifier)?;
         Ok(())
     }
 }

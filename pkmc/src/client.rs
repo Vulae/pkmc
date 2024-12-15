@@ -1,15 +1,13 @@
 use std::{
+    collections::HashSet,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Result};
 use pkmc_defs::packet;
-use pkmc_nbt::nbt_compound;
-use pkmc_packet::{
-    create_packet_enum, to_paletted_container, BitSet, Connection, PacketWriter, Paletteable,
-};
-use pkmc_util::{VecExt as _, UUID};
+use pkmc_packet::{create_packet_enum, Connection};
+use pkmc_util::{IterRetain as _, UUID};
 use rand::{thread_rng, Rng};
 
 use crate::{client_login::ClientLogin, server_state::ServerState};
@@ -24,78 +22,95 @@ create_packet_enum!(ClientPlayPacket;
 
 const KEEPALIVE_PING_TIME: Duration = Duration::from_millis(10000);
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 struct ChunkPosition {
     chunk_x: i32,
     chunk_z: i32,
 }
 
+impl ChunkPosition {
+    pub fn new(chunk_x: i32, chunk_z: i32) -> Self {
+        Self { chunk_x, chunk_z }
+    }
+
+    pub fn distance(&self, other: &ChunkPosition) -> f32 {
+        let dx = (other.chunk_x - self.chunk_x) as f32;
+        let dz = (other.chunk_z - self.chunk_z) as f32;
+        (dx * dx + dz * dz).sqrt()
+    }
+}
+
+// FIXME: The chunk loading radius does not match whatever the server says the view distance is.
+// SEE: ChunkLoader.radius & packet::play::LoginPlay.view_distance
+
 #[derive(Debug)]
 struct ChunkLoader {
     center: Option<ChunkPosition>,
-    radius: f64,
-    to_load: Vec<ChunkPosition>,
-    loaded: Vec<ChunkPosition>,
+    radius: i32,
+    to_load: HashSet<ChunkPosition>,
+    loaded: HashSet<ChunkPosition>,
     to_unload: Vec<ChunkPosition>,
 }
 
+#[allow(unused)]
 impl ChunkLoader {
-    pub fn new(radius: f64) -> Self {
+    pub fn new(radius: i32) -> Self {
         Self {
             center: None,
             radius,
-            to_load: Vec::new(),
-            loaded: Vec::new(),
+            to_load: HashSet::new(),
+            loaded: HashSet::new(),
             to_unload: Vec::new(),
         }
     }
 
-    /// Returns if updated center is new.
-    pub fn update_center(&mut self, center: ChunkPosition) -> bool {
-        if let Some(old_center) = self.center {
-            if old_center == center {
-                return false;
-            }
-        }
+    fn iter_radius(&self) -> impl Iterator<Item = ChunkPosition> {
+        let center = self.center.unwrap();
+        let radius = self.radius;
+        (-radius..=radius)
+            .flat_map(move |dx| (-radius..=radius).map(move |dz| (dx, dz)))
+            .map(move |(dx, dz)| ChunkPosition {
+                chunk_x: center.chunk_x + dx,
+                chunk_z: center.chunk_z + dz,
+            })
+            .filter(move |chunk| center.distance(chunk) < radius as f32)
+    }
 
-        let contains = |position: &ChunkPosition| -> bool {
-            (((center.chunk_x - position.chunk_x).pow(2)
-                + (center.chunk_z - position.chunk_z).pow(2)) as f64)
-                .sqrt()
-                <= self.radius
+    /// Returns if updated center is new.
+    pub fn update_center(&mut self, center: Option<ChunkPosition>) -> bool {
+        if center == self.center {
+            return false;
+        }
+        self.center = center;
+
+        let Some(center) = center else {
+            self.to_load.clear();
+            self.to_unload.append(&mut self.loaded.drain().collect());
+            return true;
         };
 
-        // Unload outside chunks
-        self.to_unload
-            .append(&mut self.to_load.retain_returned(contains));
-        self.to_unload
-            .append(&mut self.loaded.retain_returned(contains));
-
-        // Load new chunks in radius
-        for dx in -(self.radius.floor() as i32)..=(self.radius.ceil() as i32) {
-            for dz in -(self.radius.floor() as i32)..=(self.radius.ceil() as i32) {
-                let position = ChunkPosition {
-                    chunk_x: center.chunk_x + dx,
-                    chunk_z: center.chunk_z + dz,
-                };
-                if !contains(&position) {
-                    continue;
-                }
-                if self.to_load.contains(&position) || self.loaded.contains(&position) {
-                    continue;
-                }
-                self.to_load.push(position);
+        self.to_load
+            .retain(|chunk| center.distance(chunk) < self.radius as f32);
+        self.to_unload.append(
+            &mut self
+                .loaded
+                .retain_returned(|chunk| center.distance(chunk) < self.radius as f32)
+                .collect(),
+        );
+        self.iter_radius().for_each(|chunk| {
+            if self.to_load.contains(&chunk) || self.loaded.contains(&chunk) {
+                return;
             }
-        }
-
-        self.center = Some(center);
+            self.to_load.insert(chunk);
+        });
 
         true
     }
 
     pub fn next_to_load(&mut self) -> Option<ChunkPosition> {
-        if let Some(next) = self.to_load.pop() {
-            self.loaded.push(next);
+        if let Some(next) = self.to_load.iter().next().cloned() {
+            self.to_load.remove(&next);
+            self.loaded.insert(next);
             Some(next)
         } else {
             None
@@ -104,6 +119,51 @@ impl ChunkLoader {
 
     pub fn next_to_unload(&mut self) -> Option<ChunkPosition> {
         self.to_unload.pop()
+    }
+
+    fn visualize(&self) {
+        //let min = self
+        //    .loaded
+        //    .iter()
+        //    .fold(ChunkPosition::new(i32::MAX, i32::MAX), |min, chunk| {
+        //        ChunkPosition::new(
+        //            i32::min(min.chunk_x, chunk.chunk_x),
+        //            i32::min(min.chunk_z, chunk.chunk_z),
+        //        )
+        //    });
+        //let max = self
+        //    .loaded
+        //    .iter()
+        //    .fold(ChunkPosition::new(i32::MIN, i32::MIN), |max, chunk| {
+        //        ChunkPosition::new(
+        //            i32::max(max.chunk_x, chunk.chunk_x),
+        //            i32::max(max.chunk_z, chunk.chunk_z),
+        //        )
+        //    });
+        let min = ChunkPosition::new(-10, -10);
+        let max = ChunkPosition::new(10, 10);
+        let mut grid: Vec<Vec<bool>> = (min.chunk_z..=max.chunk_z)
+            .map(|_| (min.chunk_x..=max.chunk_x).map(|_| false).collect())
+            .collect();
+        self.loaded.iter().for_each(|chunk| {
+            let grid_x = (chunk.chunk_x - min.chunk_x) as usize;
+            let grid_z = (chunk.chunk_z - min.chunk_z) as usize;
+            if let Some(row) = grid.get_mut(grid_z) {
+                if let Some(cell) = row.get_mut(grid_x) {
+                    *cell = true;
+                }
+            }
+        });
+        grid.into_iter().for_each(|row| {
+            row.into_iter().for_each(|cell| {
+                if cell {
+                    print!("#");
+                } else {
+                    print!(" ");
+                }
+            });
+            println!();
+        });
     }
 }
 
@@ -130,13 +190,9 @@ impl Client {
         server_state: Arc<Mutex<ServerState>>,
         login_player: ClientLogin,
     ) -> Result<Self> {
-        let Some((name, uuid)) = &login_player.player else {
+        let Some((name, uuid)) = login_player.player.clone() else {
             return Err(anyhow!("Login player incomplete"));
         };
-        let name = name.clone();
-        let uuid = *uuid;
-
-        println!("{} connected", name);
 
         let mut client = Client {
             server_state,
@@ -152,7 +208,7 @@ impl Client {
             yaw: 0.0,
             pitch: 0.0,
             on_ground: false,
-            chunk_loader: ChunkLoader::new(4.0),
+            chunk_loader: ChunkLoader::new(16),
         };
 
         {
@@ -162,8 +218,8 @@ impl Client {
                 is_hardcore: false,
                 dimensions: vec![server_state.world_main_name.clone()],
                 max_players: 20,
-                view_distance: 16,
-                simulation_distance: 16,
+                view_distance: client.chunk_loader.radius,
+                simulation_distance: 6,
                 reduced_debug_info: false,
                 enable_respawn_screen: true,
                 do_limited_crafting: false,
@@ -190,6 +246,22 @@ impl Client {
             chunk_x: 0,
             chunk_z: 0,
         })?;
+
+        client.connection.send(packet::play::PlayerAbilities {
+            flags: 0x01 | 0x02 | 0x04 | 0x08,
+            flying_speed: 0.5,
+            field_of_view_modifier: 0.1,
+        })?;
+
+        //for chunk_x in 0..10 {
+        //    for chunk_z in 0..10 {
+        //        client
+        //            .connection
+        //            .send(packet::play::ChunkDataAndUpdateLight::generate_test(
+        //                chunk_x, chunk_z, 1,
+        //            )?)?;
+        //    }
+        //}
 
         Ok(client)
     }
@@ -287,130 +359,36 @@ impl Client {
             chunk_x: (self.x as i32) / 16,
             chunk_z: (self.z as i32) / 16,
         };
-        if self.chunk_loader.update_center(chunk_position) {
+        if self.chunk_loader.update_center(Some(chunk_position)) {
             self.connection.send(packet::play::SetCenterChunk {
                 chunk_x: chunk_position.chunk_x,
                 chunk_z: chunk_position.chunk_z,
             })?;
+        }
+        while let Some(to_unload) = self.chunk_loader.next_to_unload() {
+            //println!("UNLOAD: {:?}", to_unload);
+            self.connection.send(packet::play::UnloadChunk {
+                chunk_x: to_unload.chunk_x,
+                chunk_z: to_unload.chunk_z,
+            })?;
+        }
 
-            while let Some(to_unload) = self.chunk_loader.next_to_unload() {
-                println!("UNLOAD: {:?}", to_unload);
-                self.connection.send(packet::play::UnloadChunk {
-                    chunk_x: to_unload.chunk_x,
-                    chunk_z: to_unload.chunk_z,
-                })?;
-            }
+        let server_state = self.server_state.lock().unwrap();
+        let world_height: usize =
+            (server_state.world_max_y - server_state.world_min_y).try_into()?;
+        if world_height % 16 != 0 {
+            panic!("Invalid world height.");
+        }
+        let num_sections = world_height / 16;
 
-            let server_state = self.server_state.lock().unwrap();
-            let world_height: usize =
-                (server_state.world_max_y - server_state.world_min_y).try_into()?;
-            if world_height % 16 != 0 {
-                panic!("Invalid world height.");
-            }
-            let num_sections = world_height / 16;
-
-            while let Some(to_load) = self.chunk_loader.next_to_load() {
-                println!("LOAD: {:?}", to_load);
-                self.connection
-                    .send(packet::play::ChunkDataAndUpdateLight {
-                        chunk_x: to_load.chunk_x,
-                        chunk_z: to_load.chunk_z,
-                        heightmaps: nbt_compound!(),
-                        data: {
-                            let mut writer = PacketWriter::new_empty();
-
-                            #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-                            struct Air;
-                            impl Paletteable for Air {
-                                fn palette_value(&self) -> Result<i32> {
-                                    Ok(0)
-                                }
-                            }
-                            #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-                            struct Stone;
-                            impl Paletteable for Stone {
-                                fn palette_value(&self) -> Result<i32> {
-                                    Ok(1)
-                                }
-                            }
-                            struct Section {
-                                data: Box<[i32; 4096]>,
-                                air: Box<[bool; 4096]>,
-                            }
-                            impl Section {
-                                pub fn new_empty() -> Result<Self> {
-                                    Ok(Self {
-                                        data: vec![Air.palette_value()?; 4096]
-                                            .into_boxed_slice()
-                                            .try_into()
-                                            .unwrap(),
-                                        air: vec![true; 4096]
-                                            .into_boxed_slice()
-                                            .try_into()
-                                            .unwrap(),
-                                    })
-                                }
-
-                                pub fn set<B: Paletteable>(
-                                    &mut self,
-                                    x: u8,
-                                    y: u8,
-                                    z: u8,
-                                    block: B,
-                                    air: bool,
-                                ) -> Result<()> {
-                                    let ind = (((y as usize * 16) + z as usize) * 16) + x as usize;
-                                    self.data[ind] = block.palette_value()?;
-                                    self.air[ind] = air;
-                                    Ok(())
-                                }
-
-                                pub fn write(
-                                    &self,
-                                    writer: &mut PacketWriter<Vec<u8>>,
-                                ) -> Result<()> {
-                                    writer.write_short(
-                                        self.air.iter().filter(|v| !*v).count() as i16
-                                    )?;
-                                    writer.write_buf(&to_paletted_container(
-                                        // ????
-                                        &self.data.to_vec(),
-                                        4,
-                                        8,
-                                    )?)?;
-                                    println!(
-                                        "{:?}",
-                                        to_paletted_container(
-                                            // ????
-                                            &self.data.to_vec(),
-                                            4,
-                                            8,
-                                        )?
-                                    );
-                                    Ok(())
-                                }
-                            }
-
-                            for _ in 0..num_sections {
-                                let mut section = Section::new_empty()?;
-                                section.set(0, 0, 0, Stone, false)?;
-                                section.write(&mut writer)?;
-                                // Biome??
-                                writer.write_buf(&to_paletted_container(&[Air; 64], 1, 3)?)?;
-                            }
-
-                            writer.into_inner().into_boxed_slice()
-                        },
-                        block_entities: Vec::new(),
-                        // Empty lighting data for now.
-                        sky_light_mask: BitSet::new(num_sections + 2),
-                        block_light_mask: BitSet::new(num_sections + 2),
-                        empty_sky_light_mask: BitSet::new(num_sections + 2),
-                        empty_block_light_mask: BitSet::new(num_sections + 2),
-                        sky_lights_arrays: Vec::new(),
-                        block_lights_arrays: Vec::new(),
-                    })?;
-            }
+        while let Some(to_load) = self.chunk_loader.next_to_load() {
+            //println!("LOAD: {:?}", to_load);
+            self.connection
+                .send(packet::play::ChunkDataAndUpdateLight::generate_test(
+                    to_load.chunk_x,
+                    to_load.chunk_z,
+                    num_sections,
+                )?)?;
         }
 
         Ok(())

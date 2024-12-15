@@ -1,5 +1,5 @@
+pub mod iter_retain;
 pub mod uuid;
-pub mod vec;
 
+pub use iter_retain::IterRetain;
 pub use uuid::UUID;
-pub use vec::VecExt;

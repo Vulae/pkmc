@@ -83,6 +83,33 @@ pub enum NBT {
     LongArray(Box<[i64]>),
 }
 
+macro_rules! nbt_from {
+    ($type:ty, $value_name:ident => $parse:expr) => {
+        impl From<$type> for NBT {
+            fn from($value_name: $type) -> Self {
+                $parse
+            }
+        }
+    };
+}
+
+nbt_from!(i8, v => NBT::Byte(v));
+nbt_from!(i16, v => NBT::Short(v));
+nbt_from!(i32, v => NBT::Int(v));
+nbt_from!(i64, v => NBT::Long(v));
+nbt_from!(f32, v => NBT::Float(v));
+nbt_from!(f64, v => NBT::Double(v));
+nbt_from!(String, v => NBT::String(v));
+nbt_from!(&str, v => NBT::String(v.to_owned()));
+//nbt_from!(Vec<NBT>, v => NBT::List(v))
+nbt_from!(Box<[NBT]>, v => NBT::List(v.to_vec()));
+
+impl<T: Into<NBT>> From<Vec<T>> for NBT {
+    fn from(value: Vec<T>) -> Self {
+        NBT::List(value.into_iter().map(|v| v.into()).collect::<Vec<_>>())
+    }
+}
+
 //impl Serialize for NBT {
 //    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
 //    where

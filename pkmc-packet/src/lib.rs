@@ -99,10 +99,10 @@ pub fn to_paletted_container<T: Paletteable + std::fmt::Debug>(
         // Indirect (Every entry is index into values)
         writer.write_var_int(palette.len() as i32)?;
         for (palette_value, palette_index) in palette.iter() {
-            print!("{:?}: {}, ", palette_value, palette_index);
+            //print!("{:?}: {}, ", palette_value, palette_index);
             writer.write_var_int(palette_value.palette_value()?)?;
         }
-        println!();
+        //println!();
 
         let mut data_array = DataArray::new(bpe as usize, values.len());
         values.iter().enumerate().for_each(|(entry_index, value)| {
@@ -112,12 +112,12 @@ pub fn to_paletted_container<T: Paletteable + std::fmt::Debug>(
 
         let packed = data_array.into_inner();
         writer.write_var_int(packed.len() as i32)?;
-        println!(
-            "BPE: {}, NUM ENTRIES: {}, NUM LONGS: {}",
-            bpe,
-            values.len(),
-            packed.len()
-        );
+        //println!(
+        //    "BPE: {}, NUM ENTRIES: {}, NUM LONGS: {}",
+        //    bpe,
+        //    values.len(),
+        //    packed.len()
+        //);
         packed
             .iter()
             .try_for_each(|v| writer.write_long(unsafe { std::mem::transmute::<u64, i64>(*v) }))?;

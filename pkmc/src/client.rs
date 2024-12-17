@@ -43,6 +43,8 @@ impl ChunkPosition {
 // FIXME: The chunk loading radius does not match whatever the server says the view distance is.
 // SEE: ChunkLoader.radius & packet::play::LoginPlay.view_distance
 
+// FIXME: Chunk radius is biased towards negative-xz???
+
 #[derive(Debug)]
 struct ChunkLoader {
     center: Option<ChunkPosition>,
@@ -208,7 +210,7 @@ impl Client {
             yaw: 0.0,
             pitch: 0.0,
             on_ground: false,
-            chunk_loader: ChunkLoader::new(16),
+            chunk_loader: ChunkLoader::new(32),
         };
 
         {

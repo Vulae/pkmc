@@ -9,8 +9,10 @@ pkmc-packet = { path = "../pkmc-packet" }
 pkmc-nbt = { path = "../pkmc-nbt" }
 pkmc-defs = { path = "../pkmc-defs" }
 pkmc-util = { path = "../pkmc-util" }
-anyhow.workspace = true
+thiserror.workspace = true
 base64 = "0.22.1"
 rand = "0.8.5"
 serde = { version = "1.0.213", features = ["derive"] }
 toml = "0.8.19"
+ratatui = "0.29.0"
+anyhow = "1.0.94"

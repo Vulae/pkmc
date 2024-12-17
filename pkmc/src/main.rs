@@ -34,6 +34,10 @@ struct Config {
     brand: String,
     #[serde(default, rename = "server-list")]
     server_list: ConfigServerList,
+    #[serde(default, rename = "compression-threshold")]
+    compression_threshold: usize,
+    #[serde(default, rename = "compression-level")]
+    compression_level: u32,
 }
 
 impl Config {
@@ -55,18 +59,54 @@ fn main() -> Result<()> {
         } else {
             None
         },
+        compression_threshold: config.compression_threshold,
+        compression_level: config.compression_level,
         world_main_name: "pkmc:test".to_owned(),
         world_min_y: 0,
         world_max_y: 16,
     };
 
     let mut server = Server::new(config.address, state)?;
-
-    println!("Server running at \"{}\"", server.ip());
+    //let mut terminal = ratatui::init();
+    //let mut last_render = None;
+    //const RENDER_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
     loop {
-        server.step()?;
         // TODO: Probably use something like mio (https://docs.rs/mio/latest/mio/) for this.
         std::thread::sleep(std::time::Duration::from_millis(1));
+
+        server.step()?;
+
+        //if ratatui::crossterm::event::poll(std::time::Duration::ZERO)? {
+        //    match ratatui::crossterm::event::read()? {
+        //        ratatui::crossterm::event::Event::Key(key)
+        //            if key.code == ratatui::crossterm::event::KeyCode::Char('q') =>
+        //        {
+        //            break;
+        //        }
+        //        _ => {}
+        //    }
+        //}
+        //
+        //if let Some(last_render) = last_render {
+        //    if std::time::Instant::now().duration_since(last_render) < RENDER_DELAY {
+        //        continue;
+        //    }
+        //}
+        //last_render = Some(std::time::Instant::now());
+        //
+        //terminal.draw(|frame| {
+        //    let [info, time] =
+        //        ratatui::prelude::Layout::vertical(ratatui::prelude::Constraint::from_lengths([
+        //            1, 1,
+        //        ]))
+        //        .areas(frame.area());
+        //    frame.render_widget(format!("Server running at \"{}\"", server.ip()), info);
+        //    frame.render_widget(format!("{:?}", last_render), time);
+        //})?;
     }
+
+    //ratatui::restore();
+
+    //Ok(())
 }

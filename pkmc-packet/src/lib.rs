@@ -3,12 +3,10 @@ pub mod reader;
 pub mod writer;
 
 pub use connection::Connection;
-pub use reader::PacketReader;
-pub use writer::PacketWriter;
+pub use reader::ReadExtPacket;
+pub use writer::WriteExtPacket;
 
-use std::{collections::HashMap, hash::Hash};
-
-use anyhow::Result;
+use std::{collections::HashMap, io::Write as _};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Position {
@@ -50,23 +48,12 @@ impl BitSet {
     }
 }
 
-pub trait Paletteable: Hash + Eq {
-    // TODO: Should this be result?
-    fn palette_value(&self) -> Result<i32>;
-}
-
-impl Paletteable for i32 {
-    fn palette_value(&self) -> Result<i32> {
-        Ok(*self)
-    }
-}
-
-pub fn to_paletted_container<T: Paletteable + std::fmt::Debug>(
-    values: &[T],
+pub fn to_paletted_container(
+    values: &[i32],
     #[allow(unused)] min_direct_bpe: u8,
     max_direct_bpe: u8,
-) -> Result<Box<[u8]>> {
-    let mut palette: HashMap<&T, usize> = HashMap::new();
+) -> std::io::Result<Box<[u8]>> {
+    let mut palette: HashMap<&i32, usize> = HashMap::new();
     values.iter().fold(0, |index, value| {
         if palette.contains_key(value) {
             index
@@ -76,7 +63,7 @@ pub fn to_paletted_container<T: Paletteable + std::fmt::Debug>(
         }
     });
 
-    let mut writer = PacketWriter::new_empty();
+    let mut writer = Vec::new();
 
     // ceil(log2(count))
     let bpe: u8 = match palette.len() {
@@ -84,23 +71,23 @@ pub fn to_paletted_container<T: Paletteable + std::fmt::Debug>(
         1 => 0,
         entry_count => {
             // TODO: Why does the wiki say to have a min direct bpe?
-            TryInto::<u8>::try_into(usize::BITS - entry_count.leading_zeros() - 1)?
+            TryInto::<u8>::try_into(usize::BITS - entry_count.leading_zeros() - 1).unwrap()
             //.max(min_direct_bpe)
         }
     };
 
-    writer.write_unsigned_byte(bpe)?;
+    writer.write_all(&bpe.to_be_bytes())?;
 
     if bpe == 0 {
         // Single valued (Every entry is same)
-        writer.write_var_int(values[0].palette_value()?)?;
-        writer.write_var_int(0)?; // Indices array is always empty on single valued
+        writer.write_varint(values[0])?;
+        writer.write_varint(0)?; // Indices array is always empty on single valued
     } else if bpe <= max_direct_bpe {
         // Indirect (Every entry is index into values)
-        writer.write_var_int(palette.len() as i32)?;
-        for (palette_value, palette_index) in palette.iter() {
+        writer.write_varint(palette.len() as i32)?;
+        for (palette_value, _palette_index) in palette.iter() {
             //print!("{:?}: {}, ", palette_value, palette_index);
-            writer.write_var_int(palette_value.palette_value()?)?;
+            writer.write_varint(**palette_value)?;
         }
         //println!();
 
@@ -111,7 +98,7 @@ pub fn to_paletted_container<T: Paletteable + std::fmt::Debug>(
         });
 
         let packed = data_array.into_inner();
-        writer.write_var_int(packed.len() as i32)?;
+        writer.write_varint(packed.len() as i32)?;
         //println!(
         //    "BPE: {}, NUM ENTRIES: {}, NUM LONGS: {}",
         //    bpe,
@@ -120,16 +107,16 @@ pub fn to_paletted_container<T: Paletteable + std::fmt::Debug>(
         //);
         packed
             .iter()
-            .try_for_each(|v| writer.write_long(unsafe { std::mem::transmute::<u64, i64>(*v) }))?;
+            .try_for_each(|v| writer.write_all(&v.to_be_bytes()))?;
     } else {
         // Direct (Every entry is from values, not indexed)
-        writer.write_var_int(values.len().div_ceil(2) as i32)?;
+        writer.write_varint(values.len().div_ceil(2) as i32)?;
         for value in values.iter() {
-            writer.write_var_int(value.palette_value()?)?;
+            writer.write_varint(*value)?;
         }
     }
 
-    Ok(writer.into_inner().into_boxed_slice())
+    Ok(writer.into_boxed_slice())
 }
 
 #[derive(Debug)]

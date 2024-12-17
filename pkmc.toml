@@ -2,6 +2,11 @@
 address = "[::1]:52817"
 brand = "Vulae/pkmc"
 
+# Number of bytes for a packet to get compressed
+compression-threshold = 64
+# Packet compression level 0..=9 (0 is no compression)
+compression-level = 3
+
 [server-list]
 text = "https://github.com/Vulae/pkmc"
 # Icon MUST be a 64x64 png

@@ -4,6 +4,10 @@ pub struct ServerState {
     pub server_list_text: Option<String>,
     /// 64x64 base64 encoded PNG image
     pub server_list_icon: Option<String>,
+    /// Default packet compression 0..=9 (0 is uncompressed)
+    pub compression_level: u32,
+    /// Packet compression threshold
+    pub compression_threshold: usize,
     /// The main dimension name
     pub world_main_name: String,
     /// The main dimension min y (MUST me multiple of 16)

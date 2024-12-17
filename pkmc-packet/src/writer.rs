@@ -1,11 +1,10 @@
-use anyhow::Result;
 use pkmc_nbt::NBT;
 use pkmc_util::UUID;
 use std::io::Write;
 
 use super::{BitSet, Position};
 
-pub fn write_varint(mut writer: impl Write, value: i32) -> Result<()> {
+pub fn write_varint(mut writer: impl Write, value: i32) -> std::io::Result<()> {
     let mut value = unsafe { std::mem::transmute::<i32, u32>(value) };
     loop {
         let mut byte = value as u8 & 0x7F;
@@ -21,138 +20,103 @@ pub fn write_varint(mut writer: impl Write, value: i32) -> Result<()> {
     Ok(())
 }
 
-pub struct PacketWriter<D: Write> {
-    data: D,
-}
-
-impl PacketWriter<Vec<u8>> {
-    pub fn new_empty() -> Self {
-        Self { data: Vec::new() }
+pub const fn varint_size(mut value: i32) -> i32 {
+    let mut bytes = 0;
+    while value > 0 {
+        value >>= 7;
+        bytes += 1;
+    }
+    if bytes == 0 {
+        1
+    } else {
+        bytes
     }
 }
 
-impl<D: Write> PacketWriter<D> {
-    pub fn new(data: D) -> Self {
-        Self { data }
-    }
+pub trait WriteExtPacket {
+    fn write_varint(&mut self, value: i32) -> std::io::Result<()>;
+    fn write_string(&mut self, string: &str) -> std::io::Result<()>;
+    fn write_bool(&mut self, bool: bool) -> std::io::Result<()>;
+    fn write_uuid(&mut self, uuid: &UUID) -> std::io::Result<()>;
+    fn write_position(&mut self, position: &Position) -> std::io::Result<()>;
+    fn write_bitset(&mut self, bitset: &BitSet) -> std::io::Result<()>;
+    fn write_nbt(&mut self, nbt: &NBT) -> std::io::Result<()>;
+}
 
-    pub fn into_inner(self) -> D {
-        self.data
-    }
-
-    pub fn write_buf(&mut self, buf: &[u8]) -> Result<()> {
-        self.data.write_all(buf)?;
+impl<T: Write> WriteExtPacket for T {
+    fn write_varint(&mut self, value: i32) -> std::io::Result<()> {
+        write_varint(self, value)?;
         Ok(())
     }
 
-    pub fn write_signed_byte(&mut self, value: i8) -> Result<()> {
-        self.write_buf(&value.to_be_bytes())?;
+    fn write_string(&mut self, string: &str) -> std::io::Result<()> {
+        let buf = string.as_bytes();
+        self.write_varint(
+            buf.len()
+                .try_into()
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?,
+        )?;
+        self.write_all(buf)?;
         Ok(())
     }
 
-    pub fn write_unsigned_byte(&mut self, value: u8) -> Result<()> {
-        self.write_buf(&value.to_be_bytes())?;
+    fn write_bool(&mut self, bool: bool) -> std::io::Result<()> {
+        self.write_all(&[if bool { 1 } else { 0 }])?;
         Ok(())
     }
 
-    pub fn write_short(&mut self, value: i16) -> Result<()> {
-        self.write_buf(&value.to_be_bytes())?;
+    fn write_uuid(&mut self, uuid: &UUID) -> std::io::Result<()> {
+        self.write_all(&uuid.0)?;
         Ok(())
     }
 
-    pub fn write_int(&mut self, value: i32) -> Result<()> {
-        self.write_buf(&value.to_be_bytes())?;
-        Ok(())
-    }
-
-    pub fn write_long(&mut self, value: i64) -> Result<()> {
-        self.write_buf(&value.to_be_bytes())?;
-        Ok(())
-    }
-
-    pub fn write_float(&mut self, value: f32) -> Result<()> {
-        self.write_buf(&value.to_be_bytes())?;
-        Ok(())
-    }
-
-    pub fn write_double(&mut self, value: f64) -> Result<()> {
-        self.write_buf(&value.to_be_bytes())?;
-        Ok(())
-    }
-
-    pub fn write_var_int(&mut self, value: i32) -> Result<()> {
-        write_varint(&mut self.data, value)
-    }
-
-    pub fn write_string(&mut self, str: &str) -> Result<()> {
-        self.write_var_int(str.len() as i32)?;
-        self.write_buf(str.as_bytes())?;
-        Ok(())
-    }
-
-    pub fn write_uuid(&mut self, uuid: &UUID) -> Result<()> {
-        self.write_buf(&uuid.0)?;
-        Ok(())
-    }
-
-    pub fn write_boolean(&mut self, bool: bool) -> Result<()> {
-        self.write_unsigned_byte(if bool { 0x01 } else { 0x00 })?;
-        Ok(())
-    }
-
-    pub fn write_position(&mut self, position: Position) -> Result<()> {
+    fn write_position(&mut self, position: &Position) -> std::io::Result<()> {
         let x = unsafe { std::mem::transmute::<i32, u32>(position.x) } as u64;
         let y = unsafe { std::mem::transmute::<i16, u16>(position.y) } as u64;
         let z = unsafe { std::mem::transmute::<i32, u32>(position.z) } as u64;
         let v: u64 = ((x & 0x3FFFFFF) << 38) | ((z & 0x3FFFFFF) << 12) | (y & 0xFFF);
-        self.write_buf(&v.to_be_bytes())?;
+        self.write_all(&v.to_be_bytes())?;
         Ok(())
     }
 
-    pub fn write_bitset(&mut self, bitset: &BitSet) -> Result<()> {
-        self.write_var_int(bitset.num_longs() as i32)?;
+    fn write_bitset(&mut self, bitset: &BitSet) -> std::io::Result<()> {
+        self.write_varint(
+            bitset
+                .num_longs()
+                .try_into()
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?,
+        )?;
         bitset
             .longs_iter()
-            .map(|l| self.write_buf(&l.to_be_bytes()))
+            .map(|l| self.write_all(&l.to_be_bytes()))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(())
     }
 
-    pub fn write_nbt(&mut self, nbt: &NBT) -> Result<()> {
-        self.write_buf(&nbt.to_bytes_network()?)?;
+    fn write_nbt(&mut self, nbt: &NBT) -> std::io::Result<()> {
+        self.write_all(
+            &nbt.to_bytes_network()
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?,
+        )?;
         Ok(())
     }
 }
 
-pub fn write_packet(id: u8, data: &[u8]) -> Result<Box<[u8]>> {
-    let mut writer = PacketWriter::new_empty();
-    writer.write_var_int(data.len() as i32 + 1)?;
-    writer.write_unsigned_byte(id)?;
-    writer.write_buf(data)?;
-    Ok(writer.into_inner().into_boxed_slice())
-}
-
 #[cfg(test)]
 mod test {
-    use anyhow::Result;
-
-    use super::PacketWriter;
-
-    fn create_writer() -> PacketWriter<Vec<u8>> {
-        PacketWriter::new(Vec::new())
-    }
+    use crate::writer::WriteExtPacket as _;
 
     macro_rules! writer_var_int {
         ($value:expr) => {{
-            let mut writer = create_writer();
-            writer.write_var_int($value)?;
-            writer.into_inner()
+            let mut writer = Vec::new();
+            writer.write_varint($value)?;
+            writer
         }};
     }
 
     #[test]
     #[rustfmt::skip]
-    fn reader() -> Result<()> {
+    fn reader() -> std::io::Result<()> {
         assert_eq!(writer_var_int!(0), &[0x00]);
         assert_eq!(writer_var_int!(1), &[0x01]);
         assert_eq!(writer_var_int!(2), &[0x02]);

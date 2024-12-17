@@ -6,4 +6,5 @@ edition.workspace = true
 [dependencies]
 pkmc-util = { path = "../pkmc-util" }
 pkmc-nbt = { path = "../pkmc-nbt" }
-anyhow.workspace = true
+thiserror.workspace = true
+flate2 = "1.0.35"

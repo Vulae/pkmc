@@ -1,9 +1,24 @@
-use anyhow::{anyhow, Result};
+use pkmc_util::ReadExt as _;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     io::{Read, Write},
 };
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum NBTError {
+    #[error("{0:?}")]
+    IoError(#[from] std::io::Error),
+    #[error("{0:?}")]
+    FromUtf8Error(#[from] std::string::FromUtf8Error),
+    #[error("NBT invalid tag value {0}")]
+    InvalidTagValue(u8),
+    #[error("NBT unexpected end tag")]
+    UnexpectedEnd,
+    #[error("NBT could not write invalid list")]
+    InvalidList,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NBTTag {
@@ -23,7 +38,7 @@ enum NBTTag {
 }
 
 impl TryFrom<u8> for NBTTag {
-    type Error = anyhow::Error;
+    type Error = NBTError;
 
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
         match value {
@@ -40,7 +55,7 @@ impl TryFrom<u8> for NBTTag {
             10 => Ok(NBTTag::Compound),
             11 => Ok(NBTTag::IntArray),
             12 => Ok(NBTTag::LongArray),
-            _ => Err(anyhow!("Invalid NBTTag value {}", value)),
+            _ => Err(NBTError::InvalidTagValue(value)),
         }
     }
 }
@@ -192,12 +207,6 @@ macro_rules! nbt_compound {
 //    println!("{:#?}", parsed);
 //}
 
-fn read<const N: usize>(reader: &mut impl Read) -> Result<[u8; N]> {
-    let mut buf = [0u8; N];
-    reader.read_exact(&mut buf)?;
-    Ok(buf)
-}
-
 impl NBT {
     fn tag(&self) -> NBTTag {
         match self {
@@ -216,30 +225,30 @@ impl NBT {
         }
     }
 
-    fn read_tag(data: &mut impl Read, tag: NBTTag) -> Result<NBT> {
+    fn read_tag(data: &mut impl Read, tag: NBTTag) -> Result<NBT, NBTError> {
         match tag {
-            NBTTag::End => Err(anyhow!("NBT read unexpected NBTTag::End")),
-            NBTTag::Byte => Ok(NBT::Byte(i8::from_be_bytes(read(data)?))),
-            NBTTag::Short => Ok(NBT::Short(i16::from_be_bytes(read(data)?))),
-            NBTTag::Int => Ok(NBT::Int(i32::from_be_bytes(read(data)?))),
-            NBTTag::Long => Ok(NBT::Long(i64::from_be_bytes(read(data)?))),
-            NBTTag::Float => Ok(NBT::Float(f32::from_be_bytes(read(data)?))),
-            NBTTag::Double => Ok(NBT::Double(f64::from_be_bytes(read(data)?))),
+            NBTTag::End => Err(NBTError::UnexpectedEnd),
+            NBTTag::Byte => Ok(NBT::Byte(i8::from_be_bytes(data.read_const()?))),
+            NBTTag::Short => Ok(NBT::Short(i16::from_be_bytes(data.read_const()?))),
+            NBTTag::Int => Ok(NBT::Int(i32::from_be_bytes(data.read_const()?))),
+            NBTTag::Long => Ok(NBT::Long(i64::from_be_bytes(data.read_const()?))),
+            NBTTag::Float => Ok(NBT::Float(f32::from_be_bytes(data.read_const()?))),
+            NBTTag::Double => Ok(NBT::Double(f64::from_be_bytes(data.read_const()?))),
             NBTTag::ByteArray => Ok(NBT::ByteArray(
-                (0..i32::from_be_bytes(read(data)?))
-                    .map(|_| Ok(i8::from_be_bytes(read(data)?)))
-                    .collect::<Result<Vec<_>, anyhow::Error>>()?
+                (0..i32::from_be_bytes(data.read_const()?))
+                    .map(|_| Ok(i8::from_be_bytes(data.read_const()?)))
+                    .collect::<Result<Vec<_>, std::io::Error>>()?
                     .into_boxed_slice(),
             )),
             NBTTag::String => Ok(NBT::String({
-                let mut str_bytes = vec![0u8; u16::from_be_bytes(read(data)?) as usize];
+                let mut str_bytes = vec![0u8; u16::from_be_bytes(data.read_const()?) as usize];
                 data.read_exact(&mut str_bytes)?;
                 String::from_utf8(str_bytes)?
             })),
             NBTTag::List => {
-                let tag = NBTTag::try_from(u8::from_be_bytes(read(data)?))?;
+                let tag = NBTTag::try_from(u8::from_be_bytes(data.read_const()?))?;
                 Ok(NBT::List(
-                    (0..i32::from_be_bytes(read(data)?))
+                    (0..i32::from_be_bytes(data.read_const()?))
                         .map(|_| NBT::read_tag(data, tag))
                         .collect::<Result<Vec<_>, _>>()?,
                 ))
@@ -247,11 +256,11 @@ impl NBT {
             NBTTag::Compound => {
                 let mut compound = HashMap::new();
                 loop {
-                    let tag = NBTTag::try_from(u8::from_be_bytes(read(data)?))?;
+                    let tag = NBTTag::try_from(u8::from_be_bytes(data.read_const()?))?;
                     if tag == NBTTag::End {
                         break;
                     }
-                    let mut str_bytes = vec![0u8; u16::from_be_bytes(read(data)?) as usize];
+                    let mut str_bytes = vec![0u8; u16::from_be_bytes(data.read_const()?) as usize];
                     data.read_exact(&mut str_bytes)?;
                     let name = String::from_utf8(str_bytes)?;
                     compound.insert(name, NBT::read_tag(data, tag)?);
@@ -259,26 +268,26 @@ impl NBT {
                 Ok(NBT::Compound(compound))
             }
             NBTTag::IntArray => Ok(NBT::IntArray(
-                (0..i32::from_be_bytes(read(data)?))
-                    .map(|_| Ok(i32::from_be_bytes(read(data)?)))
-                    .collect::<Result<Vec<_>, anyhow::Error>>()?
+                (0..i32::from_be_bytes(data.read_const()?))
+                    .map(|_| Ok(i32::from_be_bytes(data.read_const()?)))
+                    .collect::<Result<Vec<_>, std::io::Error>>()?
                     .into_boxed_slice(),
             )),
             NBTTag::LongArray => Ok(NBT::LongArray(
-                (0..i32::from_be_bytes(read(data)?))
-                    .map(|_| Ok(i64::from_be_bytes(read(data)?)))
-                    .collect::<Result<Vec<_>, anyhow::Error>>()?
+                (0..i32::from_be_bytes(data.read_const()?))
+                    .map(|_| Ok(i64::from_be_bytes(data.read_const()?)))
+                    .collect::<Result<Vec<_>, std::io::Error>>()?
                     .into_boxed_slice(),
             )),
         }
     }
 
-    pub fn read(mut data: impl Read, compressed: bool) -> Result<(String, NBT)> {
+    pub fn read(mut data: impl Read, compressed: bool) -> Result<(String, NBT), NBTError> {
         if compressed {
             unimplemented!("Compressed NBT not implemented.");
         }
-        let tag = NBTTag::try_from(u8::from_be_bytes(read(&mut data)?))?;
-        let mut str_bytes = vec![0u8; u16::from_be_bytes(read(&mut data)?) as usize];
+        let tag = NBTTag::try_from(u8::from_be_bytes(data.read_const()?))?;
+        let mut str_bytes = vec![0u8; u16::from_be_bytes(data.read_const()?) as usize];
         data.read_exact(&mut str_bytes)?;
         Ok((
             String::from_utf8(str_bytes)?,
@@ -286,20 +295,25 @@ impl NBT {
         ))
     }
 
-    pub fn read_network(mut data: impl Read) -> Result<NBT> {
-        let tag = NBTTag::try_from(u8::from_be_bytes(read(&mut data)?))?;
+    pub fn read_network(mut data: impl Read) -> Result<NBT, NBTError> {
+        let tag = NBTTag::try_from(u8::from_be_bytes(data.read_const()?))?;
         NBT::read_tag(&mut data, tag)
     }
 
-    pub fn from_bytes(bytes: &[u8], compressed: bool) -> Result<(String, NBT)> {
+    pub fn from_bytes(bytes: &[u8], compressed: bool) -> Result<(String, NBT), NBTError> {
         NBT::read(std::io::Cursor::new(bytes), compressed)
     }
 
-    pub fn from_bytes_network(bytes: &[u8]) -> Result<NBT> {
+    pub fn from_bytes_network(bytes: &[u8]) -> Result<NBT, NBTError> {
         NBT::read_network(std::io::Cursor::new(bytes))
     }
 
-    fn write_tag(&self, name: Option<&str>, write_tag: bool, data: &mut impl Write) -> Result<()> {
+    fn write_tag(
+        &self,
+        name: Option<&str>,
+        write_tag: bool,
+        data: &mut impl Write,
+    ) -> Result<(), NBTError> {
         if write_tag {
             data.write_all(&u8::from(self.tag()).to_be_bytes())?;
         }
@@ -320,11 +334,11 @@ impl NBT {
             }
             NBT::List(list) => {
                 let Some(first) = list.first() else {
-                    return Err(anyhow!("NBT could infer list type"));
+                    return Err(NBTError::InvalidList);
                 };
                 let tag = first.tag();
                 if list.iter().any(|item| item.tag() != tag) {
-                    return Err(anyhow!("NBT list items dont match"));
+                    return Err(NBTError::InvalidList);
                 }
                 data.write_all(&u8::from(tag).to_be_bytes())?;
                 data.write_all(&(list.len() as u32).to_be_bytes())?;
@@ -369,24 +383,29 @@ impl NBT {
         Ok(())
     }
 
-    pub fn write(&self, name: &str, mut data: impl Write, compressed: bool) -> Result<()> {
+    pub fn write(
+        &self,
+        name: &str,
+        mut data: impl Write,
+        compressed: bool,
+    ) -> Result<(), NBTError> {
         if compressed {
             unimplemented!("Compressed NBT not implemented.");
         }
         self.write_tag(Some(name), true, &mut data)
     }
 
-    pub fn write_network(&self, mut data: impl Write) -> Result<()> {
+    pub fn write_network(&self, mut data: impl Write) -> Result<(), NBTError> {
         self.write_tag(None, true, &mut data)
     }
 
-    pub fn to_bytes(&self, name: &str, compressed: bool) -> Result<Box<[u8]>> {
+    pub fn to_bytes(&self, name: &str, compressed: bool) -> Result<Box<[u8]>, NBTError> {
         let mut data = Vec::new();
         self.write(name, &mut data, compressed)?;
         Ok(data.into_boxed_slice())
     }
 
-    pub fn to_bytes_network(&self) -> Result<Box<[u8]>> {
+    pub fn to_bytes_network(&self) -> Result<Box<[u8]>, NBTError> {
         let mut data = Vec::new();
         self.write_network(&mut data)?;
         Ok(data.into_boxed_slice())
@@ -395,10 +414,10 @@ impl NBT {
 
 #[cfg(test)]
 mod test {
-    use super::NBT;
+    use super::{NBTError, NBT};
 
     #[test]
-    fn bigtest() -> anyhow::Result<()> {
+    fn bigtest() -> Result<(), NBTError> {
         let bigtest_file = include_bytes!("./bigtest.nbt");
         let bigtest_nbt = (
             "Level".to_string(),

@@ -1,12 +1,14 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+};
 
-use anyhow::Result;
 use pkmc_nbt::NBT;
 use pkmc_packet::{
-    connection::{ClientboundPacket, ServerboundPacket},
-    PacketReader, PacketWriter,
+    connection::{ClientboundPacket, PacketError, ServerboundPacket},
+    ReadExtPacket as _, WriteExtPacket as _,
 };
-use pkmc_util::UUID;
+use pkmc_util::{ReadExt, UUID};
 
 #[derive(Debug)]
 pub struct LoginStart {
@@ -17,7 +19,7 @@ pub struct LoginStart {
 impl ServerboundPacket for LoginStart {
     const SERVERBOUND_ID: i32 = 0x00;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
@@ -25,6 +27,20 @@ impl ServerboundPacket for LoginStart {
             name: reader.read_string()?,
             uuid: reader.read_uuid()?,
         })
+    }
+}
+
+#[derive(Debug)]
+pub struct SetCompression {
+    pub threshold: i32,
+}
+
+impl ClientboundPacket for SetCompression {
+    const CLIENTBOUND_ID: i32 = 0x03;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_varint(self.threshold)?;
+        Ok(())
     }
 }
 
@@ -47,21 +63,21 @@ pub struct LoginSuccess {
 impl ClientboundPacket for LoginSuccess {
     const CLIENTBOUND_ID: i32 = 0x02;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
         writer.write_uuid(&self.uuid)?;
         writer.write_string(&self.name)?;
-        writer.write_var_int(self.properties.len() as i32)?;
+        writer.write_varint(self.properties.len() as i32)?;
         for property in self.properties.iter() {
             writer.write_string(&property.name)?;
             writer.write_string(&property.value)?;
             if let Some(signature) = &property.signature {
-                writer.write_boolean(true)?;
+                writer.write_bool(true)?;
                 writer.write_string(signature)?;
             } else {
-                writer.write_boolean(false)?;
+                writer.write_bool(false)?;
             }
         }
-        writer.write_boolean(self.strict_error_handling)?;
+        writer.write_bool(self.strict_error_handling)?;
         Ok(())
     }
 }
@@ -72,7 +88,7 @@ pub struct LoginAcknowledged;
 impl ServerboundPacket for LoginAcknowledged {
     const SERVERBOUND_ID: i32 = 0x03;
 
-    fn packet_read(_reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(_reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
@@ -89,7 +105,7 @@ pub enum LoginConfigurationPluginMessage {
 impl ServerboundPacket for LoginConfigurationPluginMessage {
     const SERVERBOUND_ID: i32 = 0x02;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
@@ -100,7 +116,7 @@ impl ServerboundPacket for LoginConfigurationPluginMessage {
             )),
             _ => Ok(LoginConfigurationPluginMessage::Unknown {
                 channel,
-                data: reader.read_vec_to_end()?,
+                data: reader.read_all()?,
             }),
         }
     }
@@ -109,11 +125,11 @@ impl ServerboundPacket for LoginConfigurationPluginMessage {
 impl ClientboundPacket for LoginConfigurationPluginMessage {
     const CLIENTBOUND_ID: i32 = 0x01;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
         match self {
             LoginConfigurationPluginMessage::Unknown { channel, data } => {
                 writer.write_string(channel)?;
-                writer.write_buf(data)?;
+                writer.write_all(data)?;
             }
             LoginConfigurationPluginMessage::Brand(brand) => {
                 writer.write_string("minecraft:brand")?;
@@ -139,20 +155,20 @@ pub struct LoginConfigurationClientInformation {
 impl ServerboundPacket for LoginConfigurationClientInformation {
     const SERVERBOUND_ID: i32 = 0x00;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
         Ok(Self {
             locale: reader.read_string()?,
-            view_distance: reader.read_signed_byte()?,
-            chat_mode: reader.read_var_int()?,
-            chat_colors: reader.read_boolean()?,
-            displayed_skin_parts: reader.read_unsigned_byte()?,
+            view_distance: i8::from_be_bytes(reader.read_const()?),
+            chat_mode: reader.read_varint()?,
+            chat_colors: reader.read_bool()?,
+            displayed_skin_parts: u8::from_be_bytes(reader.read_const()?),
             // TODO: Is this correct?
-            left_handed: reader.read_var_int()? == 0,
-            enable_text_filtering: reader.read_boolean()?,
-            allow_server_listings: reader.read_boolean()?,
+            left_handed: reader.read_varint()? == 0,
+            enable_text_filtering: reader.read_bool()?,
+            allow_server_listings: reader.read_bool()?,
         })
     }
 }
@@ -172,8 +188,8 @@ pub struct LoginConfigurationKnownPacks {
 impl ClientboundPacket for LoginConfigurationKnownPacks {
     const CLIENTBOUND_ID: i32 = 0x0E;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_var_int(self.packs.len() as i32)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_varint(self.packs.len() as i32)?;
         for pack in self.packs.iter() {
             writer.write_string(&pack.namespace)?;
             writer.write_string(&pack.id)?;
@@ -186,12 +202,12 @@ impl ClientboundPacket for LoginConfigurationKnownPacks {
 impl ServerboundPacket for LoginConfigurationKnownPacks {
     const SERVERBOUND_ID: i32 = 0x07;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
         Ok(Self {
-            packs: (0..reader.read_var_int()?)
+            packs: (0..reader.read_varint()?)
                 .map(|_| {
                     Ok(LoginConfigurationKnownPack {
                         namespace: reader.read_string()?,
@@ -199,7 +215,7 @@ impl ServerboundPacket for LoginConfigurationKnownPacks {
                         version: reader.read_string()?,
                     })
                 })
-                .collect::<Result<Vec<_>, anyhow::Error>>()?,
+                .collect::<Result<Vec<_>, std::io::Error>>()?,
         })
     }
 }
@@ -219,16 +235,20 @@ pub struct LoginConfigurationRegistryData {
 impl ClientboundPacket for LoginConfigurationRegistryData {
     const CLIENTBOUND_ID: i32 = 0x07;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
         writer.write_string(&self.registry_id)?;
-        writer.write_var_int(self.entries.len() as i32)?;
+        writer.write_varint(self.entries.len() as i32)?;
         for entry in self.entries.iter() {
             writer.write_string(&entry.entry_id)?;
             if let Some(data) = &entry.data {
-                writer.write_boolean(true)?;
-                writer.write_buf(&data.to_bytes_network()?)?;
+                writer.write_bool(true)?;
+                writer.write_all(
+                    &data
+                        .to_bytes_network()
+                        .map_err(|err| PacketError::Other(Box::new(err)))?,
+                )?;
             } else {
-                writer.write_boolean(false)?;
+                writer.write_bool(false)?;
             }
         }
         Ok(())
@@ -243,22 +263,20 @@ pub struct LoginConfigurationUpdateTags {
 impl ClientboundPacket for LoginConfigurationUpdateTags {
     const CLIENTBOUND_ID: i32 = 0x0D;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_var_int(self.registries.len() as i32)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_varint(self.registries.len() as i32)?;
         self.registries
             .iter()
             .try_for_each(|(registry_name, registry_data)| {
                 writer.write_string(registry_name)?;
-                writer.write_var_int(registry_data.len() as i32)?;
+                writer.write_varint(registry_data.len() as i32)?;
                 registry_data.iter().try_for_each(|(tag_name, tag_ids)| {
                     writer.write_string(tag_name)?;
-                    writer.write_var_int(tag_ids.len() as i32)?;
-                    tag_ids
-                        .iter()
-                        .try_for_each(|id| writer.write_var_int(*id))?;
-                    Ok::<(), anyhow::Error>(())
+                    writer.write_varint(tag_ids.len() as i32)?;
+                    tag_ids.iter().try_for_each(|id| writer.write_varint(*id))?;
+                    Ok::<(), std::io::Error>(())
                 })?;
-                Ok::<(), anyhow::Error>(())
+                Ok::<(), std::io::Error>(())
             })?;
         Ok(())
     }
@@ -270,7 +288,7 @@ pub struct LoginConfigurationFinish;
 impl ClientboundPacket for LoginConfigurationFinish {
     const CLIENTBOUND_ID: i32 = 0x03;
 
-    fn packet_write(&self, _writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, _writer: impl Write) -> Result<(), PacketError> {
         Ok(())
     }
 }
@@ -278,7 +296,7 @@ impl ClientboundPacket for LoginConfigurationFinish {
 impl ServerboundPacket for LoginConfigurationFinish {
     const SERVERBOUND_ID: i32 = 0x03;
 
-    fn packet_read(_reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(_reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {

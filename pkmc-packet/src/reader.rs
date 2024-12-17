@@ -1,5 +1,4 @@
-use anyhow::{anyhow, Result};
-use pkmc_util::UUID;
+use pkmc_util::{ReadExt, UUID};
 use std::io::Read;
 
 pub fn read_varint_ret_bytes(mut reader: impl Read) -> std::io::Result<(usize, i32)> {
@@ -27,116 +26,76 @@ pub fn read_varint(reader: impl Read) -> std::io::Result<i32> {
     Ok(read_varint_ret_bytes(reader)?.1)
 }
 
-pub fn try_read_varint_ret_bytes(buf_start: &[u8]) -> Result<Option<(usize, i32)>> {
-    match read_varint_ret_bytes(std::io::Cursor::new(buf_start)) {
+pub fn try_read_varint_ret_bytes(data: &[u8]) -> std::io::Result<Option<(usize, i32)>> {
+    match read_varint_ret_bytes(data) {
         Ok(varint) => Ok(Some(varint)),
         Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
-        Err(err) => Err(err.into()),
+        Err(err) => Err(err),
     }
 }
 
-pub struct PacketReader<D: Read> {
-    data: D,
+pub trait ReadExtPacket {
+    fn read_varint(&mut self) -> std::io::Result<i32>;
+    fn read_string(&mut self) -> std::io::Result<String>;
+    fn read_bool(&mut self) -> std::io::Result<bool>;
+    fn read_uuid(&mut self) -> std::io::Result<UUID>;
 }
 
-impl<D: Read> PacketReader<D> {
-    pub fn new(data: D) -> Self {
-        Self { data }
+impl<T: Read> ReadExtPacket for T {
+    fn read_varint(&mut self) -> std::io::Result<i32> {
+        Ok(read_varint(self)?)
     }
 
-    pub fn read_buf<const N: usize>(&mut self) -> Result<[u8; N]> {
-        let mut data = [0u8; N];
-        self.data.read_exact(&mut data)?;
-        Ok(data)
+    fn read_string(&mut self) -> std::io::Result<String> {
+        let length = self.read_varint()?;
+        let buf = self.read_var(
+            length
+                .try_into()
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?,
+        )?;
+        let str = String::from_utf8(buf.to_vec())
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
+        Ok(str)
     }
 
-    pub fn read_vec(&mut self, length: usize) -> Result<Box<[u8]>> {
-        let mut data = vec![0u8; length];
-        self.data.read_exact(&mut data)?;
-        Ok(data.into_boxed_slice())
-    }
-
-    pub fn read_vec_to_end(&mut self) -> Result<Box<[u8]>> {
-        let mut data = Vec::new();
-        self.data.read_to_end(&mut data)?;
-        Ok(data.into_boxed_slice())
-    }
-
-    pub fn read_unsigned_byte(&mut self) -> Result<u8> {
-        Ok(u8::from_be_bytes(self.read_buf()?))
-    }
-
-    pub fn read_signed_byte(&mut self) -> Result<i8> {
-        Ok(i8::from_be_bytes(self.read_buf()?))
-    }
-
-    pub fn read_unsigned_short(&mut self) -> Result<u16> {
-        Ok(u16::from_be_bytes(self.read_buf()?))
-    }
-
-    pub fn read_long(&mut self) -> Result<i64> {
-        Ok(i64::from_be_bytes(self.read_buf()?))
-    }
-
-    pub fn read_float(&mut self) -> Result<f32> {
-        Ok(f32::from_be_bytes(self.read_buf()?))
-    }
-
-    pub fn read_double(&mut self) -> Result<f64> {
-        Ok(f64::from_be_bytes(self.read_buf()?))
-    }
-
-    pub fn read_var_int(&mut self) -> Result<i32> {
-        Ok(read_varint(&mut self.data)?)
-    }
-
-    pub fn read_string(&mut self) -> Result<String> {
-        let length = self.read_var_int()?;
-        Ok(String::from_utf8(self.read_vec(length as usize)?.to_vec())?)
-    }
-
-    pub fn read_boolean(&mut self) -> Result<bool> {
-        match self.read_unsigned_byte()? {
+    fn read_bool(&mut self) -> std::io::Result<bool> {
+        match u8::from_le_bytes(self.read_const()?) {
             0 => Ok(false),
             1 => Ok(true),
-            value => Err(anyhow!(
-                "PacketReader::read_boolean invalid bool value {}",
-                value
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Invalid boolean",
             )),
         }
     }
 
-    pub fn read_uuid(&mut self) -> Result<UUID> {
-        // FIXME: This is wrong, but it shouldn't really matter?
-        // https://wiki.vg/Protocol#Type:UUID
-        Ok(UUID(self.read_buf()?))
+    fn read_uuid(&mut self) -> std::io::Result<UUID> {
+        Ok(UUID(self.read_const()?))
     }
 }
 
 #[cfg(test)]
 mod test {
-    use anyhow::Result;
+    use crate::reader::ReadExtPacket as _;
 
-    use super::PacketReader;
-
-    fn create_reader(data: &[u8]) -> PacketReader<std::io::Cursor<&[u8]>> {
-        PacketReader::new(std::io::Cursor::new(data))
+    fn create_reader(data: &[u8]) -> std::io::Cursor<&[u8]> {
+        std::io::Cursor::new(data)
     }
 
     #[test]
     #[rustfmt::skip]
-    fn reader() -> Result<()> {
-        assert_eq!(create_reader(&[0x00]).read_var_int()?, 0);
-        assert_eq!(create_reader(&[0x01]).read_var_int()?, 1);
-        assert_eq!(create_reader(&[0x02]).read_var_int()?, 2);
-        assert_eq!(create_reader(&[0x7f]).read_var_int()?, 127);
-        assert_eq!(create_reader(&[0x80, 0x01]).read_var_int()?, 128);
-        assert_eq!(create_reader(&[0xff, 0x01]).read_var_int()?, 255);
-        assert_eq!(create_reader(&[0xdd, 0xc7, 0x01]).read_var_int()?, 25565);
-        assert_eq!(create_reader(&[0xff, 0xff, 0x7f]).read_var_int()?, 2097151);
-        assert_eq!(create_reader(&[0xff, 0xff, 0xff, 0xff, 0x07]).read_var_int()?, 2147483647);
-        assert_eq!(create_reader(&[0xff, 0xff, 0xff, 0xff, 0x0f]).read_var_int()?, -1);
-        assert_eq!(create_reader(&[0x80, 0x80, 0x80, 0x80, 0x08]).read_var_int()?, -2147483648);
+    fn reader() -> std::io::Result<()> {
+        assert_eq!(create_reader(&[0x00]).read_varint()?, 0);
+        assert_eq!(create_reader(&[0x01]).read_varint()?, 1);
+        assert_eq!(create_reader(&[0x02]).read_varint()?, 2);
+        assert_eq!(create_reader(&[0x7f]).read_varint()?, 127);
+        assert_eq!(create_reader(&[0x80, 0x01]).read_varint()?, 128);
+        assert_eq!(create_reader(&[0xff, 0x01]).read_varint()?, 255);
+        assert_eq!(create_reader(&[0xdd, 0xc7, 0x01]).read_varint()?, 25565);
+        assert_eq!(create_reader(&[0xff, 0xff, 0x7f]).read_varint()?, 2097151);
+        assert_eq!(create_reader(&[0xff, 0xff, 0xff, 0xff, 0x07]).read_varint()?, 2147483647);
+        assert_eq!(create_reader(&[0xff, 0xff, 0xff, 0xff, 0x0f]).read_varint()?, -1);
+        assert_eq!(create_reader(&[0x80, 0x80, 0x80, 0x80, 0x08]).read_varint()?, -2147483648);
 
         Ok(())
     }

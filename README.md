@@ -25,7 +25,7 @@ This was originally built to be fully single-threaded, but that *may* change in 
 - [ ] Plugins via WASM
 
 - [ ] Online mode
-- [ ] Packet compression
+- [X] Packet compression
 
 ## [License](#license)
 

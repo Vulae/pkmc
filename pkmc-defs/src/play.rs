@@ -1,9 +1,11 @@
-use anyhow::Result;
+use std::io::{Read, Write};
+
 use pkmc_nbt::{nbt_compound, NBT};
 use pkmc_packet::{
-    connection::{ClientboundPacket, ServerboundPacket},
-    to_paletted_container, BitSet, PacketReader, PacketWriter, Paletteable, Position,
+    connection::{ClientboundPacket, PacketError, ServerboundPacket},
+    to_paletted_container, BitSet, Position, ReadExtPacket, WriteExtPacket,
 };
+use pkmc_util::ReadExt;
 
 pub struct LoginPlay {
     pub entity_id: i32,
@@ -30,36 +32,35 @@ pub struct LoginPlay {
 impl ClientboundPacket for LoginPlay {
     const CLIENTBOUND_ID: i32 = 0x2B;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_int(self.entity_id)?;
-        writer.write_boolean(self.is_hardcore)?;
-        writer.write_var_int(self.dimensions.len() as i32)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_all(&self.entity_id.to_be_bytes())?;
+        writer.write_bool(self.is_hardcore)?;
+        writer.write_varint(self.dimensions.len() as i32)?;
         for dimension in self.dimensions.iter() {
             writer.write_string(dimension)?;
         }
-        writer.write_var_int(self.max_players)?;
-        writer.write_var_int(self.view_distance)?;
-        writer.write_var_int(self.simulation_distance)?;
-        writer.write_boolean(self.reduced_debug_info)?;
-        writer.write_boolean(self.enable_respawn_screen)?;
-        writer.write_boolean(self.do_limited_crafting)?;
-        writer.write_var_int(self.dimension_type)?;
+        writer.write_varint(self.max_players)?;
+        writer.write_varint(self.view_distance)?;
+        writer.write_varint(self.simulation_distance)?;
+        writer.write_bool(self.reduced_debug_info)?;
+        writer.write_bool(self.enable_respawn_screen)?;
+        writer.write_bool(self.do_limited_crafting)?;
+        writer.write_varint(self.dimension_type)?;
         writer.write_string(&self.dimension_name)?;
-        writer.write_long(self.hashed_seed)?;
-        writer.write_unsigned_byte(self.game_mode)?;
-        writer.write_signed_byte(self.previous_game_mode)?;
-        writer.write_boolean(self.is_debug)?;
-        writer.write_boolean(self.is_flat)?;
+        writer.write_all(&self.hashed_seed.to_be_bytes())?;
+        writer.write_all(&self.game_mode.to_be_bytes())?;
+        writer.write_all(&self.previous_game_mode.to_be_bytes())?;
+        writer.write_bool(self.is_debug)?;
+        writer.write_bool(self.is_flat)?;
         if let Some(death) = &self.death {
-            writer.write_boolean(true)?;
+            writer.write_bool(true)?;
             writer.write_string(&death.0)?;
-            writer.write_position(death.1)?;
+            writer.write_position(&death.1)?;
         } else {
-            writer.write_boolean(false)?;
+            writer.write_bool(false)?;
         }
-        writer.write_var_int(self.portal_cooldown)?;
-        writer.write_boolean(self.enforces_secure_chat)?;
-
+        writer.write_varint(self.portal_cooldown)?;
+        writer.write_bool(self.enforces_secure_chat)?;
         Ok(())
     }
 }
@@ -72,11 +73,11 @@ pub enum GameEvent {
 impl ClientboundPacket for GameEvent {
     const CLIENTBOUND_ID: i32 = 0x22;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
         match self {
             GameEvent::StartWaitingForLevelChunks => {
-                writer.write_unsigned_byte(13)?;
-                writer.write_float(0.0)?;
+                writer.write_all(&13u8.to_be_bytes())?;
+                writer.write_all(&0.0f32.to_be_bytes())?;
             }
         }
         Ok(())
@@ -91,8 +92,8 @@ pub struct KeepAlive {
 impl ClientboundPacket for KeepAlive {
     const CLIENTBOUND_ID: i32 = 0x26;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_long(self.id)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_all(&self.id.to_be_bytes())?;
         Ok(())
     }
 }
@@ -100,12 +101,12 @@ impl ClientboundPacket for KeepAlive {
 impl ServerboundPacket for KeepAlive {
     const SERVERBOUND_ID: i32 = 0x18;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
         Ok(Self {
-            id: reader.read_long()?,
+            id: i64::from_be_bytes(reader.read_const()?),
         })
     }
 }
@@ -124,23 +125,24 @@ pub struct SynchronizePlayerPosition {
 impl ClientboundPacket for SynchronizePlayerPosition {
     const CLIENTBOUND_ID: i32 = 0x40;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_double(self.x.unwrap_or(0.0))?;
-        writer.write_double(self.y.unwrap_or(0.0))?;
-        writer.write_double(self.z.unwrap_or(0.0))?;
-        writer.write_float(self.yaw.unwrap_or(0.0))?;
-        writer.write_float(self.pitch.unwrap_or(0.0))?;
-        writer.write_unsigned_byte(
-            if self.x.is_some() { 0x01 } else { 0 }
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_all(&self.x.unwrap_or(0.0).to_be_bytes())?;
+        writer.write_all(&self.y.unwrap_or(0.0).to_be_bytes())?;
+        writer.write_all(&self.z.unwrap_or(0.0).to_be_bytes())?;
+        writer.write_all(&self.yaw.unwrap_or(0.0).to_be_bytes())?;
+        writer.write_all(&self.pitch.unwrap_or(0.0).to_be_bytes())?;
+        writer.write_all(
+            &(if self.x.is_some() { 0x01u8 } else { 0 }
                 | if self.y.is_some() { 0x02 } else { 0 }
                 | if self.z.is_some() { 0x04 } else { 0 }
                 | if self.yaw.is_some() { 0x08 } else { 0 }
                 | if self.pitch.is_some() { 0x10 } else { 0 }
             // NOTE: This isn't an actual flag, Minecraft just checks if the flags are unset
             // to determine whether the teleport is absolute (=0x00) or relative (!=0x00)
-                | if self.relative { 0x20 } else { 0 },
+                | if self.relative { 0x20 } else { 0 })
+            .to_be_bytes(),
         )?;
-        writer.write_var_int(self.teleport_id)?;
+        writer.write_varint(self.teleport_id)?;
         Ok(())
     }
 }
@@ -153,12 +155,12 @@ pub struct ConfirmTeleport {
 impl ServerboundPacket for ConfirmTeleport {
     const SERVERBOUND_ID: i32 = 0x00;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
         Ok(Self {
-            teleport_id: reader.read_var_int()?,
+            teleport_id: reader.read_varint()?,
         })
     }
 }
@@ -176,17 +178,17 @@ pub struct SetPlayerPositionAndRotation {
 impl ServerboundPacket for SetPlayerPositionAndRotation {
     const SERVERBOUND_ID: i32 = 0x1B;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
         Ok(Self {
-            x: reader.read_double()?,
-            y: reader.read_double()?,
-            z: reader.read_double()?,
-            yaw: reader.read_float()?,
-            pitch: reader.read_float()?,
-            on_ground: reader.read_boolean()?,
+            x: f64::from_be_bytes(reader.read_const()?),
+            y: f64::from_be_bytes(reader.read_const()?),
+            z: f64::from_be_bytes(reader.read_const()?),
+            yaw: f32::from_be_bytes(reader.read_const()?),
+            pitch: f32::from_be_bytes(reader.read_const()?),
+            on_ground: reader.read_bool()?,
         })
     }
 }
@@ -202,15 +204,15 @@ pub struct SetPlayerPosition {
 impl ServerboundPacket for SetPlayerPosition {
     const SERVERBOUND_ID: i32 = 0x1A;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
         Ok(Self {
-            x: reader.read_double()?,
-            y: reader.read_double()?,
-            z: reader.read_double()?,
-            on_ground: reader.read_boolean()?,
+            x: f64::from_be_bytes(reader.read_const()?),
+            y: f64::from_be_bytes(reader.read_const()?),
+            z: f64::from_be_bytes(reader.read_const()?),
+            on_ground: reader.read_bool()?,
         })
     }
 }
@@ -225,14 +227,14 @@ pub struct SetPlayerRotation {
 impl ServerboundPacket for SetPlayerRotation {
     const SERVERBOUND_ID: i32 = 0x1C;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
         Ok(Self {
-            yaw: reader.read_float()?,
-            pitch: reader.read_float()?,
-            on_ground: reader.read_boolean()?,
+            yaw: f32::from_be_bytes(reader.read_const()?),
+            pitch: f32::from_be_bytes(reader.read_const()?),
+            on_ground: reader.read_bool()?,
         })
     }
 }
@@ -246,9 +248,9 @@ pub struct SetCenterChunk {
 impl ClientboundPacket for SetCenterChunk {
     const CLIENTBOUND_ID: i32 = 0x54;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_var_int(self.chunk_x)?;
-        writer.write_var_int(self.chunk_z)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_varint(self.chunk_x)?;
+        writer.write_varint(self.chunk_z)?;
         Ok(())
     }
 }
@@ -281,85 +283,56 @@ pub struct ChunkDataAndUpdateLight {
 }
 
 impl ChunkDataAndUpdateLight {
-    pub fn generate_test(chunk_x: i32, chunk_z: i32, num_sections: usize) -> Result<Self> {
+    pub fn generate_test(chunk_x: i32, chunk_z: i32, num_sections: usize) -> std::io::Result<Self> {
         Ok(Self {
             chunk_x,
             chunk_z,
             heightmaps: nbt_compound!(),
             data: {
-                let mut writer = PacketWriter::new_empty();
+                let mut writer = Vec::new();
 
-                #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-                struct Air;
-                impl Paletteable for Air {
-                    fn palette_value(&self) -> Result<i32> {
-                        Ok(0)
-                    }
-                }
-                #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-                struct Stone;
-                impl Paletteable for Stone {
-                    fn palette_value(&self) -> Result<i32> {
-                        Ok(1)
-                    }
-                }
                 struct Section {
-                    data: Box<[i32; 4096]>,
-                    air: Box<[bool; 4096]>,
+                    data: [i32; 4096],
+                    air: [bool; 4096],
                 }
                 #[allow(dead_code)]
                 impl Section {
-                    pub fn new_empty() -> Result<Self> {
-                        Ok(Self {
-                            data: vec![Air.palette_value()?; 4096]
-                                .into_boxed_slice()
-                                .try_into()
-                                .unwrap(),
-                            air: vec![true; 4096].into_boxed_slice().try_into().unwrap(),
-                        })
+                    pub fn new_empty() -> Self {
+                        Self {
+                            data: [0; 4096],
+                            air: [false; 4096],
+                        }
                     }
 
-                    pub fn fill<B: Paletteable>(&mut self, block: B, air: bool) -> Result<()> {
-                        self.data.fill(block.palette_value()?);
+                    pub fn fill(&mut self, block: i32, air: bool) {
+                        self.data.fill(block);
                         self.air.fill(air);
-                        Ok(())
                     }
 
-                    pub fn set<B: Paletteable>(
-                        &mut self,
-                        x: u8,
-                        y: u8,
-                        z: u8,
-                        block: B,
-                        air: bool,
-                    ) -> Result<()> {
+                    pub fn set(&mut self, x: u8, y: u8, z: u8, block: i32, air: bool) {
                         let ind = (((y as usize * 16) + z as usize) * 16) + x as usize;
-                        self.data[ind] = block.palette_value()?;
+                        self.data[ind] = block;
                         self.air[ind] = air;
-                        Ok(())
                     }
 
-                    pub fn write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-                        writer.write_short(self.air.iter().filter(|v| !*v).count() as i16)?;
-                        writer.write_buf(&to_paletted_container(
-                            // ????
-                            &self.data.to_vec(),
-                            4,
-                            8,
-                        )?)?;
+                    pub fn write(&self, mut writer: impl Write) -> std::io::Result<()> {
+                        writer.write_all(
+                            &(self.air.iter().filter(|v| !*v).count() as i16).to_be_bytes(),
+                        )?;
+                        writer.write_all(&to_paletted_container(&self.data, 4, 8)?)?;
                         Ok(())
                     }
                 }
 
                 for _ in 0..num_sections {
-                    let mut section = Section::new_empty()?;
-                    section.fill(Stone, false)?;
+                    let mut section = Section::new_empty();
+                    section.fill(1, false);
                     section.write(&mut writer)?;
                     // Biome??
-                    writer.write_buf(&to_paletted_container(&[Air; 64], 1, 3)?)?;
+                    writer.write_all(&to_paletted_container(&[0; 64], 1, 3)?)?;
                 }
 
-                writer.into_inner().into_boxed_slice()
+                writer.into_boxed_slice()
             },
             block_entities: Vec::new(),
             // Empty lighting data for now.
@@ -376,26 +349,28 @@ impl ChunkDataAndUpdateLight {
 impl ClientboundPacket for ChunkDataAndUpdateLight {
     const CLIENTBOUND_ID: i32 = 0x27;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_int(self.chunk_x)?;
-        writer.write_int(self.chunk_z)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_all(&self.chunk_x.to_be_bytes())?;
+        writer.write_all(&self.chunk_z.to_be_bytes())?;
         writer.write_nbt(&self.heightmaps)?;
-        writer.write_var_int(self.data.len() as i32)?;
-        writer.write_buf(&self.data)?;
-        writer.write_var_int(self.block_entities.len() as i32)?;
+        writer.write_varint(self.data.len() as i32)?;
+        writer.write_all(&self.data)?;
+        writer.write_varint(self.block_entities.len() as i32)?;
         for block_entity in self.block_entities.iter() {
-            writer.write_unsigned_byte(((block_entity.x & 0x0F) << 4) | (block_entity.z & 0x0F))?;
-            writer.write_short(block_entity.y)?;
-            writer.write_var_int(block_entity.r#type)?;
+            writer.write_all(
+                &(((block_entity.x & 0x0F) << 4) | (block_entity.z & 0x0F)).to_ne_bytes(),
+            )?;
+            writer.write_all(&block_entity.y.to_be_bytes())?;
+            writer.write_varint(block_entity.r#type)?;
             writer.write_nbt(&block_entity.data)?;
         }
         // Skip lighting data for now.
-        writer.write_var_int(0)?;
-        writer.write_var_int(0)?;
-        writer.write_var_int(0)?;
-        writer.write_var_int(0)?;
-        writer.write_var_int(0)?;
-        writer.write_var_int(0)?;
+        writer.write_varint(0)?;
+        writer.write_varint(0)?;
+        writer.write_varint(0)?;
+        writer.write_varint(0)?;
+        writer.write_varint(0)?;
+        writer.write_varint(0)?;
         Ok(())
     }
 }
@@ -409,9 +384,9 @@ pub struct UnloadChunk {
 impl ClientboundPacket for UnloadChunk {
     const CLIENTBOUND_ID: i32 = 0x21;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_int(self.chunk_z)?;
-        writer.write_int(self.chunk_x)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_all(&self.chunk_z.to_be_bytes())?;
+        writer.write_all(&self.chunk_x.to_be_bytes())?;
         Ok(())
     }
 }
@@ -426,10 +401,10 @@ pub struct PlayerAbilities {
 impl ClientboundPacket for PlayerAbilities {
     const CLIENTBOUND_ID: i32 = 0x38;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_unsigned_byte(self.flags)?;
-        writer.write_float(self.flying_speed)?;
-        writer.write_float(self.field_of_view_modifier)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_all(&self.flags.to_be_bytes())?;
+        writer.write_all(&self.flying_speed.to_be_bytes())?;
+        writer.write_all(&self.field_of_view_modifier.to_be_bytes())?;
         Ok(())
     }
 }

@@ -1,7 +1,10 @@
 use anyhow::Result;
 use pkmc_defs::packet;
 use pkmc_nbt::{nbt_compound, NBT};
-use pkmc_packet::{create_packet_enum, Connection};
+use pkmc_packet::{
+    connection::{StreamHandler, ZlibStreamHandler},
+    create_packet_enum, Connection,
+};
 use pkmc_util::UUID;
 use std::{
     collections::HashMap,
@@ -67,6 +70,18 @@ impl ClientLogin {
                 ClientLoginState::Login => match ClientLoginLoginPacket::try_from(raw_packet)? {
                     ClientLoginLoginPacket::Start(login_start) => {
                         self.player = Some((login_start.name.clone(), login_start.uuid));
+
+                        let server_state = self.server_state.lock().unwrap();
+                        if server_state.compression_level > 0 {
+                            self.connection.send(packet::login::SetCompression {
+                                threshold: server_state.compression_threshold as i32,
+                            })?;
+                            self.connection.handler = StreamHandler::Zlib(ZlibStreamHandler::new(
+                                server_state.compression_threshold,
+                                server_state.compression_level,
+                            ));
+                        }
+
                         self.connection.send(packet::login::LoginSuccess {
                             uuid: login_start.uuid,
                             name: login_start.name,

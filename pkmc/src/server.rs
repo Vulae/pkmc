@@ -92,7 +92,7 @@ impl Server {
     pub fn handle_clients(&mut self) -> Result<()> {
         self.clients.iter_mut().for_each(|client| {
             if let Err(err) = client.update() {
-                println!("Error while updating client {}: {:#?}", client.name(), err);
+                println!("Error while updating client {}: {:?}", client.name(), err);
             }
         });
 

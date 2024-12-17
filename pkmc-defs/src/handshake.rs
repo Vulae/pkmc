@@ -1,8 +1,10 @@
-use anyhow::Result;
+use std::io::{Read, Write};
+
 use pkmc_packet::{
-    connection::{ClientboundPacket, ServerboundPacket},
-    PacketReader, PacketWriter,
+    connection::{ClientboundPacket, PacketError, ServerboundPacket},
+    ReadExtPacket as _, WriteExtPacket as _,
 };
+use pkmc_util::ReadExt as _;
 use serde::Serialize;
 
 pub struct Handshake {
@@ -15,15 +17,15 @@ pub struct Handshake {
 impl ServerboundPacket for Handshake {
     const SERVERBOUND_ID: i32 = 0x00;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
         Ok(Self {
-            protocol_version: reader.read_var_int()?,
+            protocol_version: reader.read_varint()?,
             server_address: reader.read_string()?,
-            server_port: reader.read_unsigned_short()?,
-            next_state: reader.read_var_int()?,
+            server_port: u16::from_be_bytes(reader.read_const()?),
+            next_state: reader.read_varint()?,
         })
     }
 }
@@ -33,7 +35,7 @@ pub struct StatusRequest;
 impl ServerboundPacket for StatusRequest {
     const SERVERBOUND_ID: i32 = 0x00;
 
-    fn packet_read(_reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(_reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
@@ -78,8 +80,10 @@ pub struct StatusResponse {
 impl ClientboundPacket for StatusResponse {
     const CLIENTBOUND_ID: i32 = 0x00;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_string(&serde_json::to_string(self)?)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_string(
+            &serde_json::to_string(self).map_err(|err| PacketError::Other(Box::new(err)))?,
+        )?;
         Ok(())
     }
 }
@@ -91,12 +95,12 @@ pub struct Ping {
 impl ServerboundPacket for Ping {
     const SERVERBOUND_ID: i32 = 0x01;
 
-    fn packet_read(reader: &mut PacketReader<std::io::Cursor<&[u8]>>) -> Result<Self>
+    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
     where
         Self: Sized,
     {
         Ok(Self {
-            payload: reader.read_long()?,
+            payload: i64::from_be_bytes(reader.read_const()?),
         })
     }
 }
@@ -104,8 +108,8 @@ impl ServerboundPacket for Ping {
 impl ClientboundPacket for Ping {
     const CLIENTBOUND_ID: i32 = 0x01;
 
-    fn packet_write(&self, writer: &mut PacketWriter<Vec<u8>>) -> Result<()> {
-        writer.write_long(self.payload)?;
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+        writer.write_all(&self.payload.to_be_bytes())?;
         Ok(())
     }
 }

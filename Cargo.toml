@@ -1,15 +1,8 @@
 [workspace]
 resolver = "2"
-members = [
-    "pkmc-packet",
-    "pkmc-nbt",
-    "pkmc-defs",
-    "pkmc-util",
-    "pkmc/",
-]
+members = ["pkmc-packet", "pkmc-nbt", "pkmc-defs", "pkmc-util", "pkmc/"]
 package.version = "0.1.0"
 package.edition = "2021"
 
 [workspace.dependencies]
-# TODO: Not this for everything.
-anyhow = "1.0.91"
+thiserror = "2.0.7"

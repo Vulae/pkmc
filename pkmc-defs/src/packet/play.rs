@@ -1,13 +1,14 @@
 use std::io::{Read, Write};
 
+use crate::generated;
 use pkmc_nbt::{nbt_compound, NBT};
 use pkmc_packet::{
-    connection::{ClientboundPacket, PacketError, ServerboundPacket},
+    connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
     to_paletted_container, BitSet, Position, ReadExtPacket, WriteExtPacket,
 };
-use pkmc_util::ReadExt;
+use pkmc_util::read_ext::ReadExt;
 
-pub struct LoginPlay {
+pub struct Login {
     pub entity_id: i32,
     pub is_hardcore: bool,
     pub dimensions: Vec<String>,
@@ -26,13 +27,14 @@ pub struct LoginPlay {
     pub is_flat: bool,
     pub death: Option<(String, Position)>,
     pub portal_cooldown: i32,
+    pub sea_level: i32,
     pub enforces_secure_chat: bool,
 }
 
-impl ClientboundPacket for LoginPlay {
-    const CLIENTBOUND_ID: i32 = 0x2B;
+impl ClientboundPacket for Login {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_LOGIN;
 
-    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.entity_id.to_be_bytes())?;
         writer.write_bool(self.is_hardcore)?;
         writer.write_varint(self.dimensions.len() as i32)?;
@@ -60,6 +62,7 @@ impl ClientboundPacket for LoginPlay {
             writer.write_bool(false)?;
         }
         writer.write_varint(self.portal_cooldown)?;
+        writer.write_varint(self.sea_level)?;
         writer.write_bool(self.enforces_secure_chat)?;
         Ok(())
     }
@@ -71,9 +74,9 @@ pub enum GameEvent {
 }
 
 impl ClientboundPacket for GameEvent {
-    const CLIENTBOUND_ID: i32 = 0x22;
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_GAME_EVENT;
 
-    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         match self {
             GameEvent::StartWaitingForLevelChunks => {
                 writer.write_all(&13u8.to_be_bytes())?;
@@ -90,18 +93,18 @@ pub struct KeepAlive {
 }
 
 impl ClientboundPacket for KeepAlive {
-    const CLIENTBOUND_ID: i32 = 0x26;
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_KEEP_ALIVE;
 
-    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.id.to_be_bytes())?;
         Ok(())
     }
 }
 
 impl ServerboundPacket for KeepAlive {
-    const SERVERBOUND_ID: i32 = 0x18;
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_KEEP_ALIVE;
 
-    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
         Self: Sized,
     {
@@ -112,7 +115,7 @@ impl ServerboundPacket for KeepAlive {
 }
 
 #[derive(Debug)]
-pub struct SynchronizePlayerPosition {
+pub struct PlayerPosition {
     pub relative: bool,
     pub x: Option<f64>,
     pub y: Option<f64>,
@@ -122,10 +125,10 @@ pub struct SynchronizePlayerPosition {
     pub teleport_id: i32,
 }
 
-impl ClientboundPacket for SynchronizePlayerPosition {
-    const CLIENTBOUND_ID: i32 = 0x40;
+impl ClientboundPacket for PlayerPosition {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_POSITION;
 
-    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.x.unwrap_or(0.0).to_be_bytes())?;
         writer.write_all(&self.y.unwrap_or(0.0).to_be_bytes())?;
         writer.write_all(&self.z.unwrap_or(0.0).to_be_bytes())?;
@@ -148,14 +151,14 @@ impl ClientboundPacket for SynchronizePlayerPosition {
 }
 
 #[derive(Debug)]
-pub struct ConfirmTeleport {
+pub struct AcceptTeleportation {
     pub teleport_id: i32,
 }
 
-impl ServerboundPacket for ConfirmTeleport {
-    const SERVERBOUND_ID: i32 = 0x00;
+impl ServerboundPacket for AcceptTeleportation {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_ACCEPT_TELEPORTATION;
 
-    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
         Self: Sized,
     {
@@ -166,7 +169,7 @@ impl ServerboundPacket for ConfirmTeleport {
 }
 
 #[derive(Debug)]
-pub struct SetPlayerPositionAndRotation {
+pub struct MovePlayerPosRot {
     pub x: f64,
     pub y: f64,
     pub z: f64,
@@ -175,10 +178,10 @@ pub struct SetPlayerPositionAndRotation {
     pub on_ground: bool,
 }
 
-impl ServerboundPacket for SetPlayerPositionAndRotation {
-    const SERVERBOUND_ID: i32 = 0x1B;
+impl ServerboundPacket for MovePlayerPosRot {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_MOVE_PLAYER_POS_ROT;
 
-    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
         Self: Sized,
     {
@@ -194,17 +197,17 @@ impl ServerboundPacket for SetPlayerPositionAndRotation {
 }
 
 #[derive(Debug)]
-pub struct SetPlayerPosition {
+pub struct MovePlayerPos {
     pub x: f64,
     pub y: f64,
     pub z: f64,
     pub on_ground: bool,
 }
 
-impl ServerboundPacket for SetPlayerPosition {
-    const SERVERBOUND_ID: i32 = 0x1A;
+impl ServerboundPacket for MovePlayerPos {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_MOVE_PLAYER_POS;
 
-    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
         Self: Sized,
     {
@@ -218,16 +221,16 @@ impl ServerboundPacket for SetPlayerPosition {
 }
 
 #[derive(Debug)]
-pub struct SetPlayerRotation {
+pub struct MovePlayerRot {
     pub yaw: f32,
     pub pitch: f32,
     pub on_ground: bool,
 }
 
-impl ServerboundPacket for SetPlayerRotation {
-    const SERVERBOUND_ID: i32 = 0x1C;
+impl ServerboundPacket for MovePlayerRot {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_MOVE_PLAYER_ROT;
 
-    fn packet_read(mut reader: impl Read) -> Result<Self, PacketError>
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
         Self: Sized,
     {
@@ -240,15 +243,16 @@ impl ServerboundPacket for SetPlayerRotation {
 }
 
 #[derive(Debug)]
-pub struct SetCenterChunk {
+pub struct SetChunkCacheCenter {
     pub chunk_x: i32,
     pub chunk_z: i32,
 }
 
-impl ClientboundPacket for SetCenterChunk {
-    const CLIENTBOUND_ID: i32 = 0x54;
+impl ClientboundPacket for SetChunkCacheCenter {
+    const CLIENTBOUND_ID: i32 =
+        generated::packet::play::CLIENTBOUND_MINECRAFT_SET_CHUNK_CACHE_CENTER;
 
-    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.chunk_x)?;
         writer.write_varint(self.chunk_z)?;
         Ok(())
@@ -267,7 +271,7 @@ pub struct BlockEntity {
 }
 
 #[derive(Debug)]
-pub struct ChunkDataAndUpdateLight {
+pub struct LevelChunkWithLight {
     pub chunk_x: i32,
     pub chunk_z: i32,
     pub heightmaps: NBT,
@@ -282,7 +286,7 @@ pub struct ChunkDataAndUpdateLight {
     pub block_lights_arrays: Vec<Vec<Vec<u8>>>,
 }
 
-impl ChunkDataAndUpdateLight {
+impl LevelChunkWithLight {
     pub fn generate_test(chunk_x: i32, chunk_z: i32, num_sections: usize) -> std::io::Result<Self> {
         Ok(Self {
             chunk_x,
@@ -346,10 +350,11 @@ impl ChunkDataAndUpdateLight {
     }
 }
 
-impl ClientboundPacket for ChunkDataAndUpdateLight {
-    const CLIENTBOUND_ID: i32 = 0x27;
+impl ClientboundPacket for LevelChunkWithLight {
+    const CLIENTBOUND_ID: i32 =
+        generated::packet::play::CLIENTBOUND_MINECRAFT_LEVEL_CHUNK_WITH_LIGHT;
 
-    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.chunk_x.to_be_bytes())?;
         writer.write_all(&self.chunk_z.to_be_bytes())?;
         writer.write_nbt(&self.heightmaps)?;
@@ -376,15 +381,15 @@ impl ClientboundPacket for ChunkDataAndUpdateLight {
 }
 
 #[derive(Debug)]
-pub struct UnloadChunk {
+pub struct ForgetLevelChunk {
     pub chunk_x: i32,
     pub chunk_z: i32,
 }
 
-impl ClientboundPacket for UnloadChunk {
-    const CLIENTBOUND_ID: i32 = 0x21;
+impl ClientboundPacket for ForgetLevelChunk {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_FORGET_LEVEL_CHUNK;
 
-    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.chunk_z.to_be_bytes())?;
         writer.write_all(&self.chunk_x.to_be_bytes())?;
         Ok(())
@@ -399,9 +404,9 @@ pub struct PlayerAbilities {
 }
 
 impl ClientboundPacket for PlayerAbilities {
-    const CLIENTBOUND_ID: i32 = 0x38;
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_ABILITIES;
 
-    fn packet_write(&self, mut writer: impl Write) -> Result<(), PacketError> {
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.flags.to_be_bytes())?;
         writer.write_all(&self.flying_speed.to_be_bytes())?;
         writer.write_all(&self.field_of_view_modifier.to_be_bytes())?;

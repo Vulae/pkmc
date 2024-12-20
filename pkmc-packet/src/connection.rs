@@ -13,13 +13,15 @@ use crate::{
 };
 
 #[derive(Error, Debug)]
-pub enum PacketError {
+pub enum ConnectionError {
     #[error("{0:?}")]
     IoError(#[from] std::io::Error),
     #[error("{0:?}")]
     Other(Box<dyn std::error::Error + Send + Sync>),
     #[error("Unsupported packet {0}: {1:#X}")]
     UnsupportedPacket(String, i32),
+    #[error("Invalid raw packet ID for parser (expected: {0}, found: {1})")]
+    InvalidRawPacketIDForParser(i32, i32),
 }
 
 pub trait ServerboundPacket {
@@ -29,9 +31,22 @@ pub trait ServerboundPacket {
         Self::SERVERBOUND_ID
     }
 
-    fn packet_read(reader: impl Read) -> Result<Self, PacketError>
+    fn packet_read(reader: impl Read) -> Result<Self, ConnectionError>
     where
         Self: Sized;
+
+    fn packet_raw_read(raw: &RawPacket) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        if raw.id != Self::SERVERBOUND_ID {
+            return Err(ConnectionError::InvalidRawPacketIDForParser(
+                Self::SERVERBOUND_ID,
+                raw.id,
+            ));
+        }
+        Self::packet_read(std::io::Cursor::new(&raw.data))
+    }
 }
 
 pub trait ClientboundPacket {
@@ -41,9 +56,9 @@ pub trait ClientboundPacket {
         Self::CLIENTBOUND_ID
     }
 
-    fn packet_write(&self, writer: impl Write) -> Result<(), PacketError>;
+    fn packet_write(&self, writer: impl Write) -> Result<(), ConnectionError>;
 
-    fn raw_packet(&self) -> Result<RawPacket, PacketError> {
+    fn raw_packet(&self) -> Result<RawPacket, ConnectionError> {
         let mut raw_data = Vec::new();
         self.packet_write(&mut raw_data)?;
         Ok(RawPacket {
@@ -51,14 +66,6 @@ pub trait ClientboundPacket {
             data: raw_data.into_boxed_slice(),
         })
     }
-}
-
-#[derive(Error, Debug)]
-pub enum ConnectionError {
-    #[error("{0:?}")]
-    PacketError(#[from] PacketError),
-    #[error("{0:?}")]
-    IoError(#[from] std::io::Error),
 }
 
 #[derive(Debug)]
@@ -244,7 +251,7 @@ impl Connection {
             match self.stream.read(&mut buf) {
                 Ok(0) => {
                     self.closed = true;
-                    return Ok(());
+                    break;
                 }
                 Ok(n) => {
                     self.bytes.extend(&buf[..n]);
@@ -252,8 +259,12 @@ impl Connection {
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     break;
                 }
-                Err(ref e) if e.kind() == io::ErrorKind::BrokenPipe => {
+                Err(ref e)
+                    if e.kind() == io::ErrorKind::BrokenPipe
+                        || e.kind() == io::ErrorKind::UnexpectedEof =>
+                {
                     self.closed = true;
+                    break;
                 }
                 Err(e) => return Err(e),
             }
@@ -268,44 +279,29 @@ impl Connection {
 
     pub fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
         self.recieve_bytes()?;
+        if self.closed {
+            return Ok(None);
+        }
         self.handler.recieve(&mut self.bytes)
     }
 }
 
-// I gave up on this macro trying to get it to work with rustfmt
-//#[macro_export]
-//macro_rules! match_packet_parse {
-//    ($packet:expr; $fallback_pat:pat => $fallback_block:stmt, $($parser:ty, $name:pat => $block:stmt,)*) => {
-//        if let Some(packet) = $packet {
-//            let mut reader = $crate::packet::reader::PacketReader::new(std::io::Cursor::new(packet.data.as_ref()));
-//            match packet {
-//                $(
-//                    $crate::connection::RawPacket { id: <$parser>::SERVERBOUND_ID, .. } => {
-//                        let $name = <$parser>::packet_read(&mut reader)?;
-//                        $block
-//                    },)*
-//                $fallback_pat => { $fallback_block },
-//            }
-//        }
-//    };
-//}
-
 #[macro_export]
-macro_rules! create_packet_enum {
-    ($enum_name:ident; $($type:ty, $name:ident;)*) => {
+macro_rules! clientbound_packet_enum {
+    ($enum_vis:vis $enum_name:ident; $($type:ty, $name:ident;)*) => {
         #[allow(unused)]
-        enum $enum_name {
+        $enum_vis enum $enum_name {
             $(
                 $name($type),
             )*
         }
 
-        impl TryFrom<$crate::connection::RawPacket> for $enum_name {
-            type Error = $crate::connection::PacketError;
+        impl TryFrom<&$crate::connection::RawPacket> for $enum_name {
+            type Error = $crate::connection::ConnectionError;
 
-            fn try_from(value: $crate::connection::RawPacket) -> std::result::Result<Self, Self::Error> {
+            fn try_from(value: &$crate::connection::RawPacket) -> std::result::Result<Self, Self::Error> {
                 use $crate::connection::ServerboundPacket as _;
-                let mut reader = std::io::Cursor::new(value.data);
+                let mut reader = std::io::Cursor::new(&value.data);
                 match value.id {
                     $(
                         <$type>::SERVERBOUND_ID => Ok(Self::$name(<$type>::packet_read(&mut reader)?)),

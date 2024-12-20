@@ -1,3 +1,5 @@
-pub mod nbt;
+mod de;
+mod nbt;
 
-pub use nbt::NBT;
+pub use de::from_nbt;
+pub use nbt::{NBTError, NBT};

@@ -6,4 +6,4 @@ edition.workspace = true
 [dependencies]
 pkmc-util = { path = "../pkmc-util" }
 thiserror.workspace = true
-serde = { version = "1.0.213", features = ["derive"] }
+serde.workspace = true

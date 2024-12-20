@@ -8,6 +8,12 @@ Originally made so I can make a Minecraft server with custom features specifical
 I will **NOT** make anything use any async code (tokio/futures).
 This was originally built to be fully single-threaded, but that *may* change in the future.
 
+## [Running](#running)
+
+1. Clone repo
+2. Start the server `cargo run --release`
+3. Join the server (Default IP is `[::1]:52817`)
+
 ## [Planned Features](#planned-features)
 
 - [X] [Server list ping](https://wiki.vg/Server_List_Ping)

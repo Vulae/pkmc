@@ -1,12 +1,12 @@
 [package]
-name = "pkmc-defs"
+name = "pkmc-world"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-pkmc-packet = { path = "../pkmc-packet" }
 pkmc-util = { path = "../pkmc-util" }
 pkmc-nbt = { path = "../pkmc-nbt" }
 thiserror.workspace = true
+flate2.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+

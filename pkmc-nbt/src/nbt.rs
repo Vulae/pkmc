@@ -1,5 +1,4 @@
 use pkmc_util::ReadExt as _;
-use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -18,6 +17,8 @@ pub enum NBTError {
     UnexpectedEnd,
     #[error("NBT could not write invalid list")]
     InvalidList,
+    #[error("NBT error while deserializing: {0:?}")]
+    DeserializeError(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,8 +81,7 @@ impl From<NBTTag> for u8 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NBT {
     Byte(i8),
     Short(i16),
@@ -125,58 +125,6 @@ impl<T: Into<NBT>> From<Vec<T>> for NBT {
     }
 }
 
-//impl Serialize for NBT {
-//    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-//    where
-//        S: serde::Serializer,
-//    {
-//        match self {
-//            NBT::Byte(byte) => serializer.serialize_i8(*byte),
-//            NBT::Short(short) => serializer.serialize_i16(*short),
-//            NBT::Int(int) => serializer.serialize_i32(*int),
-//            NBT::Long(long) => serializer.serialize_i64(*long),
-//            NBT::Float(float) => serializer.serialize_f32(*float),
-//            NBT::Double(double) => serializer.serialize_f64(*double),
-//            NBT::String(string) => serializer.serialize_str(string),
-//            NBT::List(list) => {
-//                let mut seq = serializer.serialize_seq(Some(list.len()))?;
-//                for item in list {
-//                    seq.serialize_element(item)?;
-//                }
-//                seq.end()
-//            }
-//            NBT::Compound(compound) => {
-//                let mut map = serializer.serialize_map(Some(compound.len()))?;
-//                for (key, item) in compound {
-//                    map.serialize_entry(key, item)?;
-//                }
-//                map.end()
-//            }
-//            NBT::ByteArray(bytes) => {
-//                let mut seq = serializer.serialize_seq(Some(bytes.len()))?;
-//                for byte in bytes {
-//                    seq.serialize_element(byte)?;
-//                }
-//                seq.end()
-//            }
-//            NBT::IntArray(ints) => {
-//                let mut seq = serializer.serialize_seq(Some(ints.len()))?;
-//                for int in ints {
-//                    seq.serialize_element(int)?;
-//                }
-//                seq.end()
-//            }
-//            NBT::LongArray(longs) => {
-//                let mut seq = serializer.serialize_seq(Some(longs.len()))?;
-//                for long in longs {
-//                    seq.serialize_element(long)?;
-//                }
-//                seq.end()
-//            }
-//        }
-//    }
-//}
-
 // TODO: More macros for creating NBTs
 
 #[macro_export]
@@ -191,21 +139,6 @@ macro_rules! nbt_compound {
         )
     };
 }
-
-//#[test]
-//fn thingy() {
-//    let nbt = nbt_compound![
-//        "test_byte" => NBT::Byte(0),
-//        "test_string" => NBT::String("HIII".to_owned()),
-//    ];
-//    #[derive(Debug, Serialize, Deserialize)]
-//    struct Aaaaa {
-//        text_byte: i8,
-//        test_string: String,
-//    }
-//    let parsed: Aaaaa = nbt.try_into().unwrap();
-//    println!("{:#?}", parsed);
-//}
 
 impl NBT {
     fn tag(&self) -> NBTTag {

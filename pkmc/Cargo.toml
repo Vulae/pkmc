@@ -12,7 +12,7 @@ pkmc-util = { path = "../pkmc-util" }
 thiserror.workspace = true
 base64 = "0.22.1"
 rand = "0.8.5"
-serde = { version = "1.0.213", features = ["derive"] }
+serde.workspace = true
 toml = "0.8.19"
 ratatui = "0.29.0"
 anyhow = "1.0.94"

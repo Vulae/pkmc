@@ -7,4 +7,4 @@ edition.workspace = true
 pkmc-util = { path = "../pkmc-util" }
 pkmc-nbt = { path = "../pkmc-nbt" }
 thiserror.workspace = true
-flate2 = "1.0.35"
+flate2.workspace = true

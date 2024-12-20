@@ -1,8 +1,19 @@
 [workspace]
+members = [
+    "pkmc-packet",
+    "pkmc-nbt",
+    "pkmc-defs",
+    "pkmc-util",
+    "pkmc-world",
+    "pkmc-generated",
+    "pkmc/",
+]
 resolver = "2"
-members = ["pkmc-packet", "pkmc-nbt", "pkmc-defs", "pkmc-util", "pkmc/"]
 package.version = "0.1.0"
 package.edition = "2021"
 
 [workspace.dependencies]
-thiserror = "2.0.7"
+thiserror = "2.0.8"
+flate2 = "1.0.35"
+serde = { version = "1.0.216", features = ["derive"] }
+serde_json = "1.0.133"

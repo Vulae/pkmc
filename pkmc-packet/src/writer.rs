@@ -1,11 +1,11 @@
 use pkmc_nbt::NBT;
-use pkmc_util::UUID;
+use pkmc_util::{Transmutable, UUID};
 use std::io::Write;
 
 use super::{BitSet, Position};
 
 pub fn write_varint(mut writer: impl Write, value: i32) -> std::io::Result<()> {
-    let mut value = unsafe { std::mem::transmute::<i32, u32>(value) };
+    let mut value: u32 = value.transmute();
     loop {
         let mut byte = value as u8 & 0x7F;
         value >>= 7;
@@ -71,9 +71,9 @@ impl<T: Write> WriteExtPacket for T {
     }
 
     fn write_position(&mut self, position: &Position) -> std::io::Result<()> {
-        let x = unsafe { std::mem::transmute::<i32, u32>(position.x) } as u64;
-        let y = unsafe { std::mem::transmute::<i16, u16>(position.y) } as u64;
-        let z = unsafe { std::mem::transmute::<i32, u32>(position.z) } as u64;
+        let x = Transmutable::<u32>::transmute(position.x) as u64;
+        let y = Transmutable::<u16>::transmute(position.y) as u64;
+        let z = Transmutable::<u32>::transmute(position.z) as u64;
         let v: u64 = ((x & 0x3FFFFFF) << 38) | ((z & 0x3FFFFFF) << 12) | (y & 0xFFF);
         self.write_all(&v.to_be_bytes())?;
         Ok(())

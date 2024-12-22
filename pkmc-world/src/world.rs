@@ -3,7 +3,7 @@
 use std::{collections::HashMap, fs::File, io::Seek, marker::PhantomData, path::PathBuf};
 
 use pkmc_nbt::{NBTError, NBT};
-use pkmc_util::{PackedArray, ReadExt};
+use pkmc_util::{PackedArray, ReadExt, Transmutable as _};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -40,12 +40,7 @@ impl ChunkSectionBlockStates {
             1 => self.palette[0].clone(),
             palette_count => {
                 let mut packed_indices = PackedArray::from_inner(
-                    // TODO: Is this safe? lmao
-                    unsafe {
-                        std::mem::transmute::<Box<[i64]>, Box<[u64]>>(
-                            self.data.as_ref().unwrap().clone(),
-                        )
-                    },
+                    self.data.as_ref().unwrap().clone().transmute(),
                     PackedArray::bits_per_entry(palette_count as u64 - 1),
                     16 * 16 * 16,
                 );

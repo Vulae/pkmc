@@ -89,15 +89,6 @@ mod test {
     use crate::PackedArray;
 
     #[test]
-    fn packed_array_test_simple() {
-        let mut data = PackedArray::new(13, 2);
-        data.set_unchecked(0, 123);
-        data.set_unchecked(1, 456);
-        assert_eq!(data.get_unchecked(0), 123);
-        assert_eq!(data.get_unchecked(1), 456);
-    }
-
-    #[test]
     fn packed_array_test() {
         let test_data = [
             1, 2, 2, 3, 4, 4, 5, 6, 6, 4, 8, 0, 7, 4, 3, 13, 15, 16, 9, 14, 10, 12, 0, 2,

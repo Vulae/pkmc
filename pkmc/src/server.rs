@@ -1,11 +1,16 @@
 use anyhow::{anyhow, Result};
 use pkmc_packet::Connection;
+use pkmc_util::IterRetain;
 use std::{
     net::{SocketAddr, TcpListener, ToSocketAddrs},
     sync::{Arc, Mutex},
 };
 
-use crate::{client::Client, server_state::ServerState};
+use crate::{
+    client::Client,
+    player::{Player, PlayerError},
+    server_state::ServerState,
+};
 
 #[derive(Debug)]
 pub struct Server {
@@ -13,7 +18,7 @@ pub struct Server {
     address: SocketAddr,
     listener: TcpListener,
     clients: Vec<Client>,
-    // players: Vec<Player>,
+    players: Vec<Player>,
 }
 
 impl Server {
@@ -29,7 +34,7 @@ impl Server {
             state: Arc::new(Mutex::new(state)),
             listener,
             clients: Vec::new(),
-            // players: Vec::new(),
+            players: Vec::new(),
         })
     }
 
@@ -49,6 +54,30 @@ impl Server {
             .try_for_each(|client| client.update())?;
 
         self.clients.retain(|client| !client.is_closed());
+
+        self.clients
+            .retain_returned(|client| !client.client_is_play())
+            .try_for_each(|client| {
+                let (connection, player_information) = client.into_client_play_state()?;
+                println!("Connection {}", player_information.name);
+                self.players
+                    .push(Player::new(connection, player_information)?);
+                Ok::<_, anyhow::Error>(())
+            })?;
+
+        self.players.iter_mut().try_for_each(|player| {
+            if let Err(err) = player.update() {
+                // FIXME: How to display the actual .unwrap() formatted output?
+                player.kick(format!("{:?}", err))?;
+            }
+            Ok::<_, PlayerError>(())
+        })?;
+
+        self.players
+            .retain_returned(|player| !player.is_closed())
+            .for_each(|player| {
+                println!("Disconnected {}", player.name());
+            });
 
         Ok(())
     }

@@ -1,10 +1,11 @@
 use std::io::{Read, Write};
 
-use crate::generated;
+use crate::{generated, text_component::TextComponent};
 use pkmc_nbt::{nbt_compound, NBT};
 use pkmc_packet::{
     connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
-    to_paletted_container, BitSet, Position, ReadExtPacket, WriteExtPacket,
+    serverbound_packet_enum, to_paletted_container, BitSet, Position, ReadExtPacket,
+    WriteExtPacket,
 };
 use pkmc_util::read_ext::ReadExt;
 
@@ -69,6 +70,18 @@ impl ClientboundPacket for Login {
 }
 
 #[derive(Debug)]
+pub struct Disconnect(pub TextComponent);
+
+impl ClientboundPacket for Disconnect {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_DISCONNECT;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_nbt(&self.0.to_nbt())?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub enum GameEvent {
     StartWaitingForLevelChunks,
 }
@@ -111,6 +124,20 @@ impl ServerboundPacket for KeepAlive {
         Ok(Self {
             id: i64::from_be_bytes(reader.read_const()?),
         })
+    }
+}
+
+#[derive(Debug)]
+pub struct PlayerLoaded;
+
+impl ServerboundPacket for PlayerLoaded {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_PLAYER_LOADED;
+
+    fn packet_read(_reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self)
     }
 }
 
@@ -238,6 +265,38 @@ impl ServerboundPacket for MovePlayerRot {
             yaw: f32::from_be_bytes(reader.read_const()?),
             pitch: f32::from_be_bytes(reader.read_const()?),
             on_ground: reader.read_bool()?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct ClientTickEnd;
+
+impl ServerboundPacket for ClientTickEnd {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_CLIENT_TICK_END;
+
+    fn packet_read(_reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self)
+    }
+}
+
+#[derive(Debug)]
+pub struct PlayerInput {
+    pub flags: u8,
+}
+
+impl ServerboundPacket for PlayerInput {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_PLAYER_INPUT;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            flags: u8::from_be_bytes(reader.read_const()?),
         })
     }
 }
@@ -397,13 +456,14 @@ impl ClientboundPacket for ForgetLevelChunk {
 }
 
 #[derive(Debug)]
-pub struct PlayerAbilities {
+#[allow(non_camel_case_types)]
+pub struct PlayerAbilities_Clientbound {
     pub flags: u8,
     pub flying_speed: f32,
     pub field_of_view_modifier: f32,
 }
 
-impl ClientboundPacket for PlayerAbilities {
+impl ClientboundPacket for PlayerAbilities_Clientbound {
     const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_ABILITIES;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
@@ -413,3 +473,90 @@ impl ClientboundPacket for PlayerAbilities {
         Ok(())
     }
 }
+
+#[derive(Debug)]
+#[allow(non_camel_case_types)]
+pub struct PlayerAbilities_Serverbound {
+    pub flags: u8,
+}
+
+impl ServerboundPacket for PlayerAbilities_Serverbound {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_PLAYER_ABILITIES;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            flags: u8::from_be_bytes(reader.read_const()?),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerCommandAction {
+    StartSneaking,
+    StopSneaking,
+    LeaveBed,
+    StartSprinting,
+    StopSprinting,
+    StartJumpWithHorse,
+    StopJumpWithHorse,
+    OpenVehicleInventory,
+    StartFlyingWithElytra,
+}
+
+impl TryFrom<i32> for PlayerCommandAction {
+    type Error = ConnectionError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(PlayerCommandAction::StartSneaking),
+            1 => Ok(PlayerCommandAction::StopSneaking),
+            2 => Ok(PlayerCommandAction::LeaveBed),
+            3 => Ok(PlayerCommandAction::StartSprinting),
+            4 => Ok(PlayerCommandAction::StopSprinting),
+            5 => Ok(PlayerCommandAction::StartJumpWithHorse),
+            6 => Ok(PlayerCommandAction::StopJumpWithHorse),
+            7 => Ok(PlayerCommandAction::OpenVehicleInventory),
+            8 => Ok(PlayerCommandAction::StartFlyingWithElytra),
+            _ => Err(ConnectionError::Other(
+                "packet::play::PlayerActionCommand invalid varint value".into(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PlayerCommand {
+    pub entity_id: i32,
+    pub action: PlayerCommandAction,
+    pub jump_boost: i32,
+}
+
+impl ServerboundPacket for PlayerCommand {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_PLAYER_COMMAND;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            entity_id: reader.read_varint()?,
+            action: PlayerCommandAction::try_from(reader.read_varint()?)?,
+            jump_boost: reader.read_varint()?,
+        })
+    }
+}
+
+serverbound_packet_enum!(pub PlayPacket;
+    KeepAlive, KeepAlive;
+    PlayerLoaded, PlayerLoaded;
+    MovePlayerPosRot, MovePlayerPosRot;
+    MovePlayerPos, MovePlayerPos;
+    MovePlayerRot, MovePlayerRot;
+    ClientTickEnd, ClientTickEnd;
+    PlayerInput, PlayerInput;
+    PlayerAbilities_Serverbound, PlayerAbilities;
+    PlayerCommand, PlayerCommand;
+);

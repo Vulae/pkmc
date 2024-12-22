@@ -37,9 +37,12 @@ enum Commands {
         #[arg(short, long)]
         /// Input generated data directory
         input: PathBuf,
-        #[arg(short, long)]
-        /// Output file for generated code
-        output: PathBuf,
+        #[arg(short = 'c', long)]
+        /// Output code file for generated code
+        output_code: PathBuf,
+        #[arg(short = 'j', long)]
+        /// Output json file for generated data
+        output_json: PathBuf,
         #[arg(short, long, default_value_t = false)]
         /// If to skip using rustfmt on generated code
         skip_format: bool,
@@ -62,10 +65,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Source {
             input,
-            output,
+            output_code,
+            output_json,
             skip_format,
         } => {
-            pkmc_generated::generate_generated_code(input, output, skip_format)?;
+            pkmc_generated::generate_generated_code(input, output_code, output_json, skip_format)?;
         }
     }
     Ok(())

@@ -14,16 +14,18 @@ pub mod version_manifest;
 
 #[derive(Error, Debug)]
 pub enum GeneratedError {
-    #[error("{0:?}")]
+    #[error(transparent)]
     IoError(#[from] std::io::Error),
-    #[error("{0:?}")]
+    #[error(transparent)]
     ReqwestError(#[from] reqwest::Error),
-    #[error("{0:?}")]
+    #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
     #[error("Packages version \"{0}\" doesn't have download for \"{1}\"")]
     InvalidDownload(String, String),
     #[error("Version \"{0}\" not found in version manifest")]
     VersionNotFound(String),
+    #[error("Invalid registry path")]
+    InvalidRegistryPath,
 }
 
 pub fn download_server_jar<P: AsRef<Path>>(
@@ -78,9 +80,10 @@ pub fn extract_generated_data<P1: AsRef<Path>, P2: AsRef<Path>>(
     Ok(())
 }
 
-pub fn generate_generated_code<P1: AsRef<Path>, P2: AsRef<Path>>(
+pub fn generate_generated_code<P1: AsRef<Path>, P2: AsRef<Path>, P3: AsRef<Path>>(
     generated_directory: P1,
-    generated_source_output: P2,
+    generated_code_output: P2,
+    generated_json_output: P3,
     skip_format: bool,
 ) -> Result<(), GeneratedError> {
     let registry = GeneratedRegistry::open(generated_directory);
@@ -101,15 +104,20 @@ pub fn generate_generated_code<P1: AsRef<Path>, P2: AsRef<Path>>(
             .collect::<Vec<_>>()
             .join("\n")
     );
-    std::fs::write(&generated_source_output, code)?;
+    std::fs::write(&generated_code_output, code)?;
 
     if !skip_format {
         std::process::Command::new("cargo")
             .arg("fmt")
             .arg("--")
-            .arg(generated_source_output.as_ref())
+            .arg(generated_code_output.as_ref())
             .output()?;
     }
+
+    std::fs::write(
+        &generated_json_output,
+        serde_json::to_string(&registry.enumerate_data()?)?,
+    )?;
 
     Ok(())
 }

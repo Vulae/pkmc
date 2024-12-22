@@ -14,9 +14,9 @@ use crate::{
 
 #[derive(Error, Debug)]
 pub enum ConnectionError {
-    #[error("{0:?}")]
+    #[error(transparent)]
     IoError(#[from] std::io::Error),
-    #[error("{0:?}")]
+    #[error(transparent)]
     Other(Box<dyn std::error::Error + Send + Sync>),
     #[error("Unsupported packet {0}: {1:#X}")]
     UnsupportedPacket(String, i32),
@@ -210,14 +210,6 @@ impl StreamHandler {
     }
 }
 
-#[derive(Debug)]
-pub struct Connection {
-    stream: TcpStream,
-    closed: bool,
-    bytes: VecDeque<u8>,
-    pub handler: StreamHandler,
-}
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RawPacket {
     pub id: i32,
@@ -230,21 +222,15 @@ impl RawPacket {
     }
 }
 
-impl Connection {
-    pub fn new(stream: TcpStream) -> Result<Self, ConnectionError> {
-        stream.set_nonblocking(true)?;
-        Ok(Self {
-            stream,
-            closed: false,
-            bytes: VecDeque::new(),
-            handler: StreamHandler::Uncompressed(UncompressedStreamHandler),
-        })
-    }
+#[derive(Debug)]
+struct InnerConnection {
+    stream: TcpStream,
+    bytes: VecDeque<u8>,
+    handler: StreamHandler,
+    closed: bool,
+}
 
-    pub fn is_closed(&self) -> bool {
-        self.closed
-    }
-
+impl InnerConnection {
     fn recieve_bytes(&mut self) -> Result<(), std::io::Error> {
         let mut buf = [0u8; 1024];
         loop {
@@ -286,8 +272,75 @@ impl Connection {
     }
 }
 
+#[derive(Debug)]
+pub struct Connection {
+    inner: Option<InnerConnection>,
+}
+
+impl Connection {
+    pub fn new(stream: TcpStream) -> Result<Self, ConnectionError> {
+        stream.set_nonblocking(true)?;
+        Ok(Self {
+            inner: Some(InnerConnection {
+                stream,
+                bytes: VecDeque::new(),
+                handler: StreamHandler::Uncompressed(UncompressedStreamHandler),
+                closed: false,
+            }),
+        })
+    }
+
+    fn update_closed_state(&mut self) {
+        if matches!(self.inner, Some(InnerConnection { closed: true, .. })) {
+            self.inner = None;
+        }
+    }
+
+    pub fn close(&mut self) -> Result<(), ConnectionError> {
+        if let Some(inner) = self.inner.take() {
+            inner.stream.shutdown(std::net::Shutdown::Both)?;
+        }
+        Ok(())
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.inner
+            .as_ref()
+            .map(|inner| inner.closed)
+            .unwrap_or(true)
+    }
+
+    pub fn set_handler(&mut self, handler: StreamHandler) {
+        self.update_closed_state();
+        if let Some(inner) = self.inner.as_mut() {
+            inner.handler = handler;
+        }
+    }
+
+    // TODO: Currently it just doesn't care if the connection is closed.
+    // But should it error on a closed connection?
+
+    pub fn send(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
+        self.update_closed_state();
+        if let Some(inner) = self.inner.as_mut() {
+            inner.send(packet)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
+        self.update_closed_state();
+        if let Some(inner) = self.inner.as_mut() {
+            inner.recieve()
+        } else {
+            Ok(None)
+        }
+    }
+}
+
 #[macro_export]
-macro_rules! clientbound_packet_enum {
+macro_rules! serverbound_packet_enum {
     ($enum_vis:vis $enum_name:ident; $($type:ty, $name:ident;)*) => {
         #[allow(unused)]
         $enum_vis enum $enum_name {

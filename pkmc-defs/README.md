@@ -4,4 +4,4 @@ Run the following commands at the root of the project (pkmc, not pkmc-generated)
 
 1. `cargo run --example generated-cli -- download --version 1.21.4 --output assets/generated/server.jar`
 2. `cargo run --example generated-cli -- extract --input assets/generated/server.jar --output assets/generated/generated`
-3. `cargo run --example generated-cli -- source --input assets/generated/generated --output pkmc-defs/src/generated.rs`
+3. `cargo run --example generated-cli -- source --input assets/generated/generated --output-code pkmc-defs/src/generated.rs --output-json pkmc-defs/src/generated.json`

@@ -7,7 +7,7 @@ use crate::generated;
 use pkmc_nbt::NBT;
 use pkmc_packet::{
     connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
-    ReadExtPacket, WriteExtPacket,
+    serverbound_packet_enum, ReadExtPacket, WriteExtPacket,
 };
 use pkmc_util::read_ext::ReadExt;
 
@@ -200,3 +200,34 @@ impl ClientboundPacket for UpdateTags {
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub struct FinishConfiguration;
+
+impl ClientboundPacket for FinishConfiguration {
+    const CLIENTBOUND_ID: i32 =
+        generated::packet::configuration::CLIENTBOUND_MINECRAFT_FINISH_CONFIGURATION;
+
+    fn packet_write(&self, _writer: impl Write) -> Result<(), ConnectionError> {
+        Ok(())
+    }
+}
+
+impl ServerboundPacket for FinishConfiguration {
+    const SERVERBOUND_ID: i32 =
+        generated::packet::configuration::SERVERBOUND_MINECRAFT_FINISH_CONFIGURATION;
+
+    fn packet_read(_reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self)
+    }
+}
+
+serverbound_packet_enum!(pub ConfigurationPacket;
+    CustomPayload, CustomPayload;
+    ClientInformation, ClientInformation;
+    SelectKnownPacks, SelectKnownPacks;
+    FinishConfiguration, FinishConfiguration;
+);

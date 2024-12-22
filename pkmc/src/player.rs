@@ -1,26 +1,26 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
+use std::collections::HashSet;
 
-use anyhow::{anyhow, Result};
-use pkmc_defs::packet;
-use pkmc_packet::{clientbound_packet_enum, Connection};
+use pkmc_defs::{packet, text_component::TextComponent};
+use pkmc_packet::{connection::ConnectionError, Connection};
 use pkmc_util::{IterRetain as _, UUID};
-use rand::{thread_rng, Rng};
+use rand::Rng as _;
+use thiserror::Error;
 
-use crate::{client_login::ClientLogin, server_state::ServerState};
+use crate::client::PlayerInformation;
 
-clientbound_packet_enum!(ClientPlayPacket;
-    packet::play::KeepAlive, KeepAlive;
-    packet::play::AcceptTeleportation, ConfirmTeleport;
-    packet::play::MovePlayerPosRot, SetPlayerPositionAndRotation;
-    packet::play::MovePlayerPos, SetPlayerPosition;
-    packet::play::MovePlayerRot, SetPlayerRotation;
-);
+#[derive(Error, Debug)]
+pub enum PlayerError {
+    #[error(transparent)]
+    ConnectionError(#[from] ConnectionError),
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(
+        "Client bad keep alive response (No response, wrong id, or responded when not expected)"
+    )]
+    BadKeepAliveResponse,
+}
 
-const KEEPALIVE_PING_TIME: Duration = Duration::from_millis(10000);
+const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 struct ChunkPosition {
@@ -54,7 +54,6 @@ struct ChunkLoader {
     to_unload: Vec<ChunkPosition>,
 }
 
-#[allow(unused)]
 impl ChunkLoader {
     pub fn new(radius: i32) -> Self {
         Self {
@@ -122,139 +121,73 @@ impl ChunkLoader {
     pub fn next_to_unload(&mut self) -> Option<ChunkPosition> {
         self.to_unload.pop()
     }
-
-    fn visualize(&self) {
-        //let min = self
-        //    .loaded
-        //    .iter()
-        //    .fold(ChunkPosition::new(i32::MAX, i32::MAX), |min, chunk| {
-        //        ChunkPosition::new(
-        //            i32::min(min.chunk_x, chunk.chunk_x),
-        //            i32::min(min.chunk_z, chunk.chunk_z),
-        //        )
-        //    });
-        //let max = self
-        //    .loaded
-        //    .iter()
-        //    .fold(ChunkPosition::new(i32::MIN, i32::MIN), |max, chunk| {
-        //        ChunkPosition::new(
-        //            i32::max(max.chunk_x, chunk.chunk_x),
-        //            i32::max(max.chunk_z, chunk.chunk_z),
-        //        )
-        //    });
-        let min = ChunkPosition::new(-10, -10);
-        let max = ChunkPosition::new(10, 10);
-        let mut grid: Vec<Vec<bool>> = (min.chunk_z..=max.chunk_z)
-            .map(|_| (min.chunk_x..=max.chunk_x).map(|_| false).collect())
-            .collect();
-        self.loaded.iter().for_each(|chunk| {
-            let grid_x = (chunk.chunk_x - min.chunk_x) as usize;
-            let grid_z = (chunk.chunk_z - min.chunk_z) as usize;
-            if let Some(row) = grid.get_mut(grid_z) {
-                if let Some(cell) = row.get_mut(grid_x) {
-                    *cell = true;
-                }
-            }
-        });
-        grid.into_iter().for_each(|row| {
-            row.into_iter().for_each(|cell| {
-                if cell {
-                    print!("#");
-                } else {
-                    print!(" ");
-                }
-            });
-            println!();
-        });
-    }
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct Player {
-    server_state: Arc<Mutex<ServerState>>,
     connection: Connection,
     name: String,
     uuid: UUID,
+    keepalive_time: std::time::Instant,
     keepalive_id: Option<i64>,
-    keepalive_time: Instant,
-    teleportation_ids: Vec<i32>,
     x: f64,
     y: f64,
     z: f64,
-    yaw: f32,
-    pitch: f32,
-    on_ground: bool,
     chunk_loader: ChunkLoader,
 }
 
 impl Player {
-    pub fn initialize(
-        server_state: Arc<Mutex<ServerState>>,
-        login_player: ClientLogin,
-    ) -> Result<Self> {
-        let Some((name, uuid)) = login_player.player.clone() else {
-            return Err(anyhow!("Login player incomplete"));
-        };
-
-        let mut player = Player {
-            server_state,
-            connection: login_player.into_connection(),
-            name,
-            uuid,
+    pub fn new(
+        connection: Connection,
+        player_information: PlayerInformation,
+    ) -> Result<Self, PlayerError> {
+        let mut player = Self {
+            connection,
+            name: player_information.name,
+            uuid: player_information.uuid,
+            keepalive_time: std::time::Instant::now(),
             keepalive_id: None,
-            keepalive_time: Instant::now(),
-            teleportation_ids: Vec::new(),
             x: 0.0,
             y: 0.0,
             z: 0.0,
-            yaw: 0.0,
-            pitch: 0.0,
-            on_ground: false,
             chunk_loader: ChunkLoader::new(32),
         };
 
-        //{
-        //    let server_state = client.server_state.lock().unwrap();
-        //    client.connection.send(packet::play::LoginPlay {
-        //        entity_id: 0,
-        //        is_hardcore: false,
-        //        dimensions: vec![server_state.world_main_name.clone()],
-        //        max_players: 20,
-        //        view_distance: client.chunk_loader.radius,
-        //        simulation_distance: 6,
-        //        reduced_debug_info: false,
-        //        enable_respawn_screen: true,
-        //        do_limited_crafting: false,
-        //        dimension_type: 0,
-        //        dimension_name: server_state.world_main_name.clone(),
-        //        hashed_seed: 0,
-        //        game_mode: 1,
-        //        previous_game_mode: -1,
-        //        is_debug: false,
-        //        is_flat: false,
-        //        death: None,
-        //        portal_cooldown: 0,
-        //        sea_level: 0,
-        //        enforces_secure_chat: false,
-        //    })?;
-        //}
-        //
-        //client.teleport(client.x, client.y, client.z, client.yaw, client.pitch)?;
-        //
-        //client
-        //    .connection
-        //    .send(packet::play::GameEvent::StartWaitingForLevelChunks)?;
-        //
-        //client.connection.send(packet::play::SetCenterChunk {
-        //    chunk_x: 0,
-        //    chunk_z: 0,
-        //})?;
-        //
-        //client.connection.send(packet::play::PlayerAbilities {
-        //    flags: 0x01 | 0x02 | 0x04 | 0x08,
-        //    flying_speed: 0.5,
-        //    field_of_view_modifier: 0.1,
-        //})?;
+        player.connection.send(packet::play::Login {
+            entity_id: 0,
+            is_hardcore: false,
+            dimensions: vec!["pkmc:void".to_owned()],
+            max_players: 42069,
+            view_distance: player.chunk_loader.radius,
+            simulation_distance: 6,
+            reduced_debug_info: false,
+            enable_respawn_screen: true,
+            do_limited_crafting: false,
+            dimension_type: 0,
+            dimension_name: "pkmc:void".to_owned(),
+            hashed_seed: 0,
+            game_mode: 1,
+            previous_game_mode: -1,
+            is_debug: false,
+            is_flat: false,
+            death: None,
+            portal_cooldown: 0,
+            sea_level: 0,
+            enforces_secure_chat: false,
+        })?;
+
+        player
+            .connection
+            .send(packet::play::GameEvent::StartWaitingForLevelChunks)?;
+
+        player
+            .connection
+            .send(packet::play::PlayerAbilities_Clientbound {
+                flags: 0x01 | 0x02 | 0x04 | 0x08,
+                flying_speed: 0.5,
+                field_of_view_modifier: 0.1,
+            })?;
 
         Ok(player)
     }
@@ -267,121 +200,79 @@ impl Player {
         &self.uuid
     }
 
-    pub fn disconnected(&self) -> bool {
-        self.connection.is_closed()
-    }
-
-    pub fn teleport(&mut self, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) -> Result<()> {
-        let mut teleport_id: i32 = 0;
-        while self.teleportation_ids.contains(&teleport_id) {
-            teleport_id += 1;
-        }
-        self.teleportation_ids.push(teleport_id);
-        self.connection.send(packet::play::PlayerPosition {
-            relative: false,
-            x: Some(x),
-            y: Some(y),
-            z: Some(z),
-            yaw: Some(yaw),
-            pitch: Some(pitch),
-            teleport_id,
-        })?;
+    pub fn kick<T: Into<TextComponent>>(&mut self, text: T) -> Result<(), PlayerError> {
+        self.connection
+            .send(packet::play::Disconnect(text.into()))?;
+        self.connection.close()?;
         Ok(())
     }
 
-    pub fn update(&mut self) -> Result<()> {
-        //if Instant::now().duration_since(self.keepalive_time) >= KEEPALIVE_PING_TIME {
-        //    self.keepalive_time = Instant::now();
-        //    if self.keepalive_id.is_some() {
-        //        return Err(anyhow!("Client didn't respond to keepalive in time."));
-        //    }
-        //    let id: i64 = thread_rng().gen();
-        //    self.keepalive_id = Some(id);
-        //    self.connection.send(packet::play::KeepAlive { id })?;
-        //}
-        //
-        //if let Some(raw_packet) = self.connection.recieve()? {
-        //    match ClientPlayPacket::try_from(raw_packet)? {
-        //        ClientPlayPacket::KeepAlive(keep_alive) => {
-        //            if let Some(expected_keep_alive_id) = self.keepalive_id {
-        //                if keep_alive.id == expected_keep_alive_id {
-        //                    self.keepalive_id = None;
-        //                } else {
-        //                    return Err(anyhow!("Client keepalive responded with wrong id"));
-        //                }
-        //            } else {
-        //                return Err(anyhow!("Client keepalive responded to invalid keepalive"));
-        //            }
-        //        }
-        //        ClientPlayPacket::ConfirmTeleport(confirm_teleport) => {
-        //            self.teleportation_ids
-        //                .retain(|id| *id != confirm_teleport.teleport_id);
-        //        }
-        //        ClientPlayPacket::SetPlayerPositionAndRotation(
-        //            set_player_position_and_rotation,
-        //        ) => {
-        //            if self.teleportation_ids.is_empty() {
-        //                self.x = set_player_position_and_rotation.x;
-        //                self.y = set_player_position_and_rotation.y;
-        //                self.z = set_player_position_and_rotation.z;
-        //                self.on_ground = set_player_position_and_rotation.on_ground;
-        //            }
-        //            self.yaw = set_player_position_and_rotation.yaw;
-        //            self.pitch = set_player_position_and_rotation.pitch;
-        //        }
-        //        ClientPlayPacket::SetPlayerPosition(set_player_position) => {
-        //            if self.teleportation_ids.is_empty() {
-        //                self.x = set_player_position.x;
-        //                self.y = set_player_position.y;
-        //                self.z = set_player_position.z;
-        //                self.on_ground = set_player_position.on_ground;
-        //            }
-        //        }
-        //        ClientPlayPacket::SetPlayerRotation(set_player_rotation) => {
-        //            if self.teleportation_ids.is_empty() {
-        //                self.on_ground = set_player_rotation.on_ground;
-        //            }
-        //            self.yaw = set_player_rotation.yaw;
-        //            self.pitch = set_player_rotation.pitch;
-        //        }
-        //    }
-        //}
-        //
-        //let chunk_position = ChunkPosition {
-        //    chunk_x: (self.x as i32) / 16,
-        //    chunk_z: (self.z as i32) / 16,
-        //};
-        //if self.chunk_loader.update_center(Some(chunk_position)) {
-        //    self.connection.send(packet::play::SetCenterChunk {
-        //        chunk_x: chunk_position.chunk_x,
-        //        chunk_z: chunk_position.chunk_z,
-        //    })?;
-        //}
-        //while let Some(to_unload) = self.chunk_loader.next_to_unload() {
-        //    //println!("UNLOAD: {:?}", to_unload);
-        //    self.connection.send(packet::play::UnloadChunk {
-        //        chunk_x: to_unload.chunk_x,
-        //        chunk_z: to_unload.chunk_z,
-        //    })?;
-        //}
-        //
-        //let server_state = self.server_state.lock().unwrap();
-        //let world_height: usize =
-        //    (server_state.world_max_y - server_state.world_min_y).try_into()?;
-        //if world_height % 16 != 0 {
-        //    panic!("Invalid world height.");
-        //}
-        //let num_sections = world_height / 16;
-        //
-        //while let Some(to_load) = self.chunk_loader.next_to_load() {
-        //    //println!("LOAD: {:?}", to_load);
-        //    self.connection
-        //        .send(packet::play::ChunkDataAndUpdateLight::generate_test(
-        //            to_load.chunk_x,
-        //            to_load.chunk_z,
-        //            num_sections,
-        //        )?)?;
-        //}
+    pub fn is_closed(&self) -> bool {
+        self.connection.is_closed()
+    }
+
+    pub fn update(&mut self) -> Result<(), PlayerError> {
+        if std::time::Instant::now().duration_since(self.keepalive_time) >= KEEPALIVE_PING_TIME {
+            self.keepalive_time = std::time::Instant::now();
+            // Didn't respond to previous keepalive in time for new one.
+            if self.keepalive_id.is_some() {
+                return Err(PlayerError::BadKeepAliveResponse);
+            }
+            let id: i64 = rand::thread_rng().gen();
+            self.keepalive_id = Some(id);
+            self.connection.send(packet::play::KeepAlive { id })?;
+        }
+
+        while let Some(packet) = self.connection.recieve()? {
+            match packet::play::PlayPacket::try_from(&packet)? {
+                packet::play::PlayPacket::KeepAlive(keepalive) => match self.keepalive_id.take() {
+                    // Success so we do nothing.
+                    Some(keepalive_id) if keepalive_id == keepalive.id => {}
+                    // Either responded to invalid keepalive, or keepalive id is wrong.
+                    _ => return Err(PlayerError::BadKeepAliveResponse),
+                },
+                packet::play::PlayPacket::PlayerLoaded(_player_loaded) => {}
+                packet::play::PlayPacket::MovePlayerPosRot(move_player_pos_rot) => {
+                    self.x = move_player_pos_rot.x;
+                    self.y = move_player_pos_rot.y;
+                    self.z = move_player_pos_rot.z;
+                }
+                packet::play::PlayPacket::MovePlayerPos(move_player_pos) => {
+                    self.x = move_player_pos.x;
+                    self.y = move_player_pos.y;
+                    self.z = move_player_pos.z;
+                }
+                packet::play::PlayPacket::MovePlayerRot(_move_player_rot) => {}
+                packet::play::PlayPacket::ClientTickEnd(_client_tick_end) => {}
+                packet::play::PlayPacket::PlayerInput(_player_input) => {}
+                packet::play::PlayPacket::PlayerAbilities(_player_abilities) => {}
+                packet::play::PlayPacket::PlayerCommand(_player_command) => {}
+            }
+        }
+
+        let chunk_position = ChunkPosition::new((self.x as i32) / 16, (self.z as i32) / 16);
+        if self.chunk_loader.update_center(Some(chunk_position)) {
+            self.connection.send(packet::play::SetChunkCacheCenter {
+                chunk_x: chunk_position.chunk_x,
+                chunk_z: chunk_position.chunk_z,
+            })?;
+        }
+
+        while let Some(to_unload) = self.chunk_loader.next_to_unload() {
+            self.connection.send(packet::play::ForgetLevelChunk {
+                chunk_x: to_unload.chunk_x,
+                chunk_z: to_unload.chunk_z,
+            })?;
+        }
+
+        while let Some(to_load) = self.chunk_loader.next_to_load() {
+            self.connection
+                .send(packet::play::LevelChunkWithLight::generate_test(
+                    to_load.chunk_x,
+                    to_load.chunk_z,
+                    1,
+                )?)?;
+        }
 
         Ok(())
     }

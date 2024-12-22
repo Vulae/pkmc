@@ -9,13 +9,13 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum WorldError {
-    #[error("{0:?}")]
+    #[error(transparent)]
     IoError(#[from] std::io::Error),
     #[error("Region chunk unknown compression \"{0}\"")]
     RegionUnknownCompression(u8),
     #[error("Region chunk unsupported compression \"{0}\"")]
     RegionUnsupportedCompression(String),
-    #[error("{0:?}")]
+    #[error(transparent)]
     NBTError(#[from] NBTError),
 }
 

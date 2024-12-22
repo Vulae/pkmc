@@ -1,5 +1,5 @@
 pub mod client;
-// pub mod player;
+pub mod player;
 pub mod server;
 pub mod server_state;
 

@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use crate::generated;
 use pkmc_packet::{
     connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
-    ReadExtPacket, WriteExtPacket,
+    serverbound_packet_enum, ReadExtPacket, WriteExtPacket,
 };
 use pkmc_util::UUID;
 
@@ -42,20 +42,20 @@ impl ClientboundPacket for Compression {
 }
 
 #[derive(Debug)]
-pub struct SuccessProperty {
+pub struct FinishedProperty {
     pub name: String,
     pub value: String,
     pub signature: Option<String>,
 }
 
 #[derive(Debug)]
-pub struct Success {
+pub struct Finished {
     pub uuid: UUID,
     pub name: String,
-    pub properties: Vec<SuccessProperty>,
+    pub properties: Vec<FinishedProperty>,
 }
 
-impl ClientboundPacket for Success {
+impl ClientboundPacket for Finished {
     const CLIENTBOUND_ID: i32 = generated::packet::login::CLIENTBOUND_MINECRAFT_LOGIN_FINISHED;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
@@ -89,3 +89,8 @@ impl ServerboundPacket for Acknowledged {
         Ok(Self)
     }
 }
+
+serverbound_packet_enum!(pub LoginPacket;
+    Hello, Hello;
+    Acknowledged, Acknowledged;
+);

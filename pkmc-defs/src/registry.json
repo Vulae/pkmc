@@ -1,0 +1,1051 @@
+{
+    "minecraft:dimension_type": {
+        "pkmc:void": {
+            "fixed_time": 6000,
+            "has_skylight": true,
+            "has_ceiling": false,
+            "ultrawarm": false,
+            "natural": true,
+            "coordinate_scale": 1.0,
+            "bed_works": true,
+            "respawn_anchor_works": false,
+            "min_y": 0,
+            "height": 16,
+            "logical_height": 0,
+            "infiniburn": "#minecraft:infiniburn_overworld",
+            "effects": "minecraft:overworld",
+            "ambient_light": 0.0,
+            "piglin_safe": false,
+            "has_raids": false,
+            "monster_spawn_light_level": 0,
+            "monster_spawn_block_light_limit": 0
+        }
+    },
+    "minecraft:painting_variant": {
+        "minecraft:earth": {
+            "asset_id": "minecraft:earth",
+            "height": 2,
+            "width": 2
+        }
+    },
+    "minecraft:wolf_variant": {
+        "mincraft:woods": {
+            "wild_texture": "minecraft:entity/wolf/wolf_woods",
+            "tame_texture": "minecraft:entity/wolf/wolf_woods_tame",
+            "angry_texture": "minecraft:entity/wolf/wolf_woods_angry",
+            "biomes": "minecraft:forest"
+        }
+    },
+    "minecraft:worldgen/biome": {
+        "pkmc:void": {
+            "has_precipitation": false,
+            "temperature": 0.5,
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            }
+        },
+        "meadow": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 937679,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "birch_forest": {
+            "downfall": 0.6,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8037887,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.6
+        },
+        "lukewarm_ocean": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4566514,
+                "water_fog_color": 267827
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "beach": {
+            "downfall": 0.4,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7907327,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.8
+        },
+        "old_growth_birch_forest": {
+            "downfall": 0.6,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8037887,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.6
+        },
+        "lush_caves": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "end_midlands": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 10518688,
+                "sky_color": 0,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 0.5
+        },
+        "mushroom_fields": {
+            "downfall": 1,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7842047,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.9
+        },
+        "jagged_peaks": {
+            "downfall": 0.9,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8756735,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": -0.7
+        },
+        "end_highlands": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 10518688,
+                "sky_color": 0,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 0.5
+        },
+        "basalt_deltas": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 6840176,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "bamboo_jungle": {
+            "downfall": 0.9,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7842047,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.95
+        },
+        "windswept_savanna": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "wooded_badlands": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 12638463,
+                "foliage_color": 10387789,
+                "grass_color": 9470285,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "deep_ocean": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "old_growth_spruce_taiga": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8233983,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.25
+        },
+        "windswept_forest": {
+            "downfall": 0.3,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8233727,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.2
+        },
+        "taiga": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8233983,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.25
+        },
+        "savanna": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "grove": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8495359,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": -0.2
+        },
+        "dripstone_caves": {
+            "downfall": 0.4,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7907327,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.8
+        },
+        "deep_lukewarm_ocean": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4566514,
+                "water_fog_color": 267827
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "cold_ocean": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4020182,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "windswept_hills": {
+            "downfall": 0.3,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8233727,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.2
+        },
+        "windswept_gravelly_hills": {
+            "downfall": 0.3,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8233727,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.2
+        },
+        "crimson_forest": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 3343107,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "pale_garden": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 8484720,
+                "foliage_color": 8883574,
+                "grass_color": 7832178,
+                "sky_color": 12171705,
+                "water_color": 7768221,
+                "water_fog_color": 5597568
+            },
+            "has_precipitation": true,
+            "temperature": 0.7
+        },
+        "forest": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7972607,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.7
+        },
+        "deep_frozen_ocean": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 3750089,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.5,
+            "temperature_modifier": "frozen"
+        },
+        "frozen_river": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8364543,
+                "water_color": 3750089,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0
+        },
+        "mangrove_swamp": {
+            "downfall": 0.9,
+            "effects": {
+                "fog_color": 12638463,
+                "foliage_color": 9285927,
+                "grass_color_modifier": "swamp",
+                "sky_color": 7907327,
+                "water_color": 3832426,
+                "water_fog_color": 5077600
+            },
+            "has_precipitation": true,
+            "temperature": 0.8
+        },
+        "badlands": {
+            "creature_spawn_probability": 0.03,
+            "downfall": 0,
+            "effects": {
+                "fog_color": 12638463,
+                "foliage_color": 10387789,
+                "grass_color": 9470285,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "the_void": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 0.5
+        },
+        "deep_cold_ocean": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4020182,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "desert": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "end_barrens": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 10518688,
+                "sky_color": 0,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "features": [],
+            "has_precipitation": false,
+            "temperature": 0.5
+        },
+        "warm_ocean": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4445678,
+                "water_fog_color": 270131
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "snowy_beach": {
+            "downfall": 0.3,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8364543,
+                "water_color": 4020182,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.05
+        },
+        "plains": {
+            "downfall": 0.4,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7907327,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.8
+        },
+        "stony_shore": {
+            "downfall": 0.3,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8233727,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.2
+        },
+        "the_end": {
+            "carvers": [],
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 10518688,
+                "sky_color": 0,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 0.5
+        },
+        "snowy_plains": {
+            "creature_spawn_probability": 0.07,
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8364543,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0
+        },
+        "river": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "soul_sand_valley": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 1787717,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "eroded_badlands": {
+            "creature_spawn_probability": 0.03,
+            "downfall": 0,
+            "effects": {
+                "fog_color": 12638463,
+                "foliage_color": 10387789,
+                "grass_color": 9470285,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "sunflower_plains": {
+            "downfall": 0.4,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7907327,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.8
+        },
+        "snowy_slopes": {
+            "downfall": 0.9,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8560639,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": -0.3
+        },
+        "flower_forest": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7972607,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.7
+        },
+        "warped_forest": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 1705242,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "small_end_islands": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 10518688,
+                "sky_color": 0,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 0.5
+        },
+        "swamp": {
+            "downfall": 0.9,
+            "effects": {
+                "fog_color": 12638463,
+                "foliage_color": 6975545,
+                "grass_color_modifier": "swamp",
+                "sky_color": 7907327,
+                "water_color": 6388580,
+                "water_fog_color": 2302743
+            },
+            "has_precipitation": true,
+            "temperature": 0.8
+        },
+        "jungle": {
+            "downfall": 0.9,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7842047,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.95
+        },
+        "old_growth_pine_taiga": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8168447,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.3
+        },
+        "deep_dark": {
+            "downfall": 0.4,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7907327,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.8
+        },
+        "nether_wastes": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 3344392,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "dark_forest": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "grass_color_modifier": "dark_forest",
+                "sky_color": 7972607,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.7
+        },
+        "frozen_peaks": {
+            "downfall": 0.9,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8756735,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": -0.7
+        },
+        "frozen_ocean": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8364543,
+                "water_color": 3750089,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0,
+            "temperature_modifier": "frozen"
+        },
+        "stony_peaks": {
+            "downfall": 0.3,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7776511,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 1
+        },
+        "snowy_taiga": {
+            "downfall": 0.4,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8625919,
+                "water_color": 4020182,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": -0.5
+        },
+        "cherry_grove": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "foliage_color": 11983713,
+                "grass_color": 11983713,
+                "sky_color": 8103167,
+                "water_color": 6141935,
+                "water_fog_color": 6141935
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "ocean": {
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8103167,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.5
+        },
+        "savanna_plateau": {
+            "downfall": 0,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7254527,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": false,
+            "temperature": 2
+        },
+        "sparse_jungle": {
+            "downfall": 0.8,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 7842047,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0.95
+        },
+        "ice_spikes": {
+            "creature_spawn_probability": 0.07,
+            "downfall": 0.5,
+            "effects": {
+                "fog_color": 12638463,
+                "sky_color": 8364543,
+                "water_color": 4159204,
+                "water_fog_color": 329011
+            },
+            "has_precipitation": true,
+            "temperature": 0
+        }
+    },
+    "minecraft:damage_type": {
+        "drown": {
+            "effects": "drowning",
+            "exhaustion": 0,
+            "message_id": "drown",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "spit": {
+            "exhaustion": 0.1,
+            "message_id": "mob",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "thrown": {
+            "exhaustion": 0.1,
+            "message_id": "thrown",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "fall": {
+            "death_message_type": "fall_variants",
+            "exhaustion": 0,
+            "message_id": "fall",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "generic_kill": {
+            "exhaustion": 0,
+            "message_id": "genericKill",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "bad_respawn_point": {
+            "death_message_type": "intentional_game_design",
+            "exhaustion": 0.1,
+            "message_id": "badRespawnPoint",
+            "scaling": "always"
+        },
+        "explosion": {
+            "exhaustion": 0.1,
+            "message_id": "explosion",
+            "scaling": "always"
+        },
+        "campfire": {
+            "effects": "burning",
+            "exhaustion": 0.1,
+            "message_id": "inFire",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "indirect_magic": {
+            "exhaustion": 0,
+            "message_id": "indirectMagic",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "mob_projectile": {
+            "exhaustion": 0.1,
+            "message_id": "mob",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "wind_charge": {
+            "exhaustion": 0.1,
+            "message_id": "mob",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "trident": {
+            "exhaustion": 0.1,
+            "message_id": "trident",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "cramming": {
+            "exhaustion": 0,
+            "message_id": "cramming",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "player_explosion": {
+            "exhaustion": 0.1,
+            "message_id": "explosion.player",
+            "scaling": "always"
+        },
+        "falling_stalactite": {
+            "exhaustion": 0.1,
+            "message_id": "fallingStalactite",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "out_of_world": {
+            "exhaustion": 0,
+            "message_id": "outOfWorld",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "falling_anvil": {
+            "exhaustion": 0.1,
+            "message_id": "anvil",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "player_attack": {
+            "exhaustion": 0.1,
+            "message_id": "player",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "ender_pearl": {
+            "death_message_type": "fall_variants",
+            "exhaustion": 0,
+            "message_id": "fall",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "dry_out": {
+            "exhaustion": 0.1,
+            "message_id": "dryout",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "outside_border": {
+            "exhaustion": 0,
+            "message_id": "outsideBorder",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "unattributed_fireball": {
+            "effects": "burning",
+            "exhaustion": 0.1,
+            "message_id": "onFire",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "wither": {
+            "exhaustion": 0,
+            "message_id": "wither",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "wither_skull": {
+            "exhaustion": 0.1,
+            "message_id": "witherSkull",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "fireball": {
+            "effects": "burning",
+            "exhaustion": 0.1,
+            "message_id": "fireball",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "fly_into_wall": {
+            "exhaustion": 0,
+            "message_id": "flyIntoWall",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "mob_attack_no_aggro": {
+            "exhaustion": 0.1,
+            "message_id": "mob",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "stalagmite": {
+            "exhaustion": 0,
+            "message_id": "stalagmite",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "magic": {
+            "exhaustion": 0,
+            "message_id": "magic",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "generic": {
+            "exhaustion": 0,
+            "message_id": "generic",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "thorns": {
+            "effects": "thorns",
+            "exhaustion": 0.1,
+            "message_id": "thorns",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "freeze": {
+            "effects": "freezing",
+            "exhaustion": 0,
+            "message_id": "freeze",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "hot_floor": {
+            "effects": "burning",
+            "exhaustion": 0.1,
+            "message_id": "hotFloor",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "sting": {
+            "exhaustion": 0.1,
+            "message_id": "sting",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "lightning_bolt": {
+            "exhaustion": 0.1,
+            "message_id": "lightningBolt",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "fireworks": {
+            "exhaustion": 0.1,
+            "message_id": "fireworks",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "in_fire": {
+            "effects": "burning",
+            "exhaustion": 0.1,
+            "message_id": "inFire",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "mob_attack": {
+            "exhaustion": 0.1,
+            "message_id": "mob",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "cactus": {
+            "exhaustion": 0.1,
+            "message_id": "cactus",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "falling_block": {
+            "exhaustion": 0.1,
+            "message_id": "fallingBlock",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "sonic_boom": {
+            "exhaustion": 0,
+            "message_id": "sonic_boom",
+            "scaling": "always"
+        },
+        "mace_smash": {
+            "exhaustion": 0.1,
+            "message_id": "mace_smash",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "arrow": {
+            "exhaustion": 0.1,
+            "message_id": "arrow",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "lava": {
+            "effects": "burning",
+            "exhaustion": 0.1,
+            "message_id": "lava",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "sweet_berry_bush": {
+            "effects": "poking",
+            "exhaustion": 0.1,
+            "message_id": "sweetBerryBush",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "dragon_breath": {
+            "exhaustion": 0,
+            "message_id": "dragonBreath",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "on_fire": {
+            "effects": "burning",
+            "exhaustion": 0,
+            "message_id": "onFire",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "starve": {
+            "exhaustion": 0,
+            "message_id": "starve",
+            "scaling": "when_caused_by_living_non_player"
+        },
+        "in_wall": {
+            "exhaustion": 0,
+            "message_id": "inWall",
+            "scaling": "when_caused_by_living_non_player"
+        }
+    }
+}

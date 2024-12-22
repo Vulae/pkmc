@@ -2,9 +2,8 @@ use std::io::{Read, Write};
 
 use crate::generated;
 use pkmc_packet::{
-    clientbound_packet_enum,
     connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
-    WriteExtPacket,
+    serverbound_packet_enum, WriteExtPacket,
 };
 use pkmc_util::read_ext::ReadExt;
 use serde::Serialize;
@@ -93,7 +92,7 @@ impl ClientboundPacket for Ping {
     }
 }
 
-clientbound_packet_enum!(pub StatusPacket;
+serverbound_packet_enum!(pub StatusPacket;
     Request, Request;
     Ping, Ping;
 );

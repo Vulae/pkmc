@@ -2,7 +2,7 @@ pub mod connection;
 pub mod reader;
 pub mod writer;
 
-pub use connection::Connection;
+pub use connection::{ClientboundPacket, Connection, ServerboundPacket};
 pub use reader::ReadExtPacket;
 pub use writer::WriteExtPacket;
 

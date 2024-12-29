@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
+use pkmc_defs::text_component::{self, TextComponent};
 use pkmc_packet::Connection;
 use pkmc_util::IterRetain;
 use std::{
     net::{SocketAddr, TcpListener, ToSocketAddrs},
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
 };
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Server {
-    state: Arc<Mutex<ServerState>>,
+    state: Arc<RwLock<ServerState>>,
     address: SocketAddr,
     listener: TcpListener,
     clients: Vec<Client>,
@@ -31,7 +32,7 @@ impl Server {
         listener.set_nonblocking(true)?;
         Ok(Self {
             address,
-            state: Arc::new(Mutex::new(state)),
+            state: Arc::new(RwLock::new(state)),
             listener,
             clients: Vec::new(),
             players: Vec::new(),
@@ -60,15 +61,25 @@ impl Server {
             .try_for_each(|client| {
                 let (connection, player_information) = client.into_client_play_state()?;
                 println!("Connection {}", player_information.name);
-                self.players
-                    .push(Player::new(connection, player_information)?);
+                self.players.push(Player::new(
+                    connection,
+                    self.state.clone(),
+                    player_information,
+                )?);
                 Ok::<_, anyhow::Error>(())
             })?;
 
         self.players.iter_mut().try_for_each(|player| {
             if let Err(err) = player.update() {
-                // FIXME: How to display the actual .unwrap() formatted output?
-                player.kick(format!("{:?}", err))?;
+                player.kick(
+                    TextComponent::empty()
+                        .with_child(|child| child.with_content("Server Player Error"))
+                        .with_child(|child| {
+                            child
+                                .with_content(format!("\n\n{}", err))
+                                .with_color(text_component::Color::RED)
+                        }),
+                )?;
             }
             Ok::<_, PlayerError>(())
         })?;

@@ -1,3 +1,4 @@
+pub mod blocks;
 pub mod packets;
 
 use std::path::Path;
@@ -5,6 +6,13 @@ use std::path::Path;
 use serde::de::DeserializeOwned;
 
 use crate::GeneratedError;
+
+pub enum GeneratedReportCode {
+    /// (module name, module code)
+    Code(String, String),
+    /// (key, value)
+    Json(String, serde_json::Value),
+}
 
 pub trait GeneratedReport: DeserializeOwned {
     const INPUT_FILE: &'static str;
@@ -15,5 +23,5 @@ pub trait GeneratedReport: DeserializeOwned {
             report_file,
         )?)?)
     }
-    fn code(&self) -> Result<String, GeneratedError>;
+    fn code(&self) -> Result<GeneratedReportCode, GeneratedError>;
 }

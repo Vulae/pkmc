@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use base64::Engine as _;
+use pkmc_world::world::World;
 use serde::Deserialize;
 use server::Server;
 use server_state::ServerState;
@@ -37,6 +38,7 @@ struct Config {
     compression_threshold: usize,
     #[serde(default, rename = "compression-level")]
     compression_level: u32,
+    world: PathBuf,
 }
 
 impl Config {
@@ -60,9 +62,7 @@ fn main() -> Result<()> {
         },
         compression_threshold: config.compression_threshold,
         compression_level: config.compression_level,
-        world_main_name: "pkmc:test".to_owned(),
-        world_min_y: 0,
-        world_max_y: 16,
+        world: World::load(config.world)?,
     };
 
     let mut server = Server::new(config.address, state)?;

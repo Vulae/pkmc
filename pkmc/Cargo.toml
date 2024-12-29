@@ -9,6 +9,7 @@ pkmc-packet = { path = "../pkmc-packet" }
 pkmc-nbt = { path = "../pkmc-nbt" }
 pkmc-defs = { path = "../pkmc-defs" }
 pkmc-util = { path = "../pkmc-util" }
+pkmc-world = { path = "../pkmc-world" }
 thiserror.workspace = true
 base64 = "0.22.1"
 rand = "0.8.5"

@@ -18,7 +18,10 @@ impl PackedArray {
     }
 
     pub fn packed_size(bits_per_entry: u8, num_entries: usize) -> usize {
-        num_entries / (u64::BITS / bits_per_entry as u32) as usize
+        u64::div_ceil(
+            num_entries as u64,
+            (u64::BITS / bits_per_entry as u32) as u64,
+        ) as usize
     }
 }
 

@@ -1,4 +1,2 @@
 /target
 /assets/generated
-# Hide for now because it's not actually being used.
-/pkmc-defs/src/generated.json

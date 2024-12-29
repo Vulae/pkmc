@@ -4,20 +4,92 @@ use pkmc_nbt::NBT;
 use serde_json::json;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub enum Keybind {
+    Jump,
+    Sneak,
+    Sprint,
+    StrafeLeft,
+    StrafeRight,
+    WalkBackward,
+    WalkForward,
+    Attack_Destroy,
+    PickBlock,
+    UseItem_PlaceBlock,
+    DropSelectedItem,
+    HotbarSlot1,
+    HotbarSlot2,
+    HotbarSlot3,
+    HotbarSlot4,
+    HotbarSlot5,
+    HotbarSlot6,
+    HotbarSlot7,
+    HotbarSlot8,
+    HotbarSlot9,
+    OpenInventory_CloseInventory,
+    SwapItemsInHands,
+    LoadToolbarActivator,
+    SaveToolbarActivator,
+    ListPlayers,
+    OpenChat,
+    OpenCommand,
+    SocialInteractionsScreen,
+    Advancements,
+    HightlightPlayers_Spectator,
+    TakeScreenshot,
+    ToggleCinematicCamera,
+    ToggleFullscreen,
+    TogglePerspective,
+}
+
+impl Keybind {
+    pub fn identifier(&self) -> &str {
+        match self {
+            Keybind::Jump => "key.jump",
+            Keybind::Sneak => "key.sneak",
+            Keybind::Sprint => "key.sprint",
+            Keybind::StrafeLeft => "key.left",
+            Keybind::StrafeRight => "key.right",
+            Keybind::WalkBackward => "key.back",
+            Keybind::WalkForward => "key.forward",
+            Keybind::Attack_Destroy => "key.attack",
+            Keybind::PickBlock => "key.pickItem",
+            Keybind::UseItem_PlaceBlock => "key.use",
+            Keybind::DropSelectedItem => "key.drop",
+            Keybind::HotbarSlot1 => "key.hotbar.1",
+            Keybind::HotbarSlot2 => "key.hotbar.2",
+            Keybind::HotbarSlot3 => "key.hotbar.3",
+            Keybind::HotbarSlot4 => "key.hotbar.4",
+            Keybind::HotbarSlot5 => "key.hotbar.5",
+            Keybind::HotbarSlot6 => "key.hotbar.6",
+            Keybind::HotbarSlot7 => "key.hotbar.7",
+            Keybind::HotbarSlot8 => "key.hotbar.8",
+            Keybind::HotbarSlot9 => "key.hotbar.9",
+            Keybind::OpenInventory_CloseInventory => "key.inventory",
+            Keybind::SwapItemsInHands => "key.swapOffhand",
+            Keybind::LoadToolbarActivator => "key.loadToolbarActivator",
+            Keybind::SaveToolbarActivator => "key.saveToolbarActivator",
+            Keybind::ListPlayers => "key.playerlist",
+            Keybind::OpenChat => "key.chat",
+            Keybind::OpenCommand => "key.command",
+            Keybind::SocialInteractionsScreen => "key.socialInteractions",
+            Keybind::Advancements => "key.advancements",
+            Keybind::HightlightPlayers_Spectator => "key.spectatorOutlines",
+            Keybind::TakeScreenshot => "key.screenshot",
+            Keybind::ToggleCinematicCamera => "key.smoothCamera",
+            Keybind::ToggleFullscreen => "key.fullscreen",
+            Keybind::TogglePerspective => "key.togglePerspective",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Content {
-    Text {
-        text: String,
-    },
-    Translatable {
-        translate: String,
-        fallback: Option<String>,
-        with: Vec<TextComponent>,
-    },
+    Text { text: String },
+    // TODO: Translatable,
     // TODO: Score,
     // TODO: Selector,
-    Keybind {
-        keybind: String,
-    },
+    Keybind { keybind: Keybind },
     // TODO: Nbt,
 }
 
@@ -29,19 +101,45 @@ impl Default for Content {
     }
 }
 
+impl From<String> for Content {
+    fn from(value: String) -> Self {
+        Self::Text { text: value }
+    }
+}
+
+impl From<&str> for Content {
+    fn from(value: &str) -> Self {
+        Self::Text {
+            text: value.to_owned(),
+        }
+    }
+}
+
+impl From<char> for Content {
+    fn from(value: char) -> Self {
+        Self::Text {
+            text: value.to_string(),
+        }
+    }
+}
+
+impl From<Keybind> for Content {
+    fn from(value: Keybind) -> Self {
+        Self::Keybind { keybind: value }
+    }
+}
+
 impl Content {
     fn insert_map(&self, map: &mut serde_json::Map<String, serde_json::Value>) {
         match self {
             Content::Text { text } => {
-                map.insert("type".to_owned(), "text".into());
+                //map.insert("type".to_owned(), "text".into());
                 map.insert("text".to_owned(), text.to_owned().into());
             }
-            Content::Translatable {
-                translate,
-                fallback,
-                with,
-            } => todo!(),
-            Content::Keybind { keybind } => todo!(),
+            Content::Keybind { keybind } => {
+                //map.insert("type".to_owned(), "keybind".into());
+                map.insert("keybind".to_owned(), keybind.identifier().into());
+            }
         }
     }
 }
@@ -56,6 +154,19 @@ pub struct Color {
 impl Color {
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
+    }
+
+    pub fn hue(hue: f32) -> Self {
+        let mut rgb = [0f32; 3];
+        rgb.iter_mut().enumerate().for_each(|(i, c)| {
+            let h = hue + (i as f32) / 3.0;
+            *c = f32::clamp(6.0 * f32::abs(h - f32::floor(h) - 0.5) - 1.0, 0.0, 1.0);
+        });
+        Self::new(
+            (rgb[0] * 255.0) as u8,
+            (rgb[1] * 255.0) as u8,
+            (rgb[2] * 255.0) as u8,
+        )
     }
 
     pub const BLACK: Color = Color::new(0x00, 0x00, 0x00);
@@ -74,6 +185,26 @@ impl Color {
     pub const LIGHT_PURPLE: Color = Color::new(0xFF, 0x55, 0xFF);
     pub const YELLOW: Color = Color::new(0xFF, 0xFF, 0x55);
     pub const WHITE: Color = Color::new(0xFF, 0xFF, 0xFF);
+}
+
+impl From<(u8, u8, u8)> for Color {
+    fn from(value: (u8, u8, u8)) -> Self {
+        Self {
+            r: value.0,
+            g: value.1,
+            b: value.2,
+        }
+    }
+}
+
+impl From<[u8; 3]> for Color {
+    fn from(value: [u8; 3]) -> Self {
+        Self {
+            r: value[0],
+            g: value[1],
+            b: value[2],
+        }
+    }
 }
 
 impl std::fmt::Display for Color {
@@ -143,16 +274,45 @@ impl Formatting {
 pub struct TextComponent {
     content: Content,
     formatting: Formatting,
-    // TODO: Children
+    children: Vec<TextComponent>,
+    inherited_formatting: Option<Formatting>,
     // TODO: Interactivity
 }
 
 impl TextComponent {
-    pub fn new<S: Into<String>>(text: S) -> Self {
+    pub fn new<C: Into<Content>>(content: C) -> Self {
         Self {
-            content: Content::Text { text: text.into() },
+            content: content.into(),
             ..Default::default()
         }
+    }
+
+    pub fn empty() -> Self {
+        // TODO: If no content type is specified, would it still work and render the children?
+        Self {
+            content: Content::Text {
+                text: "".to_owned(),
+            },
+            ..Default::default()
+        }
+    }
+
+    pub fn rainbow(text: &str, hue_offset: f32) -> Self {
+        text.chars()
+            .enumerate()
+            .fold(TextComponent::empty(), |text_component, (index, char)| {
+                let percent = (index as f32) / ((text.len() - 1) as f32);
+                text_component.with_child(|child| {
+                    child
+                        .with_content(char)
+                        .with_color(Color::hue(percent + hue_offset))
+                })
+            })
+    }
+
+    pub fn with_content<C: Into<Content>>(mut self, content: C) -> Self {
+        self.content = content.into();
+        self
     }
 
     pub fn with_color<C: Into<Option<Color>>>(mut self, color: C) -> Self {
@@ -189,19 +349,63 @@ impl TextComponent {
         self.formatting.obfuscated = obfuscated;
         self
     }
+
+    /// WARNING: Due to bad programming, only use this after formatting the text.
+    /// TODO: Fix inheriting not being a reference to its parent.
+    pub fn with_child<F>(mut self, cb: F) -> Self
+    where
+        F: FnOnce(TextComponent) -> TextComponent,
+    {
+        let mut child = self.clone().with_content("");
+        child.children = Vec::new();
+        child.inherited_formatting = Some(self.formatting.clone());
+        let child = cb(child);
+        self.children.push(child);
+        self
+    }
 }
 
 impl TextComponent {
-    pub fn to_json(&self) -> serde_json::Value {
-        if let Content::Text { text } = &self.content {
-            if self.formatting == Formatting::default() {
-                return serde_json::Value::String(text.to_owned());
+    fn to_json_inner(&self, root: bool) -> serde_json::Value {
+        // The root TextComponent can either be: String, TextComponent, TextComponent[]
+        if root {
+            if let Content::Text { text } = &self.content {
+                match (
+                    text.is_empty(),
+                    self.formatting == Formatting::default(),
+                    self.children.is_empty(),
+                ) {
+                    (true, true, false) => {
+                        return serde_json::Value::Array(
+                            self.children
+                                .iter()
+                                .map(|child| child.to_json_inner(false))
+                                .collect::<Vec<_>>(),
+                        )
+                    }
+                    (_, true, true) => return serde_json::Value::String(text.to_owned()),
+                    _ => {}
+                }
             }
         }
         let mut map = serde_json::Map::new();
         self.content.insert_map(&mut map);
         self.formatting.insert_map(&mut map);
+        if !self.children.is_empty() {
+            map.insert(
+                "children".to_owned(),
+                self.children
+                    .iter()
+                    .map(|child| child.to_json_inner(false))
+                    .collect::<Vec<_>>()
+                    .into(),
+            );
+        }
         serde_json::Value::Object(map)
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        self.to_json_inner(true)
     }
 
     pub fn to_nbt(&self) -> NBT {
@@ -209,15 +413,9 @@ impl TextComponent {
     }
 }
 
-impl From<String> for TextComponent {
-    fn from(val: String) -> Self {
-        TextComponent::new(val)
-    }
-}
-
-impl From<&str> for TextComponent {
-    fn from(val: &str) -> Self {
-        TextComponent::new(val)
+impl<T: Into<Content>> From<T> for TextComponent {
+    fn from(value: T) -> Self {
+        TextComponent::new(value.into())
     }
 }
 

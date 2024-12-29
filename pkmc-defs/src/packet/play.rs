@@ -549,6 +549,34 @@ impl ServerboundPacket for PlayerCommand {
     }
 }
 
+#[derive(Debug)]
+pub struct SystemChat {
+    pub content: TextComponent,
+    pub overlay: bool,
+}
+
+impl ClientboundPacket for SystemChat {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_SYSTEM_CHAT;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_nbt(&self.content.to_nbt())?;
+        writer.write_bool(self.overlay)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct SetActionBarText(pub TextComponent);
+
+impl ClientboundPacket for SetActionBarText {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_SET_ACTION_BAR_TEXT;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_nbt(&self.0.to_nbt())?;
+        Ok(())
+    }
+}
+
 serverbound_packet_enum!(pub PlayPacket;
     KeepAlive, KeepAlive;
     PlayerLoaded, PlayerLoaded;

@@ -1,132 +1,20 @@
-use std::collections::HashSet;
+use std::sync::{Arc, RwLock};
 
 use pkmc_defs::{packet, text_component::TextComponent};
-use pkmc_packet::{connection::ConnectionError, Connection};
-use pkmc_util::{IterRetain as _, UUID};
+use pkmc_packet::Connection;
+use pkmc_util::UUID;
 use rand::Rng as _;
-use thiserror::Error;
 
-use crate::client::PlayerInformation;
+use crate::{client::PlayerInformation, server_state::ServerState};
 
-#[derive(Error, Debug)]
-pub enum PlayerError {
-    #[error(transparent)]
-    ConnectionError(#[from] ConnectionError),
-    #[error(transparent)]
-    IoError(#[from] std::io::Error),
-    #[error(
-        "Client bad keep alive response (No response, wrong id, or responded when not expected)"
-    )]
-    BadKeepAliveResponse,
-}
+use super::{ChunkLoader, ChunkPosition, PlayerError};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-struct ChunkPosition {
-    chunk_x: i32,
-    chunk_z: i32,
-}
-
-impl ChunkPosition {
-    pub fn new(chunk_x: i32, chunk_z: i32) -> Self {
-        Self { chunk_x, chunk_z }
-    }
-
-    pub fn distance(&self, other: &ChunkPosition) -> f32 {
-        let dx = (other.chunk_x - self.chunk_x) as f32;
-        let dz = (other.chunk_z - self.chunk_z) as f32;
-        (dx * dx + dz * dz).sqrt()
-    }
-}
-
-// FIXME: The chunk loading radius does not match whatever the server says the view distance is.
-// SEE: ChunkLoader.radius & packet::play::LoginPlay.view_distance
-
-// FIXME: Chunk radius is biased towards negative-xz???
-
 #[derive(Debug)]
-struct ChunkLoader {
-    center: Option<ChunkPosition>,
-    radius: i32,
-    to_load: HashSet<ChunkPosition>,
-    loaded: HashSet<ChunkPosition>,
-    to_unload: Vec<ChunkPosition>,
-}
-
-impl ChunkLoader {
-    pub fn new(radius: i32) -> Self {
-        Self {
-            center: None,
-            radius,
-            to_load: HashSet::new(),
-            loaded: HashSet::new(),
-            to_unload: Vec::new(),
-        }
-    }
-
-    fn iter_radius(&self) -> impl Iterator<Item = ChunkPosition> {
-        let center = self.center.unwrap();
-        let radius = self.radius;
-        (-radius..=radius)
-            .flat_map(move |dx| (-radius..=radius).map(move |dz| (dx, dz)))
-            .map(move |(dx, dz)| ChunkPosition {
-                chunk_x: center.chunk_x + dx,
-                chunk_z: center.chunk_z + dz,
-            })
-            .filter(move |chunk| center.distance(chunk) < radius as f32)
-    }
-
-    /// Returns if updated center is new.
-    pub fn update_center(&mut self, center: Option<ChunkPosition>) -> bool {
-        if center == self.center {
-            return false;
-        }
-        self.center = center;
-
-        let Some(center) = center else {
-            self.to_load.clear();
-            self.to_unload.append(&mut self.loaded.drain().collect());
-            return true;
-        };
-
-        self.to_load
-            .retain(|chunk| center.distance(chunk) < self.radius as f32);
-        self.to_unload.append(
-            &mut self
-                .loaded
-                .retain_returned(|chunk| center.distance(chunk) < self.radius as f32)
-                .collect(),
-        );
-        self.iter_radius().for_each(|chunk| {
-            if self.to_load.contains(&chunk) || self.loaded.contains(&chunk) {
-                return;
-            }
-            self.to_load.insert(chunk);
-        });
-
-        true
-    }
-
-    pub fn next_to_load(&mut self) -> Option<ChunkPosition> {
-        if let Some(next) = self.to_load.iter().next().cloned() {
-            self.to_load.remove(&next);
-            self.loaded.insert(next);
-            Some(next)
-        } else {
-            None
-        }
-    }
-
-    pub fn next_to_unload(&mut self) -> Option<ChunkPosition> {
-        self.to_unload.pop()
-    }
-}
-
-#[derive(Debug)]
-#[allow(unused)]
 pub struct Player {
     connection: Connection,
+    server_state: Arc<RwLock<ServerState>>,
     name: String,
     uuid: UUID,
     keepalive_time: std::time::Instant,
@@ -140,10 +28,12 @@ pub struct Player {
 impl Player {
     pub fn new(
         connection: Connection,
+        server_state: Arc<RwLock<ServerState>>,
         player_information: PlayerInformation,
     ) -> Result<Self, PlayerError> {
         let mut player = Self {
             connection,
+            server_state,
             name: player_information.name,
             uuid: player_information.uuid,
             keepalive_time: std::time::Instant::now(),
@@ -151,7 +41,7 @@ impl Player {
             x: 0.0,
             y: 0.0,
             z: 0.0,
-            chunk_loader: ChunkLoader::new(32),
+            chunk_loader: ChunkLoader::new(16),
         };
 
         player.connection.send(packet::play::Login {
@@ -188,6 +78,13 @@ impl Player {
                 flying_speed: 0.5,
                 field_of_view_modifier: 0.1,
             })?;
+
+        player
+            .connection
+            .send(packet::play::SetActionBarText(TextComponent::rainbow(
+                &format!("Hello, {}!", player.name()),
+                0.0,
+            )))?;
 
         Ok(player)
     }

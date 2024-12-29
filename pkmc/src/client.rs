@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use pkmc_defs::{packet, Registry};
 use pkmc_nbt::NBT;
@@ -41,7 +41,7 @@ impl ClientHandshake {
 
 #[derive(Debug)]
 struct ClientStatus {
-    server_state: Arc<Mutex<ServerState>>,
+    server_state: Arc<RwLock<ServerState>>,
 }
 
 impl ClientStatus {
@@ -49,7 +49,7 @@ impl ClientStatus {
         while let Some(packet) = connection.recieve()? {
             match packet::status::StatusPacket::try_from(&packet)? {
                 packet::status::StatusPacket::Request(_request) => {
-                    let server_state = self.server_state.lock().unwrap();
+                    let server_state = self.server_state.read().unwrap();
                     connection.send(packet::status::Response {
                         version: packet::status::ResponseVersion {
                             name: "1.21.4".to_owned(),
@@ -75,13 +75,13 @@ impl ClientStatus {
 
 #[derive(Debug)]
 struct ClientLogin {
-    server_state: Arc<Mutex<ServerState>>,
+    server_state: Arc<RwLock<ServerState>>,
     player_information: Option<PlayerInformation>,
     finished_login: bool,
 }
 
 impl ClientLogin {
-    fn new(server_state: Arc<Mutex<ServerState>>) -> Self {
+    fn new(server_state: Arc<RwLock<ServerState>>) -> Self {
         Self {
             server_state,
             player_information: None,
@@ -98,7 +98,7 @@ impl ClientLogin {
                         uuid: hello.uuid,
                     });
 
-                    let server_state = self.server_state.lock().unwrap();
+                    let server_state = self.server_state.read().unwrap();
                     if server_state.compression_level > 0 {
                         connection.send(packet::login::Compression {
                             threshold: server_state.compression_threshold as i32,
@@ -138,7 +138,7 @@ enum ClientConfigurationFinishState {
 #[derive(Debug)]
 struct ClientConfiguration {
     #[allow(unused)]
-    server_state: Arc<Mutex<ServerState>>,
+    server_state: Arc<RwLock<ServerState>>,
     player_information: PlayerInformation,
     last_packet_time: Option<std::time::Instant>,
     finish_state: ClientConfigurationFinishState,
@@ -146,7 +146,7 @@ struct ClientConfiguration {
 
 impl ClientConfiguration {
     fn new(
-        server_state: Arc<Mutex<ServerState>>,
+        server_state: Arc<RwLock<ServerState>>,
         player_information: PlayerInformation,
         connection: &mut Connection,
     ) -> Result<Self, ClientError> {
@@ -289,12 +289,12 @@ impl ClientState {
 #[derive(Debug)]
 pub struct Client {
     connection: Connection,
-    server_state: Arc<Mutex<ServerState>>,
+    server_state: Arc<RwLock<ServerState>>,
     client_state: ClientState,
 }
 
 impl Client {
-    pub fn new(connection: Connection, server_state: Arc<Mutex<ServerState>>) -> Self {
+    pub fn new(connection: Connection, server_state: Arc<RwLock<ServerState>>) -> Self {
         Self {
             connection,
             server_state,

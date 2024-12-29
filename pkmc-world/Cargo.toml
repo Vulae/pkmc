@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 pkmc-util = { path = "../pkmc-util" }
 pkmc-nbt = { path = "../pkmc-nbt" }
+pkmc-defs = { path = "../pkmc-defs" }
 thiserror.workspace = true
 flate2.workspace = true
 serde.workspace = true

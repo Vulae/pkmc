@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
+pub mod block;
 pub mod generated;
 pub mod packet;
 pub mod registry;

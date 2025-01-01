@@ -12,7 +12,7 @@ impl PackedArray {
     pub const fn bits_per_entry(max_value: u64) -> u8 {
         match max_value {
             0 => 0,
-            1 => 0,
+            1 => 1,
             _ => (u64::BITS - max_value.leading_zeros()) as u8,
         }
     }
@@ -27,10 +27,11 @@ impl PackedArray {
 
 impl PackedArray {
     pub fn from_inner(packed: Box<[u64]>, bits_per_entry: u8, num_entries: usize) -> Self {
-        assert_eq!(
-            PackedArray::packed_size(bits_per_entry, num_entries),
-            packed.len(),
-        );
+        //assert_eq!(
+        //    PackedArray::packed_size(bits_per_entry, num_entries),
+        //    packed.len(),
+        //);
+        assert!(packed.len() >= PackedArray::packed_size(bits_per_entry, num_entries));
         Self {
             bits_per_entry,
             num_entries,

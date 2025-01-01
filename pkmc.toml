@@ -11,5 +11,8 @@ world = "/home/vulae/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher
 
 [server-list]
 text = "https://github.com/Vulae/pkmc"
-# Icon MUST be a 64x64 png
 icon = "server_icon.png"
+# Icon filtering method to downscale/upscale image to 64x64 pixels.
+# Possible values: Nearest, Triangle, CatmullRom, Gaussian, Lanczos3 (Default)
+icon-filtering-method = "Nearest"
+

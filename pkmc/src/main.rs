@@ -1,51 +1,15 @@
 pub mod client;
+pub mod config;
 pub mod player;
 pub mod server;
 pub mod server_state;
 
-use std::path::{Path, PathBuf};
-
 use anyhow::Result;
 use base64::Engine as _;
+use config::Config;
 use pkmc_world::world::World;
-use serde::Deserialize;
 use server::Server;
 use server_state::ServerState;
-
-#[derive(Debug, Deserialize, Default)]
-struct ConfigServerList {
-    text: Option<String>,
-    icon: Option<PathBuf>,
-}
-
-fn config_default_address() -> String {
-    "127.0.0.1:25565".to_owned()
-}
-
-fn config_default_brand() -> String {
-    "Vulae/pkmc".to_owned()
-}
-
-#[derive(Debug, Deserialize)]
-struct Config {
-    #[serde(default = "config_default_address")]
-    address: String,
-    #[serde(default = "config_default_brand")]
-    brand: String,
-    #[serde(default, rename = "server-list")]
-    server_list: ConfigServerList,
-    #[serde(default, rename = "compression-threshold")]
-    compression_threshold: usize,
-    #[serde(default, rename = "compression-level")]
-    compression_level: u32,
-    world: PathBuf,
-}
-
-impl Config {
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Config> {
-        Ok(toml::from_str(&std::fs::read_to_string(path)?)?)
-    }
-}
 
 fn main() -> Result<()> {
     let config = Config::load("pkmc.toml")?;
@@ -54,9 +18,19 @@ fn main() -> Result<()> {
         server_brand: config.brand,
         server_list_text: config.server_list.text,
         server_list_icon: if let Some(icon_path) = config.server_list.icon {
-            let file = std::fs::read(icon_path)?;
-            let base64 = base64::prelude::BASE64_STANDARD.encode(file);
-            Some(base64)
+            let img = image::open(icon_path)?;
+            let img_resized = img.resize_exact(
+                64,
+                64,
+                config
+                    .server_list
+                    .icon_filtering_method
+                    .to_image_rs_filtering_method(),
+            );
+            let mut png = std::io::Cursor::new(Vec::new());
+            img_resized.write_to(&mut png, image::ImageFormat::Png)?;
+            let png_base64 = base64::prelude::BASE64_STANDARD.encode(png.into_inner());
+            Some(format!("data:image/png;base64,{}", png_base64))
         } else {
             None
         },

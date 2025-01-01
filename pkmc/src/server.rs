@@ -29,6 +29,7 @@ impl Server {
             .next()
             .ok_or(anyhow!("Failed to parse socket address"))?;
         let listener = TcpListener::bind(address)?;
+        println!("Server running at {}", address);
         listener.set_nonblocking(true)?;
         Ok(Self {
             address,

@@ -17,3 +17,4 @@ serde.workspace = true
 toml = "0.8.19"
 ratatui = "0.29.0"
 anyhow = "1.0.94"
+image = { version = "0.25.5", default-features = false, features = ["png"] }

@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use pkmc_defs::{packet, Registry};
+use pkmc_defs::{packet, REGISTRY};
 use pkmc_nbt::NBT;
 use pkmc_packet::{
     connection::{self, ConnectionError, ServerboundPacket},
@@ -186,10 +186,8 @@ impl ClientConfiguration {
                     packet::configuration::ConfigurationPacket::SelectKnownPacks(
                         _select_known_packs,
                     ) => {
-                        let registry = Registry::load();
-
-                        registry
-                            .iter_entries()
+                        REGISTRY
+                            .iter()
                             .try_for_each(|(registry_id, entries)| {
                                 connection.send(packet::configuration::RegistryData {
                                     registry_id: registry_id.to_owned(),

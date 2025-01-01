@@ -4,8 +4,7 @@ use crate::{generated, text_component::TextComponent};
 use pkmc_nbt::{nbt_compound, NBT};
 use pkmc_packet::{
     connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
-    serverbound_packet_enum, to_paletted_container, BitSet, Position, ReadExtPacket,
-    WriteExtPacket,
+    serverbound_packet_enum, to_paletted_data, BitSet, Position, ReadExtPacket, WriteExtPacket,
 };
 use pkmc_util::read_ext::ReadExt;
 
@@ -354,45 +353,13 @@ impl LevelChunkWithLight {
             data: {
                 let mut writer = Vec::new();
 
-                struct Section {
-                    data: [i32; 4096],
-                    air: [bool; 4096],
-                }
-                #[allow(dead_code)]
-                impl Section {
-                    pub fn new_empty() -> Self {
-                        Self {
-                            data: [0; 4096],
-                            air: [false; 4096],
-                        }
-                    }
-
-                    pub fn fill(&mut self, block: i32, air: bool) {
-                        self.data.fill(block);
-                        self.air.fill(air);
-                    }
-
-                    pub fn set(&mut self, x: u8, y: u8, z: u8, block: i32, air: bool) {
-                        let ind = (((y as usize * 16) + z as usize) * 16) + x as usize;
-                        self.data[ind] = block;
-                        self.air[ind] = air;
-                    }
-
-                    pub fn write(&self, mut writer: impl Write) -> std::io::Result<()> {
-                        writer.write_all(
-                            &(self.air.iter().filter(|v| !*v).count() as i16).to_be_bytes(),
-                        )?;
-                        writer.write_all(&to_paletted_container(&self.data, 4, 8)?)?;
-                        Ok(())
-                    }
-                }
-
                 for _ in 0..num_sections {
-                    let mut section = Section::new_empty();
-                    section.fill(1, false);
-                    section.write(&mut writer)?;
-                    // Biome??
-                    writer.write_all(&to_paletted_container(&[0; 64], 1, 3)?)?;
+                    // Num non-air blocks
+                    writer.write_all(&4096i16.to_be_bytes())?;
+                    // Blocks
+                    writer.write_all(&to_paletted_data(&[1; 4096], 4..=8, 15)?)?;
+                    // Biome
+                    writer.write_all(&to_paletted_data(&[0; 64], 1..=3, 6)?)?;
                 }
 
                 writer.into_boxed_slice()

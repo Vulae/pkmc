@@ -1,7 +1,11 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    io::Write,
+    sync::{Arc, RwLock},
+};
 
-use pkmc_defs::{packet, text_component::TextComponent};
-use pkmc_packet::Connection;
+use pkmc_defs::{packet, text_component::TextComponent, REGISTRY};
+use pkmc_nbt::nbt_compound;
+use pkmc_packet::{to_paletted_data, BitSet, Connection};
 use pkmc_util::UUID;
 use rand::Rng as _;
 
@@ -10,6 +14,10 @@ use crate::{client::PlayerInformation, server_state::ServerState};
 use super::{ChunkLoader, ChunkPosition, PlayerError};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
+
+// NOTE: Temporary stuff for testing
+const PLAYER_DIMENSION: &str = "minecraft:overworld";
+const VIEW_DISTANCE: i32 = 4;
 
 #[derive(Debug)]
 pub struct Player {
@@ -41,21 +49,33 @@ impl Player {
             x: 0.0,
             y: 0.0,
             z: 0.0,
-            chunk_loader: ChunkLoader::new(16),
+            chunk_loader: ChunkLoader::new(VIEW_DISTANCE),
         };
 
         player.connection.send(packet::play::Login {
             entity_id: 0,
             is_hardcore: false,
-            dimensions: vec!["pkmc:void".to_owned()],
+            dimensions: REGISTRY
+                .get("minecraft:dimension_type")
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect(),
             max_players: 42069,
             view_distance: player.chunk_loader.radius,
             simulation_distance: 6,
             reduced_debug_info: false,
             enable_respawn_screen: true,
             do_limited_crafting: false,
-            dimension_type: 0,
-            dimension_name: "pkmc:void".to_owned(),
+            dimension_type: REGISTRY
+                .get("minecraft:dimension_type")
+                .unwrap()
+                .keys()
+                .enumerate()
+                .find(|(_, v)| *v == PLAYER_DIMENSION)
+                .unwrap()
+                .0 as i32,
+            dimension_name: PLAYER_DIMENSION.to_owned(),
             hashed_seed: 0,
             game_mode: 1,
             previous_game_mode: -1,
@@ -162,13 +182,50 @@ impl Player {
             })?;
         }
 
-        while let Some(to_load) = self.chunk_loader.next_to_load() {
-            self.connection
-                .send(packet::play::LevelChunkWithLight::generate_test(
-                    to_load.chunk_x,
-                    to_load.chunk_z,
-                    1,
-                )?)?;
+        if let Some(to_load) = self.chunk_loader.next_to_load() {
+            println!("Load chunk {}, {}", to_load.chunk_x, to_load.chunk_z);
+            //self.connection
+            //    .send(packet::play::LevelChunkWithLight::generate_test(
+            //        to_load.chunk_x,
+            //        to_load.chunk_z,
+            //        1,
+            //    )?)?;
+            let world = &mut self.server_state.write().unwrap().world;
+            let level = world.get_level("minecraft:overworld").unwrap();
+            if let Some(chunk) = level.get_chunk(to_load.chunk_x, to_load.chunk_z)? {
+                self.connection.send(packet::play::LevelChunkWithLight {
+                    chunk_x: to_load.chunk_x,
+                    chunk_z: to_load.chunk_z,
+                    heightmaps: nbt_compound!(),
+                    data: {
+                        let mut writer = Vec::new();
+
+                        chunk.iter_sections().try_for_each(|blocks| {
+                            // Num non-air blocks
+                            let block_count = blocks.iter().filter(|b| !b.is_air()).count();
+                            writer.write_all(&(block_count as u16).to_be_bytes())?;
+                            // Blocks
+                            writer.write_all(&to_paletted_data(
+                                &blocks.iter().map(|b| b.id().unwrap()).collect::<Box<[_]>>(),
+                                4..=8,
+                                15,
+                            )?)?;
+                            // Biome
+                            writer.write_all(&to_paletted_data(&[0; 64], 1..=3, 6)?)?;
+                            Ok::<_, PlayerError>(())
+                        })?;
+
+                        writer.into_boxed_slice()
+                    },
+                    block_entities: Vec::new(),
+                    sky_light_mask: BitSet::new(0),
+                    block_light_mask: BitSet::new(0),
+                    empty_sky_light_mask: BitSet::new(0),
+                    empty_block_light_mask: BitSet::new(0),
+                    sky_lights_arrays: Vec::new(),
+                    block_lights_arrays: Vec::new(),
+                })?
+            }
         }
 
         Ok(())

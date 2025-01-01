@@ -72,6 +72,13 @@ impl Block {
         Self::new("minecraft:air")
     }
 
+    pub fn is_air(&self) -> bool {
+        matches!(
+            self.name.as_ref(),
+            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+        )
+    }
+
     pub fn id(&self) -> Option<i32> {
         BLOCKS_TO_IDS.get(self).copied()
     }

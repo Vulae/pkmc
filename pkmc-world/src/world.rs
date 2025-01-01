@@ -1,6 +1,4 @@
-#![allow(unused)]
-
-use std::{collections::HashMap, fs::File, io::Seek, marker::PhantomData, path::PathBuf};
+use std::{collections::HashMap, fs::File, io::Seek, path::PathBuf};
 
 use pkmc_defs::block::Block;
 use pkmc_nbt::{NBTError, NBT};
@@ -21,7 +19,7 @@ pub enum WorldError {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ChunkSectionBlockStatesPaletteEntry {
+struct ChunkSectionBlockStatesPaletteEntry {
     #[serde(rename = "Name")]
     name: String,
     #[serde(rename = "Properties", default)]
@@ -29,7 +27,7 @@ pub struct ChunkSectionBlockStatesPaletteEntry {
 }
 
 impl ChunkSectionBlockStatesPaletteEntry {
-    pub fn to_block(&self) -> Block {
+    fn to_block(&self) -> Block {
         Block::new_p(&self.name, self.properties.iter())
     }
 }
@@ -41,7 +39,7 @@ struct ChunkSectionBlockStates {
 }
 
 impl ChunkSectionBlockStates {
-    fn get_block(&self, x: u8, y: u8, z: u8) -> ChunkSectionBlockStatesPaletteEntry {
+    fn get_block_by_index(&self, index: usize) -> ChunkSectionBlockStatesPaletteEntry {
         match self.palette.len() {
             0 => panic!(),
             1 => self.palette[0].clone(),
@@ -49,13 +47,27 @@ impl ChunkSectionBlockStates {
                 let mut packed_indices = PackedArray::from_inner(
                     self.data.as_ref().unwrap().clone().transmute(),
                     PackedArray::bits_per_entry(palette_count as u64 - 1),
-                    16 * 16 * 16,
+                    4096,
                 );
-                let index_index = ((y & 15) as usize) * 16 * 16 + (z as usize) * 16 + (x as usize);
-                let index = packed_indices.get_unchecked(index_index) as usize;
-                self.palette[index].clone()
+                let palette_index = packed_indices.get(index).unwrap() as usize;
+                self.palette
+                    .get(palette_index)
+                    .unwrap_or(&self.palette[0])
+                    .clone()
             }
         }
+    }
+
+    fn get_block(&self, x: u8, y: u8, z: u8) -> ChunkSectionBlockStatesPaletteEntry {
+        self.get_block_by_index(((y & 15) as usize) * 16 * 16 + (z as usize) * 16 + (x as usize))
+    }
+
+    fn blocks(&self) -> [ChunkSectionBlockStatesPaletteEntry; 4096] {
+        (0..4096)
+            .map(|index| self.get_block_by_index(index))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap()
     }
 }
 
@@ -67,6 +79,7 @@ struct ChunkSection {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(unused)]
 pub struct Chunk {
     #[serde(rename = "DataVersion")]
     data_version: i32,
@@ -94,10 +107,24 @@ impl Chunk {
             .get_block(x, (y & 15) as u8, z)
             .to_block()
     }
+
+    pub fn iter_sections(&self) -> impl Iterator<Item = [Block; 4096]> + use<'_> {
+        self.sections.iter().map(|section| {
+            section
+                .block_states
+                .blocks()
+                .into_iter()
+                .map(|b| b.to_block())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap()
+        })
+    }
 }
 
 #[derive(Debug)]
-struct RegionLoader {
+#[allow(unused)]
+struct Region {
     file: File,
     region_x: i32,
     region_z: i32,
@@ -105,8 +132,8 @@ struct RegionLoader {
     loaded_chunks: HashMap<(u8, u8), Option<Chunk>>,
 }
 
-impl RegionLoader {
-    pub fn load(mut file: File, region_x: i32, region_z: i32) -> Result<Self, WorldError> {
+impl Region {
+    fn load(mut file: File, region_x: i32, region_z: i32) -> Result<Self, WorldError> {
         let mut locations = [(0, 0); 1024];
         file.rewind()?;
         locations.iter_mut().try_for_each(|(offset, length)| {
@@ -124,7 +151,7 @@ impl RegionLoader {
         })
     }
 
-    pub fn read(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Box<[u8]>>, WorldError> {
+    fn read(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Box<[u8]>>, WorldError> {
         let (offset, length) = self.locations[(chunk_x as usize) + (chunk_z as usize) * 32];
         if offset == 0 || length == 0 {
             return Ok(None);
@@ -198,10 +225,11 @@ impl RegionLoader {
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct Level {
     identifier: String,
     root: PathBuf,
-    loaded_regions: HashMap<(i32, i32), Option<RegionLoader>>,
+    loaded_regions: HashMap<(i32, i32), Option<Region>>,
 }
 
 impl Level {
@@ -213,11 +241,7 @@ impl Level {
         }
     }
 
-    fn load_region(
-        &self,
-        region_x: i32,
-        region_z: i32,
-    ) -> Result<Option<RegionLoader>, WorldError> {
+    fn load_region(&self, region_x: i32, region_z: i32) -> Result<Option<Region>, WorldError> {
         let mut path = self.root.clone();
         path.push("region");
         path.push(format!("r.{}.{}.mca", region_x, region_z));
@@ -229,14 +253,14 @@ impl Level {
             result => result,
         }?;
 
-        Ok(Some(RegionLoader::load(file, region_x, region_z)?))
+        Ok(Some(Region::load(file, region_x, region_z)?))
     }
 
     fn get_or_load_region(
         &mut self,
         region_x: i32,
         region_z: i32,
-    ) -> Result<Option<&mut RegionLoader>, WorldError> {
+    ) -> Result<Option<&mut Region>, WorldError> {
         //Ok(self
         //    .loaded_regions
         //    .entry((region_x, region_z))
@@ -284,6 +308,7 @@ impl Level {
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct World {
     root: PathBuf,
     levels: Vec<Level>,
@@ -298,7 +323,7 @@ impl World {
         })
     }
 
-    fn get_level(&mut self, identifier: &str) -> Option<&mut Level> {
+    pub fn get_level(&mut self, identifier: &str) -> Option<&mut Level> {
         self.levels
             .iter_mut()
             .find(|level| level.identifier == identifier)
@@ -308,7 +333,6 @@ impl World {
 #[cfg(test)]
 mod test {
     use pkmc_defs::block::BLOCKS_TO_IDS;
-    use serde::Deserialize;
 
     use crate::world::World;
 
@@ -327,7 +351,7 @@ mod test {
         let max_block_id = *BLOCKS_TO_IDS.values().max().unwrap();
 
         let block_grid_width = (max_block_id as f32).sqrt().ceil() as i32;
-        let block_grid_height = (max_block_id as f32 / block_grid_width as f32).ceil() as i32;
+        let _block_grid_height = (max_block_id as f32 / block_grid_width as f32).ceil() as i32;
 
         for block_id in 0..max_block_id {
             // FIXME: The indexing into grid is wrong.

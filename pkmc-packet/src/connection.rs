@@ -2,6 +2,10 @@ use std::{
     collections::VecDeque,
     io::{self, Read, Write},
     net::TcpStream,
+    sync::{
+        mpsc::{self, Receiver, Sender, TryRecvError},
+        Arc, Mutex,
+    },
 };
 
 use pkmc_util::ReadExt;
@@ -10,6 +14,7 @@ use thiserror::Error;
 use crate::{
     reader::try_read_varint_ret_bytes,
     writer::{varint_size, WriteExtPacket},
+    ClientboundPacket, RawPacket,
 };
 
 #[derive(Error, Debug)]
@@ -22,50 +27,6 @@ pub enum ConnectionError {
     UnsupportedPacket(String, i32),
     #[error("Invalid raw packet ID for parser (expected: {0}, found: {1})")]
     InvalidRawPacketIDForParser(i32, i32),
-}
-
-pub trait ServerboundPacket {
-    const SERVERBOUND_ID: i32;
-
-    fn serverbound_id(&self) -> i32 {
-        Self::SERVERBOUND_ID
-    }
-
-    fn packet_read(reader: impl Read) -> Result<Self, ConnectionError>
-    where
-        Self: Sized;
-
-    fn packet_raw_read(raw: &RawPacket) -> Result<Self, ConnectionError>
-    where
-        Self: Sized,
-    {
-        if raw.id != Self::SERVERBOUND_ID {
-            return Err(ConnectionError::InvalidRawPacketIDForParser(
-                Self::SERVERBOUND_ID,
-                raw.id,
-            ));
-        }
-        Self::packet_read(std::io::Cursor::new(&raw.data))
-    }
-}
-
-pub trait ClientboundPacket {
-    const CLIENTBOUND_ID: i32;
-
-    fn clientbound_id(&self) -> i32 {
-        Self::CLIENTBOUND_ID
-    }
-
-    fn packet_write(&self, writer: impl Write) -> Result<(), ConnectionError>;
-
-    fn raw_packet(&self) -> Result<RawPacket, ConnectionError> {
-        let mut raw_data = Vec::new();
-        self.packet_write(&mut raw_data)?;
-        Ok(RawPacket {
-            id: self.clientbound_id(),
-            data: raw_data.into_boxed_slice(),
-        })
-    }
 }
 
 #[derive(Debug)]
@@ -210,21 +171,10 @@ impl StreamHandler {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct RawPacket {
-    pub id: i32,
-    pub data: Box<[u8]>,
-}
-
-impl RawPacket {
-    pub fn new(id: i32, data: Box<[u8]>) -> Self {
-        Self { id, data }
-    }
-}
-
 #[derive(Debug)]
 struct InnerConnection {
     stream: TcpStream,
+    rx: Receiver<RawPacket>,
     bytes: VecDeque<u8>,
     handler: StreamHandler,
     closed: bool,
@@ -258,12 +208,23 @@ impl InnerConnection {
         Ok(())
     }
 
-    pub fn send(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
+    fn send(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
         self.handler.send(&mut self.stream, &packet.raw_packet()?)?;
         Ok(())
     }
 
-    pub fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
+    fn try_send_all(&mut self) -> Result<(), ConnectionError> {
+        loop {
+            match self.rx.try_recv() {
+                Ok(raw_packet) => self.handler.send(&mut self.stream, &raw_packet)?,
+                Err(TryRecvError::Empty) => break,
+                Err(_err) => unreachable!(),
+            }
+        }
+        Ok(())
+    }
+
+    fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
         self.recieve_bytes()?;
         if self.closed {
             return Ok(None);
@@ -272,32 +233,37 @@ impl InnerConnection {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Connection {
-    inner: Option<InnerConnection>,
+    inner: Arc<Mutex<Option<InnerConnection>>>,
+    tx: Option<Sender<RawPacket>>,
 }
 
 impl Connection {
     pub fn new(stream: TcpStream) -> Result<Self, ConnectionError> {
         stream.set_nonblocking(true)?;
+        let (tx, rx) = mpsc::channel::<RawPacket>();
         Ok(Self {
-            inner: Some(InnerConnection {
+            inner: Arc::new(Mutex::new(Some(InnerConnection {
                 stream,
+                rx,
                 bytes: VecDeque::new(),
                 handler: StreamHandler::Uncompressed(UncompressedStreamHandler),
                 closed: false,
-            }),
+            }))),
+            tx: Some(tx),
         })
     }
 
     fn update_closed_state(&mut self) {
-        if matches!(self.inner, Some(InnerConnection { closed: true, .. })) {
-            self.inner = None;
+        self.inner.lock().unwrap().take_if(|inner| inner.closed);
+        if self.inner.lock().unwrap().is_none() {
+            self.tx = None;
         }
     }
 
     pub fn close(&mut self) -> Result<(), ConnectionError> {
-        if let Some(inner) = self.inner.take() {
+        if let Some(inner) = self.inner.lock().unwrap().take() {
             inner.stream.shutdown(std::net::Shutdown::Both)?;
         }
         Ok(())
@@ -305,6 +271,8 @@ impl Connection {
 
     pub fn is_closed(&self) -> bool {
         self.inner
+            .lock()
+            .unwrap()
             .as_ref()
             .map(|inner| inner.closed)
             .unwrap_or(true)
@@ -312,26 +280,39 @@ impl Connection {
 
     pub fn set_handler(&mut self, handler: StreamHandler) {
         self.update_closed_state();
-        if let Some(inner) = self.inner.as_mut() {
+        if let Some(inner) = self.inner.lock().unwrap().as_mut() {
             inner.handler = handler;
         }
     }
 
-    // TODO: Currently it just doesn't care if the connection is closed.
-    // But should it error on a closed connection?
+    pub fn send_async(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
+        if let Some(tx) = &self.tx {
+            if let Err(_err) = tx.send(packet.raw_packet()?) {
+                unreachable!();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn update_async(&mut self) -> Result<(), ConnectionError> {
+        self.update_closed_state();
+        if let Some(inner) = self.inner.lock().unwrap().as_mut() {
+            inner.try_send_all()?;
+        }
+        Ok(())
+    }
 
     pub fn send(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
         self.update_closed_state();
-        if let Some(inner) = self.inner.as_mut() {
-            inner.send(packet)
-        } else {
-            Ok(())
+        if let Some(inner) = self.inner.lock().unwrap().as_mut() {
+            inner.send(packet)?;
         }
+        Ok(())
     }
 
     pub fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
         self.update_closed_state();
-        if let Some(inner) = self.inner.as_mut() {
+        if let Some(inner) = self.inner.lock().unwrap().as_mut() {
             inner.recieve()
         } else {
             Ok(None)
@@ -349,11 +330,11 @@ macro_rules! serverbound_packet_enum {
             )*
         }
 
-        impl TryFrom<&$crate::connection::RawPacket> for $enum_name {
+        impl TryFrom<&$crate::packet::RawPacket> for $enum_name {
             type Error = $crate::connection::ConnectionError;
 
-            fn try_from(value: &$crate::connection::RawPacket) -> std::result::Result<Self, Self::Error> {
-                use $crate::connection::ServerboundPacket as _;
+            fn try_from(value: &$crate::packet::RawPacket) -> std::result::Result<Self, Self::Error> {
+                use $crate::packet::ServerboundPacket as _;
                 let mut reader = std::io::Cursor::new(&value.data);
                 match value.id {
                     $(

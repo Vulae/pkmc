@@ -6,8 +6,8 @@ use std::{
 use crate::generated;
 use pkmc_nbt::NBT;
 use pkmc_packet::{
-    connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
-    serverbound_packet_enum, ReadExtPacket, WriteExtPacket,
+    serverbound_packet_enum, ClientboundPacket, ConnectionError, ReadExtPacket, ServerboundPacket,
+    WriteExtPacket,
 };
 use pkmc_util::read_ext::ReadExt;
 

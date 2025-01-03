@@ -3,8 +3,8 @@ use std::io::{Read, Write};
 use crate::{generated, text_component::TextComponent};
 use pkmc_nbt::{nbt_compound, NBT};
 use pkmc_packet::{
-    connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
-    serverbound_packet_enum, to_paletted_data, BitSet, Position, ReadExtPacket, WriteExtPacket,
+    connection::ConnectionError, serverbound_packet_enum, to_paletted_data, BitSet,
+    ClientboundPacket, Position, ReadExtPacket, ServerboundPacket, WriteExtPacket,
 };
 use pkmc_util::read_ext::ReadExt;
 
@@ -140,14 +140,20 @@ impl ServerboundPacket for PlayerLoaded {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct PlayerPosition {
-    pub relative: bool,
-    pub x: Option<f64>,
-    pub y: Option<f64>,
-    pub z: Option<f64>,
-    pub yaw: Option<f32>,
-    pub pitch: Option<f32>,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub pos_relative: bool,
+    pub delta_x: f64,
+    pub delta_y: f64,
+    pub delta_z: f64,
+    pub delta_relative: bool,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub angle_relative: bool,
+    pub rotate_delta: bool,
     pub teleport_id: i32,
 }
 
@@ -155,23 +161,22 @@ impl ClientboundPacket for PlayerPosition {
     const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_POSITION;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_all(&self.x.unwrap_or(0.0).to_be_bytes())?;
-        writer.write_all(&self.y.unwrap_or(0.0).to_be_bytes())?;
-        writer.write_all(&self.z.unwrap_or(0.0).to_be_bytes())?;
-        writer.write_all(&self.yaw.unwrap_or(0.0).to_be_bytes())?;
-        writer.write_all(&self.pitch.unwrap_or(0.0).to_be_bytes())?;
+        writer.write_varint(self.teleport_id)?;
+        writer.write_all(&self.x.to_be_bytes())?;
+        writer.write_all(&self.y.to_be_bytes())?;
+        writer.write_all(&self.z.to_be_bytes())?;
+        writer.write_all(&self.delta_x.to_be_bytes())?;
+        writer.write_all(&self.delta_y.to_be_bytes())?;
+        writer.write_all(&self.delta_z.to_be_bytes())?;
+        writer.write_all(&self.yaw.to_be_bytes())?;
+        writer.write_all(&self.pitch.to_be_bytes())?;
         writer.write_all(
-            &(if self.x.is_some() { 0x01u8 } else { 0 }
-                | if self.y.is_some() { 0x02 } else { 0 }
-                | if self.z.is_some() { 0x04 } else { 0 }
-                | if self.yaw.is_some() { 0x08 } else { 0 }
-                | if self.pitch.is_some() { 0x10 } else { 0 }
-            // NOTE: This isn't an actual flag, Minecraft just checks if the flags are unset
-            // to determine whether the teleport is absolute (=0x00) or relative (!=0x00)
-                | if self.relative { 0x20 } else { 0 })
+            &(if self.pos_relative { 0b111i32 } else { 0 }
+                | if self.angle_relative { 0b11000 } else { 0 }
+                | if self.delta_relative { 0b11100000 } else { 0 }
+                | if self.rotate_delta { 0b100000000 } else { 0 })
             .to_be_bytes(),
         )?;
-        writer.write_varint(self.teleport_id)?;
         Ok(())
     }
 }
@@ -353,11 +358,12 @@ impl LevelChunkWithLight {
             data: {
                 let mut writer = Vec::new();
 
-                for _ in 0..num_sections {
+                for i in 0..num_sections {
+                    let block_id = if i == 0 { 1 } else { 0 };
                     // Num non-air blocks
-                    writer.write_all(&4096i16.to_be_bytes())?;
+                    writer.write_all(&if block_id != 0 { 4096i16 } else { 0i16 }.to_be_bytes())?;
                     // Blocks
-                    writer.write_all(&to_paletted_data(&[1; 4096], 4..=8, 15)?)?;
+                    writer.write_all(&to_paletted_data(&[block_id; 4096], 4..=8, 15)?)?;
                     // Biome
                     writer.write_all(&to_paletted_data(&[0; 64], 1..=3, 6)?)?;
                 }
@@ -547,6 +553,7 @@ impl ClientboundPacket for SetActionBarText {
 serverbound_packet_enum!(pub PlayPacket;
     KeepAlive, KeepAlive;
     PlayerLoaded, PlayerLoaded;
+    AcceptTeleportation, AcceptTeleportation;
     MovePlayerPosRot, MovePlayerPosRot;
     MovePlayerPos, MovePlayerPos;
     MovePlayerRot, MovePlayerRot;

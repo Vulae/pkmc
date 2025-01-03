@@ -8,6 +8,8 @@ pub struct ChunkPosition {
     pub chunk_z: i32,
 }
 
+unsafe impl Send for ChunkPosition {}
+
 impl ChunkPosition {
     pub fn new(chunk_x: i32, chunk_z: i32) -> Self {
         Self { chunk_x, chunk_z }
@@ -89,7 +91,29 @@ impl ChunkLoader {
     }
 
     pub fn next_to_load(&mut self) -> Option<ChunkPosition> {
-        if let Some(next) = self.to_load.iter().next().cloned() {
+        if let Some(closest) =
+            self.to_load
+                .iter()
+                .fold(None, |closest: Option<ChunkPosition>, chunk| {
+                    if let Some(closest) = closest {
+                        if let Some(center) = self.center {
+                            if closest.distance(&center) < chunk.distance(&center) {
+                                Some(closest)
+                            } else {
+                                Some(*chunk)
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        Some(*chunk)
+                    }
+                })
+        {
+            self.to_load.remove(&closest);
+            self.loaded.insert(closest);
+            Some(closest)
+        } else if let Some(next) = self.to_load.iter().next().cloned() {
             self.to_load.remove(&next);
             self.loaded.insert(next);
             Some(next)

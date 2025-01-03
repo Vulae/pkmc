@@ -1,10 +1,7 @@
 use std::io::Read;
 
 use crate::generated;
-use pkmc_packet::{
-    connection::{ConnectionError, ServerboundPacket},
-    ReadExtPacket,
-};
+use pkmc_packet::{connection::ConnectionError, ReadExtPacket, ServerboundPacket};
 use pkmc_util::read_ext::ReadExt;
 
 #[derive(Debug)]

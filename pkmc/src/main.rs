@@ -4,6 +4,8 @@ pub mod player;
 pub mod server;
 pub mod server_state;
 
+use std::sync::{Arc, Mutex};
+
 use anyhow::Result;
 use base64::Engine as _;
 use config::Config;
@@ -36,7 +38,7 @@ fn main() -> Result<()> {
         },
         compression_threshold: config.compression_threshold,
         compression_level: config.compression_level,
-        world: World::load(config.world)?,
+        world: Arc::new(Mutex::new(World::load(config.world)?)),
     };
 
     let mut server = Server::new(config.address, state)?;

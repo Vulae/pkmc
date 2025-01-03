@@ -19,66 +19,85 @@ pub enum WorldError {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-struct ChunkSectionBlockStatesPaletteEntry {
-    #[serde(rename = "Name")]
-    name: String,
-    #[serde(rename = "Properties", default)]
-    properties: HashMap<String, String>,
-}
-
-impl ChunkSectionBlockStatesPaletteEntry {
-    fn to_block(&self) -> Block {
-        Block::new_p(&self.name, self.properties.iter())
-    }
-}
-
-#[derive(Debug, Deserialize)]
 struct ChunkSectionBlockStates {
-    palette: Box<[ChunkSectionBlockStatesPaletteEntry]>,
+    palette: Box<[Block]>,
     data: Option<Box<[i64]>>,
 }
 
 impl ChunkSectionBlockStates {
-    fn get_block_by_index(&self, index: usize) -> ChunkSectionBlockStatesPaletteEntry {
+    fn get_block_palette_index_by_index(&self, index: usize) -> usize {
+        // FIXME: get_block_palette_index_by_index sometimes returns out of bounds index :(
         match self.palette.len() {
-            0 => panic!(),
-            1 => self.palette[0].clone(),
+            0 => unreachable!(),
+            1 => 0,
             palette_count => {
+                // TODO: Make seperate packed array reader for borrowed reading.
                 let mut packed_indices = PackedArray::from_inner(
                     self.data.as_ref().unwrap().clone().transmute(),
                     PackedArray::bits_per_entry(palette_count as u64 - 1),
                     4096,
                 );
-                let palette_index = packed_indices.get(index).unwrap() as usize;
-                self.palette
-                    .get(palette_index)
-                    .unwrap_or(&self.palette[0])
-                    .clone()
+                packed_indices.get(index).unwrap() as usize
             }
         }
     }
 
-    fn get_block(&self, x: u8, y: u8, z: u8) -> ChunkSectionBlockStatesPaletteEntry {
+    fn get_block_by_index(&self, index: usize) -> Block {
+        self.palette[self.get_block_palette_index_by_index(index)].clone()
+    }
+
+    fn get_block(&self, x: u8, y: u8, z: u8) -> Block {
         self.get_block_by_index(((y & 15) as usize) * 16 * 16 + (z as usize) * 16 + (x as usize))
     }
 
-    fn blocks(&self) -> [ChunkSectionBlockStatesPaletteEntry; 4096] {
+    fn blocks(&self) -> [Block; 4096] {
         (0..4096)
             .map(|index| self.get_block_by_index(index))
             .collect::<Vec<_>>()
             .try_into()
             .unwrap()
     }
+
+    /// Returns none if any of the IDs are not found.
+    fn blocks_ids(&self) -> Option<[i32; 4096]> {
+        let palette_ids = self
+            .palette
+            .iter()
+            .map(|b| b.id())
+            .collect::<Option<Box<[i32]>>>()?;
+        Some(
+            (0..4096)
+                // TODO: Remove safety check when get_block_palette_index_by_index is fixed.
+                .map(|index| palette_ids.get(self.get_block_palette_index_by_index(index)).cloned().unwrap_or(0))
+                .collect::<Vec<i32>>()
+                .try_into()
+                .unwrap(),
+        )
+    }
 }
 
-#[derive(Debug, Deserialize)]
-struct ChunkSection {
+#[derive(Debug, Deserialize, Clone)]
+pub struct ChunkSection {
     #[serde(rename = "Y")]
     y: i32,
     block_states: ChunkSectionBlockStates,
 }
 
-#[derive(Debug, Deserialize)]
+impl ChunkSection {
+    pub fn get_block(&self, section_x: u8, section_y: u8, section_z: u8) -> Block {
+        self.block_states.get_block(section_x, section_y, section_z)
+    }
+
+    pub fn blocks(&self) -> [Block; 4096] {
+        self.block_states.blocks()
+    }
+
+    pub fn blocks_ids(&self) -> Option<[i32; 4096]> {
+        self.block_states.blocks_ids()
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 #[allow(unused)]
 pub struct Chunk {
     #[serde(rename = "DataVersion")]
@@ -102,23 +121,11 @@ impl Chunk {
         let Some(section) = self.sections.iter().find(|section| section.y == section_y) else {
             return Block::air();
         };
-        section
-            .block_states
-            .get_block(x, (y & 15) as u8, z)
-            .to_block()
+        section.block_states.get_block(x, (y & 15) as u8, z)
     }
 
-    pub fn iter_sections(&self) -> impl Iterator<Item = [Block; 4096]> + use<'_> {
-        self.sections.iter().map(|section| {
-            section
-                .block_states
-                .blocks()
-                .into_iter()
-                .map(|b| b.to_block())
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap()
-        })
+    pub fn iter_sections(&self) -> impl Iterator<Item = &ChunkSection> + use<'_> {
+        self.sections.iter()
     }
 }
 

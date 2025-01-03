@@ -96,14 +96,18 @@ pub fn generate_generated_code<P1: AsRef<Path>, P2: AsRef<Path>, P3: AsRef<Path>
         generated_code: &mut BTreeMap<String, String>,
         generated_report_json: &mut BTreeMap<String, serde_json::Value>,
     ) -> Result<(), GeneratedError> {
-        match registry.report::<T>()?.code()? {
-            generated::report::GeneratedReportCode::Code(module_name, module_code) => {
-                generated_code.insert(module_name, module_code);
-            }
-            generated::report::GeneratedReportCode::Json(key, value) => {
-                generated_report_json.insert(key, value);
-            }
-        }
+        registry
+            .report::<T>()?
+            .code()?
+            .into_iter()
+            .for_each(|code| match code {
+                generated::report::GeneratedReportCode::Code(module_name, module_code) => {
+                    generated_code.insert(module_name, module_code);
+                }
+                generated::report::GeneratedReportCode::Json(key, value) => {
+                    generated_report_json.insert(key, value);
+                }
+            });
         Ok(())
     }
 

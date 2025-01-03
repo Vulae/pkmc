@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::GeneratedError;
@@ -36,11 +37,23 @@ pub struct GeneratedReportBlocks(pub HashMap<String, GeneratedReportBlocksBlock>
 
 impl GeneratedReport for GeneratedReportBlocks {
     const INPUT_FILE: &'static str = "blocks.json";
-    fn code(&self) -> Result<GeneratedReportCode, GeneratedError> {
-        Ok(GeneratedReportCode::Json(
-            "block".to_owned(),
-            serde_json::to_value(&self.0)?,
-        ))
+    fn code(&self) -> Result<Vec<GeneratedReportCode>, GeneratedError> {
+        Ok(vec![
+            GeneratedReportCode::Json("block".to_owned(), serde_json::to_value(&self.0)?),
+            GeneratedReportCode::Code(
+                "block".to_owned(),
+                format!(
+                    "#[inline(always)]\npub const fn is_air(id: i32) -> bool {{\nmatches!(id, {})\n}}",
+                    vec!["minecraft:air", "minecraft:cave_air", "minecraft:void_air"].into_iter().map(|air_name| {
+                        self.0.get(air_name)
+                            .unwrap()
+                            .states.iter()
+                            .find(|state| state.default).unwrap()
+                            .id
+                    }).join("|"),
+                ),
+            ),
+        ])
 
         //#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
         //enum States {

@@ -3,8 +3,8 @@ use std::sync::{Arc, RwLock};
 use pkmc_defs::{packet, REGISTRY};
 use pkmc_nbt::NBT;
 use pkmc_packet::{
-    connection::{self, ConnectionError, ServerboundPacket},
-    Connection,
+    connection::{self, ConnectionError},
+    Connection, ServerboundPacket,
 };
 use pkmc_util::UUID;
 use thiserror::Error;

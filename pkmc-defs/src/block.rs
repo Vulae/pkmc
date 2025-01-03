@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::LazyLock};
 use pkmc_util::IdTable;
 use serde::{Deserialize, Serialize};
 
-use crate::generated::DATA;
+use crate::generated::{generated, DATA};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[serde(transparent)]
@@ -52,7 +52,9 @@ impl<K: ToString, V: ToString, I: IntoIterator<Item = (K, V)>> From<I> for Block
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Block {
+    #[serde(alias = "Name")]
     pub name: String,
+    #[serde(alias = "Properties", default)]
     pub properties: BlockProperties,
 }
 
@@ -73,10 +75,13 @@ impl Block {
     }
 
     pub fn is_air(&self) -> bool {
-        matches!(
-            self.name.as_ref(),
-            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
-        )
+        //matches!(
+        //    self.name.as_ref(),
+        //    "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+        //)
+        self.id()
+            .map(|id| generated::block::is_air(id))
+            .unwrap_or(false)
     }
 
     pub fn id(&self) -> Option<i32> {

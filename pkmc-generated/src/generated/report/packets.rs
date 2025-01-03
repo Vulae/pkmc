@@ -25,8 +25,8 @@ pub struct GeneratedReportPackets(pub HashMap<String, GeneratedReportPacketsStat
 
 impl GeneratedReport for GeneratedReportPackets {
     const INPUT_FILE: &'static str = "packets.json";
-    fn code(&self) -> Result<GeneratedReportCode, GeneratedError> {
-        Ok(GeneratedReportCode::Code(
+    fn code(&self) -> Result<Vec<GeneratedReportCode>, GeneratedError> {
+        Ok(vec![GeneratedReportCode::Code(
             "packet".to_owned(),
             self.0
                 .iter()
@@ -72,6 +72,6 @@ impl GeneratedReport for GeneratedReportPackets {
                 })
                 .collect::<Vec<String>>()
                 .join("\n\n"),
-        ))
+        )])
     }
 }

@@ -29,6 +29,7 @@ pub struct DataBlockState {
 
 #[derive(Debug, Deserialize)]
 pub struct DataBlock {
+    #[serde(default)]
     pub definition: HashMap<String, serde_json::Value>,
     #[serde(default)]
     pub properties: HashMap<String, Vec<String>>,

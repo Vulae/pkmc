@@ -2,8 +2,8 @@ use std::io::{Read, Write};
 
 use crate::generated;
 use pkmc_packet::{
-    connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
-    serverbound_packet_enum, WriteExtPacket,
+    connection::ConnectionError, serverbound_packet_enum, ClientboundPacket, ServerboundPacket,
+    WriteExtPacket,
 };
 use pkmc_util::read_ext::ReadExt;
 use serde::Serialize;

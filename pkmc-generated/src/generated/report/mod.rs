@@ -23,5 +23,5 @@ pub trait GeneratedReport: DeserializeOwned {
             report_file,
         )?)?)
     }
-    fn code(&self) -> Result<GeneratedReportCode, GeneratedError>;
+    fn code(&self) -> Result<Vec<GeneratedReportCode>, GeneratedError>;
 }

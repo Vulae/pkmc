@@ -1,9 +1,11 @@
 pub mod connection;
+pub mod packet;
 pub mod paletted_container;
 pub mod reader;
 pub mod writer;
 
-pub use connection::{ClientboundPacket, Connection, ServerboundPacket};
+pub use connection::{Connection, ConnectionError};
+pub use packet::{ClientboundPacket, RawPacket, ServerboundPacket};
 pub use reader::ReadExtPacket;
 pub use writer::WriteExtPacket;
 

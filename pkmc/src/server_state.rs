@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use pkmc_world::world::World;
 
 #[derive(Debug)]
@@ -10,5 +12,5 @@ pub struct ServerState {
     pub compression_level: u32,
     /// Packet compression threshold
     pub compression_threshold: usize,
-    pub world: World,
+    pub world: Arc<Mutex<World>>,
 }

@@ -2,8 +2,8 @@ use std::io::{Read, Write};
 
 use crate::generated;
 use pkmc_packet::{
-    connection::{ClientboundPacket, ConnectionError, ServerboundPacket},
-    serverbound_packet_enum, ReadExtPacket, WriteExtPacket,
+    connection::ConnectionError, serverbound_packet_enum, ClientboundPacket, ReadExtPacket,
+    ServerboundPacket, WriteExtPacket,
 };
 use pkmc_util::UUID;
 

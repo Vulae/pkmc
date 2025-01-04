@@ -14,27 +14,41 @@ This was originally built to be fully single-threaded, but that *may* change in 
 2. Start the server `cargo run --release`
 3. Join the server (Default IP is `[::1]:52817`)
 
-## [Planned Features](#planned-features)
+## [Features](#features)
 
-- [X] [Server list ping](https://wiki.vg/Server_List_Ping)
-- [X] Configuration file
-- [ ] Console interface for server
+|        Feature        | Implemented |                Comment                |
+|-----------------------|-------------|---------------------------------------|
+| Server List Ping      | ✅          | [pkmc.toml](./pkmc.toml) to configure |
+| World Loading         | ❌          | W.I.P.                                |
+| World Editing         | ❌          |                                       |
+| Dimensions/Multiworld | ❌          |                                       |
+| Entities              | ❌          |                                       |
+| Inventories           | ❌          |                                       |
+| Resource Pack         | ❌          |                                       |
+| Online Mode           | ❌          |                                       |
+| Packet Compression    | ✅          | [pkmc.toml](./pkmc.toml) to configure |
+| Players & Chat        | ❌          |                                       |
+| Commands              | ❌          |                                       |
+| Cookies 🍪            | ❌          |                                       |
+| Terminal Interface    | ❌          |                                       |
+| WASM Plugins          | ❌          | Maybe not [^wasm-plugins]             |
 
-- [ ] Registry & tag data
-- [ ] Server resource pack
-- [ ] World loading
-- [ ] Chat messages & basic commands
-- [ ] Display players
-- [ ] Entities
-- [ ] World interactions
+[^wasm-plugins]: Still don't know if I want this to be something you can make plugins for, or just a server you can just modify directly instead.
 
-- [ ] Plugins via WASM
+List of features that very likely will never be implemented:
+- World Saving
+- Command Blocks
+- Redstone
+- Vanilla World Ticking System
+- Liquid Physics
+- Entity Behavior / AI / Pathfinding
+- Vanilla-like Worldgen
 
-- [ ] Online mode
-- [X] Packet compression
 
 ## [License](#license)
 
 [`MIT License`](./LICENSE)
 License is very likely change to MIT-0 or 0BSD in the future, if I feel like it.
+
+## [Notes](#notes)
 

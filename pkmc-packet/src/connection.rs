@@ -318,6 +318,13 @@ impl Connection {
             Ok(None)
         }
     }
+
+    pub fn recieve_into<T>(&mut self) -> Result<Option<T>, ConnectionError>
+    where
+        T: TryFrom<RawPacket, Error = ConnectionError>,
+    {
+        self.recieve().map(|i| i.map(T::try_from).transpose())?
+    }
 }
 
 #[macro_export]
@@ -330,10 +337,10 @@ macro_rules! serverbound_packet_enum {
             )*
         }
 
-        impl TryFrom<&$crate::packet::RawPacket> for $enum_name {
+        impl TryFrom<$crate::packet::RawPacket> for $enum_name {
             type Error = $crate::connection::ConnectionError;
 
-            fn try_from(value: &$crate::packet::RawPacket) -> std::result::Result<Self, Self::Error> {
+            fn try_from(value: $crate::packet::RawPacket) -> std::result::Result<Self, Self::Error> {
                 use $crate::packet::ServerboundPacket as _;
                 let mut reader = std::io::Cursor::new(&value.data);
                 match value.id {

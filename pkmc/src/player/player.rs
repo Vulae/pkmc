@@ -148,8 +148,8 @@ impl Player {
             self.connection.send(packet::play::KeepAlive { id })?;
         }
 
-        while let Some(packet) = self.connection.recieve()? {
-            match packet::play::PlayPacket::try_from(&packet)? {
+        while let Some(packet) = self.connection.recieve_into::<packet::play::PlayPacket>()? {
+            match packet {
                 packet::play::PlayPacket::KeepAlive(keepalive) => match self.keepalive_id.take() {
                     // Success so we do nothing.
                     Some(keepalive_id) if keepalive_id == keepalive.id => {}
@@ -194,16 +194,11 @@ impl Player {
         let server_state = self.server_state.read().unwrap();
         let mut world = server_state.world.lock().unwrap();
         let level = world.get_level("minecraft:overworld").unwrap();
+        // TODO: Instead of loading only 1 chunk per update, load many until a certain time limit
+        // threshold is reached.
         if let Some(to_load) = self.chunk_loader.next_to_load() {
             //println!("Load chunk {}, {}", to_load.chunk_x, to_load.chunk_z);
             if let Some(chunk) = level.get_chunk(to_load.chunk_x, to_load.chunk_z)? {
-                //self.connection
-                //    .send(packet::play::LevelChunkWithLight::generate_test(
-                //        to_load.chunk_x,
-                //        to_load.chunk_z,
-                //        PLAYER_DIMENSION_SECTIONS,
-                //    )?)?;
-
                 self.connection.send(packet::play::LevelChunkWithLight {
                     chunk_x: to_load.chunk_x,
                     chunk_z: to_load.chunk_z,
@@ -236,6 +231,13 @@ impl Player {
                     sky_lights_arrays: Vec::new(),
                     block_lights_arrays: Vec::new(),
                 })?;
+            } else {
+                self.connection
+                    .send(packet::play::LevelChunkWithLight::generate_test(
+                        to_load.chunk_x,
+                        to_load.chunk_z,
+                        PLAYER_DIMENSION_SECTIONS,
+                    )?)?;
             }
         }
 

@@ -46,8 +46,8 @@ struct ClientStatus {
 
 impl ClientStatus {
     fn update(&mut self, connection: &mut Connection) -> Result<(), ClientError> {
-        while let Some(packet) = connection.recieve()? {
-            match packet::status::StatusPacket::try_from(&packet)? {
+        while let Some(packet) = connection.recieve_into::<packet::status::StatusPacket>()? {
+            match packet {
                 packet::status::StatusPacket::Request(_request) => {
                     let server_state = self.server_state.read().unwrap();
                     connection.send(packet::status::Response {
@@ -90,8 +90,8 @@ impl ClientLogin {
     }
 
     fn update(&mut self, connection: &mut Connection) -> Result<(), ClientError> {
-        while let Some(packet) = connection.recieve()? {
-            match packet::login::LoginPacket::try_from(&packet)? {
+        while let Some(packet) = connection.recieve_into::<packet::login::LoginPacket>()? {
+            match packet {
                 packet::login::LoginPacket::Hello(hello) => {
                     self.player_information = Some(PlayerInformation {
                         name: hello.name.clone(),
@@ -173,9 +173,9 @@ impl ClientConfiguration {
     fn update(&mut self, connection: &mut Connection) -> Result<(), ClientError> {
         assert_ne!(self.finish_state, ClientConfigurationFinishState::Finished);
 
-        while let Some(packet) = connection.recieve()? {
-            let packet = packet::configuration::ConfigurationPacket::try_from(&packet)?;
-
+        while let Some(packet) =
+            connection.recieve_into::<packet::configuration::ConfigurationPacket>()?
+        {
             match self.finish_state {
                 ClientConfigurationFinishState::Configuring
                 | ClientConfigurationFinishState::ConfiguringFinishable => match packet {

@@ -31,9 +31,8 @@ impl ChunkSectionBlockStates {
             0 => unreachable!(),
             1 => 0,
             palette_count => {
-                // TODO: Make seperate packed array reader for borrowed reading.
                 let mut packed_indices = PackedArray::from_inner(
-                    self.data.as_ref().unwrap().clone().transmute(),
+                    self.data.as_ref().unwrap().as_ref().transmute(),
                     PackedArray::bits_per_entry(palette_count as u64 - 1),
                     4096,
                 );

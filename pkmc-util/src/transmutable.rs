@@ -2,6 +2,8 @@ pub trait Transmutable<T> {
     fn transmute(self) -> T;
 }
 
+// TODO: Why is there 2 for primitive number transmutation?
+// Why didn't I document why there needs to be 2 different ones?
 #[macro_export]
 macro_rules! primitive_int_int_transmutable {
     ($a:ty, $b:ty) => {
@@ -51,10 +53,12 @@ primitive_int_float_transmutable!(i64, u64, f64);
 
 impl<I: Transmutable<O>, O> Transmutable<Box<[O]>> for Box<[I]> {
     fn transmute(self) -> Box<[O]> {
-        // FIXME: Don't do this!
-        // Transmutation should preferably be basically free.
-        IntoIterator::into_iter(self)
-            .map(|value| value.transmute())
-            .collect::<Box<[O]>>()
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl<'a, I: Transmutable<O>, O> Transmutable<&'a [O]> for &'a [I] {
+    fn transmute(self) -> &'a [O] {
+        unsafe { std::mem::transmute(self) }
     }
 }

@@ -1,13 +1,15 @@
+use std::borrow::Cow;
+
 #[derive(Debug, Clone)]
-pub struct PackedArray {
+pub struct PackedArray<'a> {
     bits_per_entry: u8,
     num_entries: usize,
     entries_per_long: u8,
     entry_mask: u64,
-    packed: Box<[u64]>,
+    packed: Cow<'a, [u64]>,
 }
 
-impl PackedArray {
+impl PackedArray<'_> {
     /// If this returns 0, you should not be using PackedArray
     pub const fn bits_per_entry(max_value: u64) -> u8 {
         match max_value {
@@ -25,12 +27,13 @@ impl PackedArray {
     }
 }
 
-impl PackedArray {
-    pub fn from_inner(packed: Box<[u64]>, bits_per_entry: u8, num_entries: usize) -> Self {
-        //assert_eq!(
-        //    PackedArray::packed_size(bits_per_entry, num_entries),
-        //    packed.len(),
-        //);
+impl<'a> PackedArray<'a> {
+    pub fn from_inner<T>(packed: T, bits_per_entry: u8, num_entries: usize) -> Self
+    where
+        T: Into<Cow<'a, [u64]>>,
+    {
+        let packed: Cow<'a, [u64]> = packed.into();
+        // FIXME: Figure out why for some reason may be bigger than needed?
         assert!(packed.len() >= PackedArray::packed_size(bits_per_entry, num_entries));
         Self {
             bits_per_entry,
@@ -43,13 +46,13 @@ impl PackedArray {
 
     pub fn new(bits_per_entry: u8, num_entries: usize) -> Self {
         Self::from_inner(
-            vec![0; PackedArray::packed_size(bits_per_entry, num_entries)].into_boxed_slice(),
+            vec![0; PackedArray::packed_size(bits_per_entry, num_entries)],
             bits_per_entry,
             num_entries,
         )
     }
 
-    pub fn into_inner(self) -> Box<[u64]> {
+    pub fn into_inner(self) -> Cow<'a, [u64]> {
         self.packed
     }
 
@@ -65,7 +68,7 @@ impl PackedArray {
             return;
         }
         let (index, offset) = self.index_offset(index);
-        self.packed[index] |= value << offset;
+        self.packed.to_mut()[index] |= value << offset;
     }
 
     pub fn set_unchecked(&mut self, index: usize, value: u64) {

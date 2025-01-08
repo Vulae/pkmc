@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 
-use crate::{generated, text_component::TextComponent};
+use crate::{generated::generated, text_component::TextComponent};
 use pkmc_nbt::{nbt_compound, NBT};
 use pkmc_packet::{
     connection::ConnectionError, serverbound_packet_enum, to_paletted_data, BitSet,
@@ -206,7 +206,7 @@ pub struct MovePlayerPosRot {
     pub z: f64,
     pub yaw: f32,
     pub pitch: f32,
-    pub on_ground: bool,
+    pub flags: u8,
 }
 
 impl ServerboundPacket for MovePlayerPosRot {
@@ -222,7 +222,7 @@ impl ServerboundPacket for MovePlayerPosRot {
             z: f64::from_be_bytes(reader.read_const()?),
             yaw: f32::from_be_bytes(reader.read_const()?),
             pitch: f32::from_be_bytes(reader.read_const()?),
-            on_ground: reader.read_bool()?,
+            flags: u8::from_be_bytes(reader.read_const()?),
         })
     }
 }
@@ -232,7 +232,7 @@ pub struct MovePlayerPos {
     pub x: f64,
     pub y: f64,
     pub z: f64,
-    pub on_ground: bool,
+    pub flags: u8,
 }
 
 impl ServerboundPacket for MovePlayerPos {
@@ -246,7 +246,7 @@ impl ServerboundPacket for MovePlayerPos {
             x: f64::from_be_bytes(reader.read_const()?),
             y: f64::from_be_bytes(reader.read_const()?),
             z: f64::from_be_bytes(reader.read_const()?),
-            on_ground: reader.read_bool()?,
+            flags: u8::from_be_bytes(reader.read_const()?),
         })
     }
 }
@@ -255,7 +255,7 @@ impl ServerboundPacket for MovePlayerPos {
 pub struct MovePlayerRot {
     pub yaw: f32,
     pub pitch: f32,
-    pub on_ground: bool,
+    pub flags: u8,
 }
 
 impl ServerboundPacket for MovePlayerRot {
@@ -268,7 +268,26 @@ impl ServerboundPacket for MovePlayerRot {
         Ok(Self {
             yaw: f32::from_be_bytes(reader.read_const()?),
             pitch: f32::from_be_bytes(reader.read_const()?),
-            on_ground: reader.read_bool()?,
+            flags: u8::from_be_bytes(reader.read_const()?),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct MovePlayerStatusOnly {
+    pub flags: u8,
+}
+
+impl ServerboundPacket for MovePlayerStatusOnly {
+    const SERVERBOUND_ID: i32 =
+        generated::packet::play::SERVERBOUND_MINECRAFT_MOVE_PLAYER_STATUS_ONLY;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            flags: u8::from_be_bytes(reader.read_const()?),
         })
     }
 }
@@ -361,7 +380,14 @@ impl LevelChunkWithLight {
                 for i in 0..num_sections {
                     let block_id = if i == 0 { 1 } else { 0 };
                     // Num non-air blocks
-                    writer.write_all(&if block_id != 0 { 4096i16 } else { 0i16 }.to_be_bytes())?;
+                    writer.write_all(
+                        &if generated::block::is_air(block_id) {
+                            0i16
+                        } else {
+                            4096i16
+                        }
+                        .to_be_bytes(),
+                    )?;
                     // Blocks
                     writer.write_all(&to_paletted_data(&[block_id; 4096], 4..=8, 15)?)?;
                     // Biome
@@ -557,6 +583,7 @@ serverbound_packet_enum!(pub PlayPacket;
     MovePlayerPosRot, MovePlayerPosRot;
     MovePlayerPos, MovePlayerPos;
     MovePlayerRot, MovePlayerRot;
+    MovePlayerStatusOnly, MovePlayerStatusOnly;
     ClientTickEnd, ClientTickEnd;
     PlayerInput, PlayerInput;
     PlayerAbilities_Serverbound, PlayerAbilities;

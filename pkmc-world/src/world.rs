@@ -1,10 +1,17 @@
 use std::{collections::HashMap, fs::File, io::Seek, path::PathBuf};
 
-use pkmc_defs::block::Block;
+use pkmc_defs::{block::Block, generated::PALETTED_DATA_BLOCKS_INDIRECT};
 use pkmc_nbt::{NBTError, NBT};
-use pkmc_util::{PackedArray, ReadExt, Transmutable as _};
+use pkmc_util::{PackedArray, ReadExt, Transmutable};
 use serde::Deserialize;
 use thiserror::Error;
+
+pub const REGION_SIZE: usize = 32;
+pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
+pub const CHUNK_SIZE: usize = 16;
+pub const SECTION_SIZE: usize = 16;
+pub const BLOCKS_PER_SECTION: usize = SECTION_SIZE * SECTION_SIZE * SECTION_SIZE;
+pub const BIOMES_PER_SECTION: usize = 64;
 
 #[derive(Error, Debug)]
 pub enum WorldError {
@@ -31,12 +38,15 @@ impl ChunkSectionBlockStates {
             0 => unreachable!(),
             1 => 0,
             palette_count => {
-                let mut packed_indices = PackedArray::from_inner(
+                let packed_indices = PackedArray::from_inner(
                     self.data.as_ref().unwrap().as_ref().transmute(),
-                    PackedArray::bits_per_entry(palette_count as u64 - 1),
-                    4096,
+                    PackedArray::bits_per_entry(palette_count as u64 - 1).clamp(
+                        *PALETTED_DATA_BLOCKS_INDIRECT.start() as u8,
+                        *PALETTED_DATA_BLOCKS_INDIRECT.end() as u8,
+                    ),
+                    BLOCKS_PER_SECTION,
                 );
-                packed_indices.get(index).unwrap() as usize
+                packed_indices.get_unchecked(index) as usize
             }
         }
     }
@@ -46,11 +56,15 @@ impl ChunkSectionBlockStates {
     }
 
     fn get_block(&self, x: u8, y: u8, z: u8) -> Block {
-        self.get_block_by_index(((y & 15) as usize) * 16 * 16 + (z as usize) * 16 + (x as usize))
+        self.get_block_by_index(
+            ((y as usize) & (SECTION_SIZE - 1)) * SECTION_SIZE * SECTION_SIZE
+                + (z as usize) * SECTION_SIZE
+                + (x as usize),
+        )
     }
 
-    fn blocks(&self) -> [Block; 4096] {
-        (0..4096)
+    fn blocks(&self) -> [Block; BLOCKS_PER_SECTION] {
+        (0..BLOCKS_PER_SECTION)
             .map(|index| self.get_block_by_index(index))
             .collect::<Vec<_>>()
             .try_into()
@@ -58,14 +72,14 @@ impl ChunkSectionBlockStates {
     }
 
     /// Returns none if any of the IDs are not found.
-    fn blocks_ids(&self) -> Option<[i32; 4096]> {
+    fn blocks_ids(&self) -> Option<[i32; BLOCKS_PER_SECTION]> {
         let palette_ids = self
             .palette
             .iter()
             .map(|b| b.id())
             .collect::<Option<Box<[i32]>>>()?;
         Some(
-            (0..4096)
+            (0..BLOCKS_PER_SECTION)
                 // TODO: Remove safety check when get_block_palette_index_by_index is fixed.
                 .map(|index| palette_ids.get(self.get_block_palette_index_by_index(index)).cloned().unwrap_or(0))
                 .collect::<Vec<i32>>()
@@ -87,11 +101,11 @@ impl ChunkSection {
         self.block_states.get_block(section_x, section_y, section_z)
     }
 
-    pub fn blocks(&self) -> [Block; 4096] {
+    pub fn blocks(&self) -> [Block; BLOCKS_PER_SECTION] {
         self.block_states.blocks()
     }
 
-    pub fn blocks_ids(&self) -> Option<[i32; 4096]> {
+    pub fn blocks_ids(&self) -> Option<[i32; BLOCKS_PER_SECTION]> {
         self.block_states.blocks_ids()
     }
 }
@@ -116,11 +130,13 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn get_block(&self, x: u8, y: i16, z: u8) -> Block {
-        let section_y = (y / 16) as i32;
+        let section_y = (y / SECTION_SIZE as i16) as i32;
         let Some(section) = self.sections.iter().find(|section| section.y == section_y) else {
             return Block::air();
         };
-        section.block_states.get_block(x, (y & 15) as u8, z)
+        section
+            .block_states
+            .get_block(x, (y & (SECTION_SIZE as i16 - 1)) as u8, z)
     }
 
     pub fn iter_sections(&self) -> impl Iterator<Item = &ChunkSection> + use<'_> {
@@ -134,13 +150,13 @@ struct Region {
     file: File,
     region_x: i32,
     region_z: i32,
-    locations: [(u32, u32); 1024],
+    locations: [(u32, u32); CHUNKS_PER_REGION],
     loaded_chunks: HashMap<(u8, u8), Option<Chunk>>,
 }
 
 impl Region {
     fn load(mut file: File, region_x: i32, region_z: i32) -> Result<Self, WorldError> {
-        let mut locations = [(0, 0); 1024];
+        let mut locations = [(0, 0); REGION_SIZE * REGION_SIZE];
         file.rewind()?;
         locations.iter_mut().try_for_each(|(offset, length)| {
             let data = u32::from_be_bytes(file.read_const()?);
@@ -158,7 +174,8 @@ impl Region {
     }
 
     fn read(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Box<[u8]>>, WorldError> {
-        let (offset, length) = self.locations[(chunk_x as usize) + (chunk_z as usize) * 32];
+        let (offset, length) =
+            self.locations[(chunk_x as usize) + (chunk_z as usize) * REGION_SIZE];
         if offset == 0 || length == 0 {
             return Ok(None);
         }
@@ -197,17 +214,14 @@ impl Region {
     }
 
     fn load_chunk(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Chunk>, WorldError> {
-        let Some(chunk): Option<Chunk> = self
+        match self
             .read_nbt(chunk_x, chunk_z)?
-            .map(|nbt| pkmc_nbt::from_nbt(nbt.1))
+            .map(|nbt| pkmc_nbt::from_nbt::<Chunk>(nbt.1))
             .transpose()?
-        else {
-            return Ok(None);
-        };
-        if chunk.status != "minecraft:full" {
-            return Ok(None);
+        {
+            Some(chunk) if chunk.status == "minecraft:full" => Ok(Some(chunk)),
+            _ => Ok(None),
         }
-        Ok(Some(chunk))
     }
 
     fn get_or_load_chunk(
@@ -267,12 +281,6 @@ impl Level {
         region_x: i32,
         region_z: i32,
     ) -> Result<Option<&mut Region>, WorldError> {
-        //Ok(self
-        //    .loaded_regions
-        //    .entry((region_x, region_z))
-        //    .or_insert_with(|| self.load_region(region_x, region_z).unwrap())
-        //    .as_mut())
-
         // Why does clippy complain? doing its suggestion breaks the code.
         #[allow(clippy::all)]
         if !self.loaded_regions.contains_key(&(region_x, region_z)) {
@@ -288,10 +296,15 @@ impl Level {
     }
 
     pub fn get_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Result<Option<&Chunk>, WorldError> {
-        let Some(region) = self.get_or_load_region(chunk_x / 32, chunk_z / 32)? else {
+        // FIXME: Use the const!
+        let Some(region) = self.get_or_load_region(chunk_x >> 5, chunk_z >> 5)? else {
+            //let Some(region) = self.get_or_load_region(chunk_x / REGION_SIZE as i32, chunk_z / REGION_SIZE as i32)? else {
             return Ok(None);
         };
-        let Some(chunk) = region.get_or_load_chunk((chunk_x & 31) as u8, (chunk_z & 31) as u8)?
+        let Some(chunk) = region.get_or_load_chunk(
+            (chunk_x & (REGION_SIZE - 1) as i32) as u8,
+            (chunk_z & (REGION_SIZE - 1) as i32) as u8,
+        )?
         else {
             return Ok(None);
         };
@@ -304,11 +317,16 @@ impl Level {
         block_y: i16,
         block_z: i32,
     ) -> Result<Option<Block>, WorldError> {
-        // TODO: Chunk cache, so getting a block will not decode the whole chunk again.
-        let Some(chunk) = self.get_chunk(block_x / 16, block_z / 16)? else {
+        let Some(chunk) =
+            self.get_chunk(block_x / CHUNK_SIZE as i32, block_z / CHUNK_SIZE as i32)?
+        else {
             return Ok(None);
         };
-        let block = chunk.get_block((block_x & 15) as u8, block_y, (block_z & 15) as u8);
+        let block = chunk.get_block(
+            (block_x & (CHUNK_SIZE - 1) as i32) as u8,
+            block_y,
+            (block_z & (CHUNK_SIZE - 1) as i32) as u8,
+        );
         Ok(Some(block))
     }
 }
@@ -356,15 +374,15 @@ mod test {
 
         let max_block_id = *BLOCKS_TO_IDS.values().max().unwrap();
 
+        let start = std::time::Instant::now();
+        println!("Total block ids: {}", max_block_id);
+
         let block_grid_width = (max_block_id as f32).sqrt().ceil() as i32;
         let _block_grid_height = (max_block_id as f32 / block_grid_width as f32).ceil() as i32;
 
         for block_id in 0..max_block_id {
-            // FIXME: The indexing into grid is wrong.
-            // It gets wrong at the last edge of the grid, and I have no idea why.
-            // So for now we just skip those, but please do fix.
-            if block_id > 26000 {
-                continue;
+            if block_id % 1024 == 0 {
+                println!("Checking {} / {}", block_id, max_block_id);
             }
 
             let grid_x = block_id % block_grid_width;
@@ -390,6 +408,14 @@ mod test {
                 );
             }
         }
+
+        println!(
+            "Checked all {} block ids in {:.2} seconds",
+            max_block_id,
+            std::time::Instant::now()
+                .duration_since(start)
+                .as_secs_f64()
+        );
 
         Ok(())
     }

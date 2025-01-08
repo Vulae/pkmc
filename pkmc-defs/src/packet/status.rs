@@ -8,6 +8,7 @@ use pkmc_packet::{
 use pkmc_util::read_ext::ReadExt;
 use serde::Serialize;
 
+#[derive(Debug)]
 pub struct Request;
 
 impl ServerboundPacket for Request {
@@ -21,31 +22,31 @@ impl ServerboundPacket for Request {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ResponseVersion {
     pub name: String,
     pub protocol: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ResponsePlayers {
     pub max: u64,
     pub online: u64,
     pub sample: Vec<ResponsePlayerSample>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ResponsePlayerSample {
     pub name: String,
     pub id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ResponseDescription {
     pub text: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Response {
     pub version: ResponseVersion,
     pub players: Option<ResponsePlayers>,
@@ -66,6 +67,7 @@ impl ClientboundPacket for Response {
     }
 }
 
+#[derive(Debug)]
 pub struct Ping {
     pub payload: i64,
 }

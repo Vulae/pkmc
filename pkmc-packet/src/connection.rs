@@ -2,10 +2,7 @@ use std::{
     collections::VecDeque,
     io::{self, Read, Write},
     net::TcpStream,
-    sync::{
-        mpsc::{self, Receiver, Sender, TryRecvError},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
 };
 
 use pkmc_util::ReadExt;
@@ -174,7 +171,6 @@ impl StreamHandler {
 #[derive(Debug)]
 struct InnerConnection {
     stream: TcpStream,
-    rx: Receiver<RawPacket>,
     bytes: VecDeque<u8>,
     handler: StreamHandler,
     closed: bool,
@@ -209,19 +205,17 @@ impl InnerConnection {
     }
 
     fn send(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
-        self.handler.send(&mut self.stream, &packet.raw_packet()?)?;
-        Ok(())
-    }
-
-    fn try_send_all(&mut self) -> Result<(), ConnectionError> {
-        loop {
-            match self.rx.try_recv() {
-                Ok(raw_packet) => self.handler.send(&mut self.stream, &raw_packet)?,
-                Err(TryRecvError::Empty) => break,
-                Err(_err) => unreachable!(),
+        match self.handler.send(&mut self.stream, &packet.raw_packet()?) {
+            Ok(()) => Ok(()),
+            Err(ConnectionError::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::BrokenPipe
+                    || e.kind() == io::ErrorKind::UnexpectedEof =>
+            {
+                self.closed = true;
+                Ok(())
             }
+            Err(e) => Err(e),
         }
-        Ok(())
     }
 
     fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
@@ -236,30 +230,23 @@ impl InnerConnection {
 #[derive(Debug, Clone)]
 pub struct Connection {
     inner: Arc<Mutex<Option<InnerConnection>>>,
-    tx: Option<Sender<RawPacket>>,
 }
 
 impl Connection {
     pub fn new(stream: TcpStream) -> Result<Self, ConnectionError> {
         stream.set_nonblocking(true)?;
-        let (tx, rx) = mpsc::channel::<RawPacket>();
         Ok(Self {
             inner: Arc::new(Mutex::new(Some(InnerConnection {
                 stream,
-                rx,
                 bytes: VecDeque::new(),
                 handler: StreamHandler::Uncompressed(UncompressedStreamHandler),
                 closed: false,
             }))),
-            tx: Some(tx),
         })
     }
 
     fn update_closed_state(&mut self) {
         self.inner.lock().unwrap().take_if(|inner| inner.closed);
-        if self.inner.lock().unwrap().is_none() {
-            self.tx = None;
-        }
     }
 
     pub fn close(&mut self) -> Result<(), ConnectionError> {
@@ -283,23 +270,6 @@ impl Connection {
         if let Some(inner) = self.inner.lock().unwrap().as_mut() {
             inner.handler = handler;
         }
-    }
-
-    pub fn send_async(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
-        if let Some(tx) = &self.tx {
-            if let Err(_err) = tx.send(packet.raw_packet()?) {
-                unreachable!();
-            }
-        }
-        Ok(())
-    }
-
-    pub fn update_async(&mut self) -> Result<(), ConnectionError> {
-        self.update_closed_state();
-        if let Some(inner) = self.inner.lock().unwrap().as_mut() {
-            inner.try_send_all()?;
-        }
-        Ok(())
     }
 
     pub fn send(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
@@ -330,6 +300,7 @@ impl Connection {
 #[macro_export]
 macro_rules! serverbound_packet_enum {
     ($enum_vis:vis $enum_name:ident; $($type:ty, $name:ident;)*) => {
+        #[derive(Debug)]
         #[allow(unused)]
         $enum_vis enum $enum_name {
             $(

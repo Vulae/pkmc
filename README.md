@@ -5,6 +5,9 @@ Yet another Rust Minecraft server implementation.
 
 Originally made so I can make a Minecraft server with custom features specifically for parkour.
 
+> [!IMPORTANT]
+> This will only ever support the latest version (currently 1.21.4)
+
 I will **NOT** make anything use any async code (tokio/futures).
 This was originally built to be fully single-threaded, but that *may* change in the future.
 
@@ -14,24 +17,26 @@ This was originally built to be fully single-threaded, but that *may* change in 
 2. Start the server `cargo run --release`
 3. Join the server (Default IP is `[::1]:52817`)
 
+[pkmc.toml](./pkmc.toml) to configure.
+
 ## [Features](#features)
 
-|        Feature        | Implemented |                Comment                |
-|-----------------------|-------------|---------------------------------------|
-| Server List Ping      | ✅          | [pkmc.toml](./pkmc.toml) to configure |
-| World Loading         | ❌          | W.I.P.                                |
-| World Editing         | ❌          |                                       |
-| Dimensions/Multiworld | ❌          |                                       |
-| Entities              | ❌          |                                       |
-| Inventories           | ❌          |                                       |
-| Resource Pack         | ❌          |                                       |
-| Online Mode           | ❌          |                                       |
-| Packet Compression    | ✅          | [pkmc.toml](./pkmc.toml) to configure |
-| Players & Chat        | ❌          |                                       |
-| Commands              | ❌          |                                       |
-| Cookies 🍪            | ❌          |                                       |
-| Terminal Interface    | ❌          |                                       |
-| WASM Plugins          | ❌          | Maybe not [^wasm-plugins]             |
+|        Feature        | Implemented |          Comment          |
+|-----------------------|-------------|---------------------------|
+| Server List Ping      | ✅          |                           |
+| World Loading         | ✅          | (Single-threaded)         |
+| World Editing         | ❌          |                           |
+| Dimensions/Multiworld | ❌          |                           |
+| Entities              | ❌          |                           |
+| Inventories           | ❌          |                           |
+| Resource Pack         | ❌          |                           |
+| Online Mode           | ❌          |                           |
+| Packet Compression    | ✅          |                           |
+| Players & Chat        | ❌          |                           |
+| Commands              | ❌          |                           |
+| Cookies 🍪            | ❌          |                           |
+| Terminal Interface    | ❌          |                           |
+| WASM Plugins          | ❌          | Maybe not [^wasm-plugins] |
 
 [^wasm-plugins]: Still don't know if I want this to be something you can make plugins for, or just a server you can just modify directly instead.
 

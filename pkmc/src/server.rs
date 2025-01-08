@@ -72,15 +72,18 @@ impl Server {
 
         self.players.iter_mut().try_for_each(|player| {
             if let Err(err) = player.update() {
-                player.kick(
-                    TextComponent::empty()
-                        .with_child(|child| child.with_content("Server Player Error"))
-                        .with_child(|child| {
-                            child
-                                .with_content(format!("\n\n{}", err))
-                                .with_color(text_component::Color::RED)
-                        }),
-                )?;
+                println!("Player error: {}", err);
+                if !player.is_closed() {
+                    player.kick(
+                        TextComponent::empty()
+                            .with_child(|child| child.with_content("Server Player Error"))
+                            .with_child(|child| {
+                                child
+                                    .with_content(format!("\n\n{}", err))
+                                    .with_color(text_component::Color::RED)
+                            }),
+                    )?;
+                }
             }
             Ok::<_, PlayerError>(())
         })?;

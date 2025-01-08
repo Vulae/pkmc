@@ -3,7 +3,15 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use pkmc_defs::{generated::generated, packet, text_component::TextComponent, REGISTRY};
+use pkmc_defs::{
+    generated::{
+        generated, PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT,
+        PALETTED_DATA_BLOCKS_DIRECT, PALETTED_DATA_BLOCKS_INDIRECT,
+    },
+    packet,
+    text_component::TextComponent,
+    REGISTRY,
+};
 use pkmc_nbt::nbt_compound;
 use pkmc_packet::{to_paletted_data, BitSet, Connection};
 use pkmc_util::UUID;
@@ -148,7 +156,14 @@ impl Player {
             self.connection.send(packet::play::KeepAlive { id })?;
         }
 
-        while let Some(packet) = self.connection.recieve_into::<packet::play::PlayPacket>()? {
+        while let Some(packet) = match self.connection.recieve_into::<packet::play::PlayPacket>() {
+            Ok(packet) => packet,
+            Err(err @ pkmc_packet::ConnectionError::UnsupportedPacket(..)) => {
+                println!("{} {}", self.name(), err);
+                None
+            }
+            Err(err) => Err(err)?,
+        } {
             match packet {
                 packet::play::PlayPacket::KeepAlive(keepalive) => match self.keepalive_id.take() {
                     // Success so we do nothing.
@@ -169,6 +184,7 @@ impl Player {
                     self.z = move_player_pos.z;
                 }
                 packet::play::PlayPacket::MovePlayerRot(_move_player_rot) => {}
+                packet::play::PlayPacket::MovePlayerStatusOnly(_move_player_status_only) => {}
                 packet::play::PlayPacket::ClientTickEnd(_client_tick_end) => {}
                 packet::play::PlayPacket::PlayerInput(_player_input) => {}
                 packet::play::PlayPacket::PlayerAbilities(_player_abilities) => {}
@@ -197,13 +213,14 @@ impl Player {
         // TODO: Instead of loading only 1 chunk per update, load many until a certain time limit
         // threshold is reached.
         if let Some(to_load) = self.chunk_loader.next_to_load() {
-            //println!("Load chunk {}, {}", to_load.chunk_x, to_load.chunk_z);
+            //println!("Load chunk: {} {}", to_load.chunk_x, to_load.chunk_z);
             if let Some(chunk) = level.get_chunk(to_load.chunk_x, to_load.chunk_z)? {
                 self.connection.send(packet::play::LevelChunkWithLight {
                     chunk_x: to_load.chunk_x,
                     chunk_z: to_load.chunk_z,
                     heightmaps: nbt_compound!(),
                     data: {
+                        // NOTE: Slow load data (Load data, parse it, then write to packet)
                         let mut writer = Vec::new();
 
                         chunk.iter_sections().try_for_each(|section| {
@@ -211,13 +228,21 @@ impl Player {
                             // Num non-air blocks
                             let block_count = block_ids
                                 .iter()
-                                .filter(|b| generated::block::is_air(**b))
+                                .filter(|b| !generated::block::is_air(**b))
                                 .count();
                             writer.write_all(&(block_count as u16).to_be_bytes())?;
                             // Blocks
-                            writer.write_all(&to_paletted_data(&block_ids, 4..=8, 15)?)?;
+                            writer.write_all(&to_paletted_data(
+                                &block_ids,
+                                PALETTED_DATA_BLOCKS_INDIRECT,
+                                PALETTED_DATA_BLOCKS_DIRECT,
+                            )?)?;
                             // Biome
-                            writer.write_all(&to_paletted_data(&[0; 64], 1..=3, 6)?)?;
+                            writer.write_all(&to_paletted_data(
+                                &[0; 64],
+                                PALETTED_DATA_BIOMES_INDIRECT,
+                                PALETTED_DATA_BIOMES_DIRECT,
+                            )?)?;
                             Ok::<_, PlayerError>(())
                         })?;
 

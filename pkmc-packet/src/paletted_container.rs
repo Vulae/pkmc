@@ -48,10 +48,12 @@ impl IndirectPalettedContainer<'_> {
             })?;
 
         let mut packed = PackedArray::new(self.bpe as u8, self.values.len());
-        self.values.iter().enumerate().for_each(|(i, value)| {
-            let index = self.palette.get(value).unwrap();
-            packed.set(i, *index as u64);
-        });
+        let remaining = packed.consume(
+            self.values
+                .iter()
+                .map(|value| self.palette.get(value).cloned().unwrap() as u64),
+        );
+        assert!(remaining.count() == 0);
         let packed = packed.into_inner();
 
         writer.write_varint(packed.len() as i32)?;

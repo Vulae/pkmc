@@ -6,7 +6,7 @@ Yet another Rust Minecraft server implementation.
 Originally made so I can make a Minecraft server with custom features specifically for parkour.
 
 > [!IMPORTANT]
-> This will only ever support the latest version (currently 1.21.4)
+> This will only ever support the latest Minecraft version (currently 1.21.4)
 
 I will **NOT** make anything use any async code (tokio/futures).
 This was originally built to be fully single-threaded, but that *may* change in the future.

@@ -576,6 +576,74 @@ impl ClientboundPacket for SetActionBarText {
     }
 }
 
+#[derive(Debug)]
+pub enum ServerLink {
+    BugReport,
+    CommunityGuidelines,
+    Support,
+    Status,
+    Feedback,
+    Community,
+    Website,
+    Forums,
+    News,
+    Announcements,
+    Custom(TextComponent),
+}
+
+impl ServerLink {
+    fn write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_bool(!matches!(self, ServerLink::Custom(..)))?;
+        match self {
+            ServerLink::BugReport => writer.write_varint(0)?,
+            ServerLink::CommunityGuidelines => writer.write_varint(1)?,
+            ServerLink::Support => writer.write_varint(2)?,
+            ServerLink::Status => writer.write_varint(3)?,
+            ServerLink::Feedback => writer.write_varint(4)?,
+            ServerLink::Community => writer.write_varint(5)?,
+            ServerLink::Website => writer.write_varint(6)?,
+            ServerLink::Forums => writer.write_varint(7)?,
+            ServerLink::News => writer.write_varint(8)?,
+            ServerLink::Announcements => writer.write_varint(9)?,
+            ServerLink::Custom(text_component) => writer.write_nbt(&text_component.to_nbt())?,
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct ServerLinks {
+    pub links: Vec<(ServerLink, String)>,
+}
+
+impl ServerLinks {
+    pub fn new<S, I>(links: I) -> Self
+    where
+        S: Into<String>,
+        I: IntoIterator<Item = (ServerLink, S)>,
+    {
+        Self {
+            links: links
+                .into_iter()
+                .map(|(link, url)| (link, url.into()))
+                .collect(),
+        }
+    }
+}
+
+impl ClientboundPacket for ServerLinks {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_SERVER_LINKS;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.links.len() as i32)?;
+        for (link, url) in &self.links {
+            link.write(&mut writer)?;
+            writer.write_string(url)?;
+        }
+        Ok(())
+    }
+}
+
 serverbound_packet_enum!(pub PlayPacket;
     KeepAlive, KeepAlive;
     PlayerLoaded, PlayerLoaded;

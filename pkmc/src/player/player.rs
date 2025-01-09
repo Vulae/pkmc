@@ -96,6 +96,21 @@ impl Player {
             enforces_secure_chat: false,
         })?;
 
+        player.connection.send(packet::play::ServerLinks::new([
+            (
+                packet::play::ServerLink::Website,
+                "https://github.com/Vulae/pkmc",
+            ),
+            (
+                packet::play::ServerLink::BugReport,
+                "https://github.com/Vulae/pkmc/issues",
+            ),
+            (
+                packet::play::ServerLink::Feedback,
+                "https://github.com/Vulae/pkmc/issues",
+            ),
+        ]))?;
+
         player
             .connection
             .send(packet::play::GameEvent::StartWaitingForLevelChunks)?;

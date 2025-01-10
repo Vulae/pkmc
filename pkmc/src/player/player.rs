@@ -13,7 +13,7 @@ use pkmc_defs::{
     REGISTRY,
 };
 use pkmc_nbt::nbt_compound;
-use pkmc_packet::{to_paletted_data, BitSet, Connection};
+use pkmc_packet::{to_paletted_data, Connection};
 use pkmc_util::UUID;
 use rand::Rng as _;
 
@@ -233,43 +233,39 @@ impl Player {
                 self.connection.send(packet::play::LevelChunkWithLight {
                     chunk_x: to_load.chunk_x,
                     chunk_z: to_load.chunk_z,
-                    heightmaps: nbt_compound!(),
-                    data: {
-                        // NOTE: Slow load data (Load data, parse it, then write to packet)
-                        let mut writer = Vec::new();
+                    chunk_data: packet::play::LevelChunkData {
+                        heightmaps: nbt_compound!(),
+                        data: {
+                            let mut writer = Vec::new();
 
-                        chunk.iter_sections().try_for_each(|section| {
-                            let block_ids = section.blocks_ids().unwrap();
-                            // Num non-air blocks
-                            let block_count = block_ids
-                                .iter()
-                                .filter(|b| !generated::block::is_air(**b))
-                                .count();
-                            writer.write_all(&(block_count as u16).to_be_bytes())?;
-                            // Blocks
-                            writer.write_all(&to_paletted_data(
-                                &block_ids,
-                                PALETTED_DATA_BLOCKS_INDIRECT,
-                                PALETTED_DATA_BLOCKS_DIRECT,
-                            )?)?;
-                            // Biome
-                            writer.write_all(&to_paletted_data(
-                                &[0; 64],
-                                PALETTED_DATA_BIOMES_INDIRECT,
-                                PALETTED_DATA_BIOMES_DIRECT,
-                            )?)?;
-                            Ok::<_, PlayerError>(())
-                        })?;
+                            chunk.iter_sections().try_for_each(|section| {
+                                let block_ids = section.blocks_ids().unwrap();
+                                // Num non-air blocks
+                                let block_count = block_ids
+                                    .iter()
+                                    .filter(|b| !generated::block::is_air(**b))
+                                    .count();
+                                writer.write_all(&(block_count as u16).to_be_bytes())?;
+                                // Blocks
+                                writer.write_all(&to_paletted_data(
+                                    &block_ids,
+                                    PALETTED_DATA_BLOCKS_INDIRECT,
+                                    PALETTED_DATA_BLOCKS_DIRECT,
+                                )?)?;
+                                // Biome
+                                writer.write_all(&to_paletted_data(
+                                    &[0; 64],
+                                    PALETTED_DATA_BIOMES_INDIRECT,
+                                    PALETTED_DATA_BIOMES_DIRECT,
+                                )?)?;
+                                Ok::<_, PlayerError>(())
+                            })?;
 
-                        writer.into_boxed_slice()
+                            writer.into_boxed_slice()
+                        },
+                        block_entities: Vec::new(),
                     },
-                    block_entities: Vec::new(),
-                    sky_light_mask: BitSet::new(PLAYER_DIMENSION_SECTIONS + 2),
-                    block_light_mask: BitSet::new(PLAYER_DIMENSION_SECTIONS + 2),
-                    empty_sky_light_mask: BitSet::new(PLAYER_DIMENSION_SECTIONS + 2),
-                    empty_block_light_mask: BitSet::new(PLAYER_DIMENSION_SECTIONS + 2),
-                    sky_lights_arrays: Vec::new(),
-                    block_lights_arrays: Vec::new(),
+                    light_data: packet::play::LevelLightData::full_dark(PLAYER_DIMENSION_SECTIONS),
                 })?;
             } else {
                 self.connection

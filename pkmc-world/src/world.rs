@@ -87,6 +87,9 @@ impl ChunkSectionBlockStates {
                 .unwrap(),
         )
     }
+
+    // NOTE: Data from this is already paletted correctly, All that's needed to do is convert to
+    // IDs then send that into a packet, would be dramatically faster than what we're doing now.
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -353,68 +353,14 @@ pub struct BlockEntity {
 }
 
 #[derive(Debug)]
-pub struct LevelChunkWithLight {
-    pub chunk_x: i32,
-    pub chunk_z: i32,
+pub struct LevelChunkData {
     pub heightmaps: NBT,
     pub data: Box<[u8]>,
     pub block_entities: Vec<BlockEntity>,
-    // I have absolutely no clue on how the lighting information works right now.
-    pub sky_light_mask: BitSet,
-    pub block_light_mask: BitSet,
-    pub empty_sky_light_mask: BitSet,
-    pub empty_block_light_mask: BitSet,
-    pub sky_lights_arrays: Vec<Vec<Vec<u8>>>,
-    pub block_lights_arrays: Vec<Vec<Vec<u8>>>,
 }
 
-impl LevelChunkWithLight {
-    pub fn generate_test(chunk_x: i32, chunk_z: i32, num_sections: usize) -> std::io::Result<Self> {
-        Ok(Self {
-            chunk_x,
-            chunk_z,
-            heightmaps: nbt_compound!(),
-            data: {
-                let mut writer = Vec::new();
-
-                for i in 0..num_sections {
-                    let block_id = if i == 0 { 1 } else { 0 };
-                    // Num non-air blocks
-                    writer.write_all(
-                        &if generated::block::is_air(block_id) {
-                            0i16
-                        } else {
-                            4096i16
-                        }
-                        .to_be_bytes(),
-                    )?;
-                    // Blocks
-                    writer.write_all(&to_paletted_data(&[block_id; 4096], 4..=8, 15)?)?;
-                    // Biome
-                    writer.write_all(&to_paletted_data(&[0; 64], 1..=3, 6)?)?;
-                }
-
-                writer.into_boxed_slice()
-            },
-            block_entities: Vec::new(),
-            // Empty lighting data for now.
-            sky_light_mask: BitSet::new(num_sections + 2),
-            block_light_mask: BitSet::new(num_sections + 2),
-            empty_sky_light_mask: BitSet::new(num_sections + 2),
-            empty_block_light_mask: BitSet::new(num_sections + 2),
-            sky_lights_arrays: Vec::new(),
-            block_lights_arrays: Vec::new(),
-        })
-    }
-}
-
-impl ClientboundPacket for LevelChunkWithLight {
-    const CLIENTBOUND_ID: i32 =
-        generated::packet::play::CLIENTBOUND_MINECRAFT_LEVEL_CHUNK_WITH_LIGHT;
-
-    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_all(&self.chunk_x.to_be_bytes())?;
-        writer.write_all(&self.chunk_z.to_be_bytes())?;
+impl LevelChunkData {
+    fn write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_nbt(&self.heightmaps)?;
         writer.write_varint(self.data.len() as i32)?;
         writer.write_all(&self.data)?;
@@ -427,13 +373,102 @@ impl ClientboundPacket for LevelChunkWithLight {
             writer.write_varint(block_entity.r#type)?;
             writer.write_nbt(&block_entity.data)?;
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct LevelLightData {
+    pub sky_light_mask: BitSet,
+    pub block_light_mask: BitSet,
+    pub empty_sky_light_mask: BitSet,
+    pub empty_block_light_mask: BitSet,
+    pub sky_lights_arrays: Box<[[u8; 2048]]>,
+    pub block_lights_arrays: Box<[[u8; 2048]]>,
+}
+
+impl LevelLightData {
+    pub fn full_dark(num_sections: usize) -> Self {
+        Self {
+            sky_light_mask: BitSet::new(num_sections + 2),
+            block_light_mask: BitSet::new(num_sections + 2),
+            empty_sky_light_mask: BitSet::new(num_sections + 2),
+            empty_block_light_mask: BitSet::new(num_sections + 2),
+            sky_lights_arrays: Vec::new().into_boxed_slice(),
+            block_lights_arrays: Vec::new().into_boxed_slice(),
+        }
+    }
+
+    pub fn full_bright() -> Self {
+        unimplemented!()
+    }
+
+    fn write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         // Skip lighting data for now.
+        // I have absolutely no clue on how the lighting information works right now.
         writer.write_varint(0)?;
         writer.write_varint(0)?;
         writer.write_varint(0)?;
         writer.write_varint(0)?;
         writer.write_varint(0)?;
         writer.write_varint(0)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct LevelChunkWithLight {
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub chunk_data: LevelChunkData,
+    pub light_data: LevelLightData,
+}
+
+impl LevelChunkWithLight {
+    pub fn generate_test(chunk_x: i32, chunk_z: i32, num_sections: usize) -> std::io::Result<Self> {
+        Ok(Self {
+            chunk_x,
+            chunk_z,
+            chunk_data: LevelChunkData {
+                heightmaps: nbt_compound!(),
+                data: {
+                    let mut writer = Vec::new();
+
+                    for i in 0..num_sections {
+                        let block_id = if i == 0 { 1 } else { 0 };
+                        // Num non-air blocks
+                        writer.write_all(
+                            &if generated::block::is_air(block_id) {
+                                0i16
+                            } else {
+                                4096i16
+                            }
+                            .to_be_bytes(),
+                        )?;
+                        // Blocks
+                        writer.write_all(&to_paletted_data(&[block_id; 4096], 4..=8, 15)?)?;
+                        // Biome
+                        writer.write_all(&to_paletted_data(&[0; 64], 1..=3, 6)?)?;
+                    }
+
+                    writer.into_boxed_slice()
+                },
+                block_entities: Vec::new(),
+            },
+            light_data: LevelLightData::full_dark(num_sections),
+        })
+    }
+}
+
+impl ClientboundPacket for LevelChunkWithLight {
+    const CLIENTBOUND_ID: i32 =
+        generated::packet::play::CLIENTBOUND_MINECRAFT_LEVEL_CHUNK_WITH_LIGHT;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_all(&self.chunk_x.to_be_bytes())?;
+        writer.write_all(&self.chunk_z.to_be_bytes())?;
+        self.chunk_data.write(&mut writer)?;
+        self.light_data.write(&mut writer)?;
         Ok(())
     }
 }

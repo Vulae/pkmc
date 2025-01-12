@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, HashMap};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -12,6 +14,9 @@ pub enum IntProvider {
     // TODO: It's somewhere in there: https://minecraft.wiki/w/Dimension_type
     Provider(),
 }
+
+pub type Registry = BTreeMap<String, serde_json::Value>;
+pub type Registries = HashMap<String, Registry>;
 
 pub mod worldgen;
 

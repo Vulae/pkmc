@@ -1,6 +1,6 @@
-use pkmc_nbt::NBT;
-use pkmc_util::{Transmutable, UUID};
 use std::io::Write;
+
+use crate::{nbt::NBT, Transmutable, UUID};
 
 use super::{BitSet, Position};
 
@@ -104,30 +104,28 @@ impl<T: Write> WriteExtPacket for T {
 
 #[cfg(test)]
 mod test {
-    use crate::writer::WriteExtPacket as _;
+    use super::WriteExtPacket as _;
 
-    macro_rules! writer_var_int {
-        ($value:expr) => {{
-            let mut writer = Vec::new();
-            writer.write_varint($value)?;
-            writer
-        }};
+    fn writer_var_int(value: i32) -> std::io::Result<Vec<u8>> {
+        let mut writer = Vec::new();
+        writer.write_varint(value)?;
+        Ok(writer)
     }
 
     #[test]
     #[rustfmt::skip]
     fn reader() -> std::io::Result<()> {
-        assert_eq!(writer_var_int!(0), &[0x00]);
-        assert_eq!(writer_var_int!(1), &[0x01]);
-        assert_eq!(writer_var_int!(2), &[0x02]);
-        assert_eq!(writer_var_int!(127), &[0x7f]);
-        assert_eq!(writer_var_int!(128), &[0x80, 0x01]);
-        assert_eq!(writer_var_int!(255), &[0xff, 0x01]);
-        assert_eq!(writer_var_int!(25565), &[0xdd, 0xc7, 0x01]);
-        assert_eq!(writer_var_int!(2097151), &[0xff, 0xff, 0x7f]);
-        assert_eq!(writer_var_int!(2147483647), &[0xff, 0xff, 0xff, 0xff, 0x07]);
-        assert_eq!(writer_var_int!(-1), &[0xff, 0xff, 0xff, 0xff, 0x0f]);
-        assert_eq!(writer_var_int!(-2147483648), &[0x80, 0x80, 0x80, 0x80, 0x08]);
+        assert_eq!(writer_var_int(0)?, &[0x00]);
+        assert_eq!(writer_var_int(1)?, &[0x01]);
+        assert_eq!(writer_var_int(2)?, &[0x02]);
+        assert_eq!(writer_var_int(127)?, &[0x7f]);
+        assert_eq!(writer_var_int(128)?, &[0x80, 0x01]);
+        assert_eq!(writer_var_int(255)?, &[0xff, 0x01]);
+        assert_eq!(writer_var_int(25565)?, &[0xdd, 0xc7, 0x01]);
+        assert_eq!(writer_var_int(2097151)?, &[0xff, 0xff, 0x7f]);
+        assert_eq!(writer_var_int(2147483647)?, &[0xff, 0xff, 0xff, 0xff, 0x07]);
+        assert_eq!(writer_var_int(-1)?, &[0xff, 0xff, 0xff, 0xff, 0x0f]);
+        assert_eq!(writer_var_int(-2147483648)?, &[0x80, 0x80, 0x80, 0x80, 0x08]);
 
         Ok(())
     }

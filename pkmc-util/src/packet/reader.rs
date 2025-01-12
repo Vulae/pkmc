@@ -1,5 +1,6 @@
-use pkmc_util::{ReadExt, UUID};
 use std::io::Read;
+
+use crate::{ReadExt as _, UUID};
 
 pub fn read_varint_ret_bytes(mut reader: impl Read) -> std::io::Result<(usize, i32)> {
     let mut bytes = 0;
@@ -76,7 +77,7 @@ impl<T: Read> ReadExtPacket for T {
 
 #[cfg(test)]
 mod test {
-    use crate::reader::ReadExtPacket as _;
+    use crate::packet::ReadExtPacket as _;
 
     fn create_reader(data: &[u8]) -> std::io::Cursor<&[u8]> {
         std::io::Cursor::new(data)

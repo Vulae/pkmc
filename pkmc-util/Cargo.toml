@@ -4,3 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+thiserror.workspace = true
+flate2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+itertools.workspace = true

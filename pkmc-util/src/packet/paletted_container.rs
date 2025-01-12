@@ -1,7 +1,6 @@
-use itertools::Itertools;
-use pkmc_util::PackedArray;
+use itertools::Itertools as _;
 
-use crate::WriteExtPacket as _;
+use crate::{packet::WriteExtPacket, PackedArray};
 use std::{collections::HashMap, io::Write};
 
 fn calculate_bpe(num_unique_values: usize) -> u32 {
@@ -144,7 +143,7 @@ pub fn to_paletted_data(
 
 #[cfg(test)]
 mod test {
-    use crate::paletted_container::to_paletted_data;
+    use crate::packet::to_paletted_data;
 
     #[test]
     fn test() -> std::io::Result<()> {

@@ -1,12 +1,12 @@
 use std::io::{Read, Write};
 
-use crate::generated;
-use pkmc_packet::{
-    connection::ConnectionError, serverbound_packet_enum, ClientboundPacket, ServerboundPacket,
-    WriteExtPacket,
+use pkmc_util::{
+    packet::{ClientboundPacket, ConnectionError, ServerboundPacket, WriteExtPacket as _},
+    serverbound_packet_enum, ReadExt as _,
 };
-use pkmc_util::read_ext::ReadExt;
 use serde::Serialize;
+
+use crate::generated::generated;
 
 #[derive(Debug)]
 pub struct Request;
@@ -25,7 +25,7 @@ impl ServerboundPacket for Request {
 #[derive(Debug, Serialize)]
 pub struct ResponseVersion {
     pub name: String,
-    pub protocol: u64,
+    pub protocol: i32,
 }
 
 #[derive(Debug, Serialize)]

@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 use serde::Deserialize;
 
@@ -56,7 +59,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load<P: AsRef<Path>>(path: P) -> anyhow::Result<Config> {
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Config, Box<dyn Error>> {
         Ok(toml::from_str(&std::fs::read_to_string(path)?)?)
     }
 }

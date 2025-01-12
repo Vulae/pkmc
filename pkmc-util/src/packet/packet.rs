@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 
-use crate::connection::ConnectionError;
+use super::ConnectionError;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RawPacket {
@@ -55,5 +55,33 @@ pub trait ClientboundPacket {
             id: self.clientbound_id(),
             data: raw_data.into_boxed_slice(),
         })
+    }
+}
+
+#[macro_export]
+macro_rules! serverbound_packet_enum {
+    ($enum_vis:vis $enum_name:ident; $($type:ty, $name:ident;)*) => {
+        #[derive(Debug)]
+        #[allow(unused)]
+        $enum_vis enum $enum_name {
+            $(
+                $name($type),
+            )*
+        }
+
+        impl TryFrom<$crate::packet::RawPacket> for $enum_name {
+            type Error = $crate::packet::ConnectionError;
+
+            fn try_from(value: $crate::packet::RawPacket) -> std::result::Result<Self, Self::Error> {
+                use $crate::packet::ServerboundPacket as _;
+                let mut reader = std::io::Cursor::new(&value.data);
+                match value.id {
+                    $(
+                        <$type>::SERVERBOUND_ID => Ok(Self::$name(<$type>::packet_read(&mut reader)?)),
+                    )*
+                    _ => Err(Self::Error::UnsupportedPacket(stringify!($enum_name).to_owned(), value.id)),
+                }
+            }
+        }
     }
 }

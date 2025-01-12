@@ -1,11 +1,14 @@
 use std::io::{Read, Write};
 
-use crate::generated;
-use pkmc_packet::{
-    connection::ConnectionError, serverbound_packet_enum, ClientboundPacket, ReadExtPacket,
-    ServerboundPacket, WriteExtPacket,
+use pkmc_util::{
+    packet::{
+        ClientboundPacket, ConnectionError, ReadExtPacket as _, ServerboundPacket,
+        WriteExtPacket as _,
+    },
+    serverbound_packet_enum, UUID,
 };
-use pkmc_util::UUID;
+
+use crate::generated::generated;
 
 #[derive(Debug)]
 pub struct Hello {

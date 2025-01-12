@@ -1,15 +1,28 @@
-pub mod connection;
-pub mod packet;
-pub mod paletted_container;
-pub mod reader;
-pub mod writer;
+mod connection;
+mod packet;
+mod paletted_container;
+mod reader;
+mod writer;
 
-pub use connection::{Connection, ConnectionError};
-pub use packet::{ClientboundPacket, RawPacket, ServerboundPacket};
-pub use reader::ReadExtPacket;
-pub use writer::WriteExtPacket;
+pub use connection::*;
+pub use packet::*;
+pub use paletted_container::*;
+pub use reader::*;
+pub use writer::*;
 
-pub use paletted_container::to_paletted_data;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ConnectionError {
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    Other(Box<dyn std::error::Error + Send + Sync>),
+    #[error("Unsupported packet {0}: {1:#X}")]
+    UnsupportedPacket(String, i32),
+    #[error("Invalid raw packet ID for parser (expected: {0}, found: {1})")]
+    InvalidRawPacketIDForParser(i32, i32),
+}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Position {

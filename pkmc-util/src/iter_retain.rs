@@ -4,13 +4,13 @@ use std::{
 };
 
 pub trait IterRetain<T> {
-    fn retain_returned<F>(&mut self, predicate: F) -> impl Iterator<Item = T>
+    fn retain_returned<F>(&mut self, predicate: F) -> Vec<T>
     where
         F: Fn(&T) -> bool;
 }
 
 impl<T> IterRetain<T> for Vec<T> {
-    fn retain_returned<F>(&mut self, predicate: F) -> impl Iterator<Item = T>
+    fn retain_returned<F>(&mut self, predicate: F) -> Vec<T>
     where
         F: Fn(&T) -> bool,
     {
@@ -20,13 +20,13 @@ impl<T> IterRetain<T> for Vec<T> {
                 removed.push(self.remove(i));
             }
         }
-        removed.into_iter().rev()
+        removed.into_iter().rev().collect()
     }
 }
 
 // TODO: Possible without clone? I'm not enough of a rust pro to know.
 impl<T: Eq + Hash + Clone, S: BuildHasher> IterRetain<T> for HashSet<T, S> {
-    fn retain_returned<F>(&mut self, predicate: F) -> impl Iterator<Item = T>
+    fn retain_returned<F>(&mut self, predicate: F) -> Vec<T>
     where
         F: Fn(&T) -> bool,
     {
@@ -37,6 +37,5 @@ impl<T: Eq + Hash + Clone, S: BuildHasher> IterRetain<T> for HashSet<T, S> {
             .into_iter()
             .map(|item| self.take(&item).unwrap())
             .collect::<Vec<_>>()
-            .into_iter()
     }
 }

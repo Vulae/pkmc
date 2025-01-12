@@ -8,7 +8,9 @@ use serde::{
     forward_to_deserialize_any, Deserializer,
 };
 
-use crate::{nbt::NBTError, NBT};
+use crate::nbt::NBTError;
+
+use super::NBT;
 
 struct NBTDeserializer(NBT);
 

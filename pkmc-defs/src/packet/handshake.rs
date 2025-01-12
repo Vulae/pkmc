@@ -1,8 +1,11 @@
 use std::io::Read;
 
-use crate::generated;
-use pkmc_packet::{connection::ConnectionError, ReadExtPacket, ServerboundPacket};
-use pkmc_util::read_ext::ReadExt;
+use pkmc_util::{
+    packet::{ConnectionError, ReadExtPacket as _, ServerboundPacket},
+    ReadExt as _,
+};
+
+use crate::generated::generated;
 
 #[derive(Debug)]
 pub enum IntentionNextState {

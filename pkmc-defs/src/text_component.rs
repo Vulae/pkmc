@@ -1,7 +1,4 @@
-#![allow(unused)]
-use pkmc_nbt::NBT;
-/// https://minecraft.wiki/w/Raw_JSON_text_format
-use serde_json::json;
+use pkmc_util::nbt::NBT;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(non_camel_case_types)]

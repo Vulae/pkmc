@@ -8,8 +8,6 @@ pub struct ChunkPosition {
     pub chunk_z: i32,
 }
 
-unsafe impl Send for ChunkPosition {}
-
 impl ChunkPosition {
     pub fn new(chunk_x: i32, chunk_z: i32) -> Self {
         Self { chunk_x, chunk_z }
@@ -73,12 +71,9 @@ impl ChunkLoader {
         self.to_load
             .retain(|chunk| center.distance(chunk) < (self.radius + EXTRA_RADIUS) as f32);
         self.to_unload.append(
-            &mut self
-                .loaded
-                .retain_returned(|chunk| {
-                    center.distance(chunk) < (self.radius + EXTRA_RADIUS) as f32
-                })
-                .collect(),
+            &mut self.loaded.retain_returned(|chunk| {
+                center.distance(chunk) < (self.radius + EXTRA_RADIUS) as f32
+            }),
         );
         self.iter_radius().for_each(|chunk| {
             if self.to_load.contains(&chunk) || self.loaded.contains(&chunk) {

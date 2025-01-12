@@ -1,12 +1,16 @@
 use std::io::{Read, Write};
 
-use crate::{generated::generated, text_component::TextComponent};
-use pkmc_nbt::{nbt_compound, NBT};
-use pkmc_packet::{
-    connection::ConnectionError, serverbound_packet_enum, to_paletted_data, BitSet,
-    ClientboundPacket, Position, ReadExtPacket, ServerboundPacket, WriteExtPacket,
+use pkmc_util::{
+    nbt::NBT,
+    nbt_compound,
+    packet::{
+        to_paletted_data, BitSet, ClientboundPacket, ConnectionError, Position, ReadExtPacket as _,
+        ServerboundPacket, WriteExtPacket as _,
+    },
+    serverbound_packet_enum, ReadExt as _,
 };
-use pkmc_util::read_ext::ReadExt;
+
+use crate::{generated::generated, text_component::TextComponent};
 
 pub struct Login {
     pub entity_id: i32,

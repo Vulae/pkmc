@@ -1,20 +1,17 @@
 [package]
 name = "pkmc"
-description = "Yet another Rust Minecraft server implementation"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-pkmc-packet = { path = "../pkmc-packet" }
-pkmc-nbt = { path = "../pkmc-nbt" }
-pkmc-defs = { path = "../pkmc-defs" }
 pkmc-util = { path = "../pkmc-util" }
-pkmc-world = { path = "../pkmc-world" }
+pkmc-defs = { path = "../pkmc-defs" }
+pkmc-server = { path = "../pkmc-server" }
 thiserror.workspace = true
-base64 = "0.22.1"
-rand = "0.8.5"
 serde.workspace = true
+serde_json.workspace = true
 toml = "0.8.19"
-anyhow = "1.0.94"
 # FIXME: Make this use default features for release build.
 image = { version = "0.25.5", default-features = false, features = ["png"] }
+base64 = "0.22.1"
+rand = "0.8.5"

@@ -5,26 +5,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use pkmc_util::ReadExt;
-use thiserror::Error;
+use crate::ReadExt as _;
 
-use crate::{
-    reader::try_read_varint_ret_bytes,
-    writer::{varint_size, WriteExtPacket},
-    ClientboundPacket, RawPacket,
+use super::{
+    try_read_varint_ret_bytes, varint_size, ClientboundPacket, ConnectionError, RawPacket,
+    WriteExtPacket as _,
 };
-
-#[derive(Error, Debug)]
-pub enum ConnectionError {
-    #[error(transparent)]
-    IoError(#[from] std::io::Error),
-    #[error(transparent)]
-    Other(Box<dyn std::error::Error + Send + Sync>),
-    #[error("Unsupported packet {0}: {1:#X}")]
-    UnsupportedPacket(String, i32),
-    #[error("Invalid raw packet ID for parser (expected: {0}, found: {1})")]
-    InvalidRawPacketIDForParser(i32, i32),
-}
 
 #[derive(Debug)]
 pub struct UncompressedStreamHandler;
@@ -70,9 +56,6 @@ impl ZlibStreamHandler {
     /// compression_level 1..=9
     pub fn new(threshold: usize, compression_level: u32) -> Self {
         // TODO: Error handling
-        if compression_level == 0 {
-            panic!("DO NOT USE COMPRESSION LEVEL 0! JUST DISABLE COMPRESSION INSTEAD.");
-        }
         if compression_level > 9 {
             panic!("INVALID COMPRESSION LEVEL");
         }
@@ -294,33 +277,5 @@ impl Connection {
         T: TryFrom<RawPacket, Error = ConnectionError>,
     {
         self.recieve().map(|i| i.map(T::try_from).transpose())?
-    }
-}
-
-#[macro_export]
-macro_rules! serverbound_packet_enum {
-    ($enum_vis:vis $enum_name:ident; $($type:ty, $name:ident;)*) => {
-        #[derive(Debug)]
-        #[allow(unused)]
-        $enum_vis enum $enum_name {
-            $(
-                $name($type),
-            )*
-        }
-
-        impl TryFrom<$crate::packet::RawPacket> for $enum_name {
-            type Error = $crate::connection::ConnectionError;
-
-            fn try_from(value: $crate::packet::RawPacket) -> std::result::Result<Self, Self::Error> {
-                use $crate::packet::ServerboundPacket as _;
-                let mut reader = std::io::Cursor::new(&value.data);
-                match value.id {
-                    $(
-                        <$type>::SERVERBOUND_ID => Ok(Self::$name(<$type>::packet_read(&mut reader)?)),
-                    )*
-                    _ => Err(Self::Error::UnsupportedPacket(stringify!($enum_name).to_owned(), value.id)),
-                }
-            }
-        }
     }
 }

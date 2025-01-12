@@ -79,9 +79,7 @@ impl Block {
         //    self.name.as_ref(),
         //    "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
         //)
-        self.id()
-            .map(|id| generated::block::is_air(id))
-            .unwrap_or(false)
+        self.id().map(generated::block::is_air).unwrap_or(false)
     }
 
     pub fn id(&self) -> Option<i32> {

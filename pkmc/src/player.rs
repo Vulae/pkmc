@@ -1,5 +1,5 @@
 use std::{
-    io::Write,
+    io::Write as _,
     sync::{Arc, RwLock},
 };
 
@@ -10,16 +10,20 @@ use pkmc_defs::{
     },
     packet,
     text_component::TextComponent,
-    REGISTRY,
 };
-use pkmc_nbt::nbt_compound;
-use pkmc_packet::{to_paletted_data, Connection};
-use pkmc_util::UUID;
+use pkmc_server::world::{
+    chunk_loader::{ChunkLoader, ChunkPosition},
+    WorldError,
+};
+use pkmc_util::{
+    nbt_compound,
+    packet::{to_paletted_data, Connection, ConnectionError},
+    UUID,
+};
 use rand::Rng as _;
+use thiserror::Error;
 
-use crate::{client::PlayerInformation, server_state::ServerState};
-
-use super::{ChunkLoader, ChunkPosition, PlayerError};
+use crate::{ServerState, REGISTRIES};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
 
@@ -27,6 +31,20 @@ const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_milli
 const PLAYER_DIMENSION: &str = "minecraft:overworld";
 const PLAYER_DIMENSION_SECTIONS: usize = 24;
 const VIEW_DISTANCE: i32 = 32;
+
+#[derive(Error, Debug)]
+pub enum PlayerError {
+    #[error(transparent)]
+    ConnectionError(#[from] ConnectionError),
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    WorldError(#[from] WorldError),
+    #[error(
+        "Client bad keep alive response (No response, wrong id, or responded when not expected)"
+    )]
+    BadKeepAliveResponse,
+}
 
 #[derive(Debug)]
 pub struct Player {
@@ -46,13 +64,14 @@ impl Player {
     pub fn new(
         connection: Connection,
         server_state: Arc<RwLock<ServerState>>,
-        player_information: PlayerInformation,
+        uuid: UUID,
+        name: String,
     ) -> Result<Self, PlayerError> {
         let mut player = Self {
             connection,
             server_state,
-            name: player_information.name,
-            uuid: player_information.uuid,
+            name,
+            uuid,
             keepalive_time: std::time::Instant::now(),
             keepalive_id: None,
             x: 0.0,
@@ -64,7 +83,7 @@ impl Player {
         player.connection.send(packet::play::Login {
             entity_id: 0,
             is_hardcore: false,
-            dimensions: REGISTRY
+            dimensions: REGISTRIES
                 .get("minecraft:dimension_type")
                 .unwrap()
                 .keys()
@@ -76,7 +95,7 @@ impl Player {
             reduced_debug_info: false,
             enable_respawn_screen: true,
             do_limited_crafting: false,
-            dimension_type: REGISTRY
+            dimension_type: REGISTRIES
                 .get("minecraft:dimension_type")
                 .unwrap()
                 .keys()
@@ -173,7 +192,7 @@ impl Player {
 
         while let Some(packet) = match self.connection.recieve_into::<packet::play::PlayPacket>() {
             Ok(packet) => packet,
-            Err(err @ pkmc_packet::ConnectionError::UnsupportedPacket(..)) => {
+            Err(err @ ConnectionError::UnsupportedPacket(..)) => {
                 println!("{} {}", self.name(), err);
                 None
             }
@@ -225,10 +244,7 @@ impl Player {
         let server_state = self.server_state.read().unwrap();
         let mut world = server_state.world.lock().unwrap();
         let level = world.get_level("minecraft:overworld").unwrap();
-        // TODO: Instead of loading only 1 chunk per update, load many until a certain time limit
-        // threshold is reached.
         if let Some(to_load) = self.chunk_loader.next_to_load() {
-            //println!("Load chunk: {} {}", to_load.chunk_x, to_load.chunk_z);
             if let Some(chunk) = level.get_chunk(to_load.chunk_x, to_load.chunk_z)? {
                 self.connection.send(packet::play::LevelChunkWithLight {
                     chunk_x: to_load.chunk_x,

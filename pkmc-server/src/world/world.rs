@@ -1,8 +1,10 @@
 use std::{collections::HashMap, fs::File, io::Seek, path::PathBuf};
 
 use pkmc_defs::{block::Block, generated::PALETTED_DATA_BLOCKS_INDIRECT};
-use pkmc_nbt::{NBTError, NBT};
-use pkmc_util::{PackedArray, ReadExt, Transmutable};
+use pkmc_util::{
+    nbt::{from_nbt, NBTError, NBT},
+    PackedArray, ReadExt, Transmutable,
+};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -219,7 +221,7 @@ impl Region {
     fn load_chunk(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Chunk>, WorldError> {
         match self
             .read_nbt(chunk_x, chunk_z)?
-            .map(|nbt| pkmc_nbt::from_nbt::<Chunk>(nbt.1))
+            .map(|nbt| from_nbt::<Chunk>(nbt.1))
             .transpose()?
         {
             Some(chunk) if chunk.status == "minecraft:full" => Ok(Some(chunk)),
@@ -361,7 +363,7 @@ impl World {
 mod test {
     use pkmc_defs::block::BLOCKS_TO_IDS;
 
-    use crate::world::World;
+    use crate::world::world::World;
 
     use super::WorldError;
 

@@ -3,13 +3,16 @@ use std::{
     io::{Read, Write},
 };
 
-use crate::generated;
-use pkmc_nbt::NBT;
-use pkmc_packet::{
-    serverbound_packet_enum, ClientboundPacket, ConnectionError, ReadExtPacket, ServerboundPacket,
-    WriteExtPacket,
+use pkmc_util::{
+    nbt::NBT,
+    packet::{
+        ClientboundPacket, ConnectionError, ReadExtPacket as _, ServerboundPacket,
+        WriteExtPacket as _,
+    },
+    serverbound_packet_enum, ReadExt as _,
 };
-use pkmc_util::read_ext::ReadExt;
+
+use crate::generated::generated;
 
 #[derive(Debug)]
 pub enum CustomPayload {

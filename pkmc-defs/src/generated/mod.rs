@@ -4,8 +4,6 @@ pub mod generated;
 use serde::Deserialize;
 use std::{collections::HashMap, ops::RangeInclusive, sync::LazyLock};
 
-pub use generated::*;
-
 #[macro_export]
 macro_rules! generated_util_create_basic_enum {
     ($vis:vis $name:ident; $($sub_name:ident),+) => {

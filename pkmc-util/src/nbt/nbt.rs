@@ -1,4 +1,4 @@
-use pkmc_util::ReadExt as _;
+use crate::ReadExt as _;
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -140,12 +140,12 @@ impl<T: Into<NBT>> From<Vec<T>> for NBT {
 #[macro_export]
 macro_rules! nbt_compound {
     [$($name:expr => $value:expr,)*] => {
-        $crate::NBT::Compound(
+        $crate::nbt::NBT::Compound(
             vec![
                 $(
                     ($name.to_string(), $value),
                 )*
-            ].into_iter().collect::<std::collections::HashMap<String, $crate::NBT>>()
+            ].into_iter().collect::<std::collections::HashMap<String, $crate::nbt::NBT>>()
         )
     };
 }

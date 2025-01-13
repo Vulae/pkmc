@@ -46,6 +46,14 @@ impl UncompressedStreamHandler {
     }
 }
 
+// FIXME: For some unknown reason, zlib stream sometimes produces compressed data that is
+// unreadable by Minecraft. Like, when the world is loading it loads fine, then randomly it
+// disconnects with a compression error.
+// It is beyond me to know what the hell is going wrong.
+// But here's just some errors it randomly spits out:
+// io.netty.handler.codec.DecoderException: java.util.zip.DataFormatException: invalid block type
+// io.netty.handler.codec.DecoderException: java.util.zip.DataFormatException: invalid stored block lengths
+// io.netty.handler.codec.DecoderException: java.util.zip.DataFormatException: incorrect header check
 #[derive(Debug)]
 pub struct ZlibStreamHandler {
     threshold: usize,

@@ -31,9 +31,26 @@ pub enum WorldError {
 struct ChunkSectionBlockStates {
     palette: Box<[Block]>,
     data: Option<Box<[i64]>>,
+    #[serde(skip, default)]
+    palette_ids: Box<[i32]>,
 }
 
 impl ChunkSectionBlockStates {
+    fn initialize(&mut self) {
+        self.palette_ids = self
+            .palette
+            .iter()
+            .map(|b| {
+                b.id().unwrap_or_else(|| {
+                    b.without_properties()
+                        .id()
+                        .unwrap_or(Block::air().id().unwrap())
+                })
+            })
+            .collect();
+    }
+
+    #[inline(always)]
     fn get_block_palette_index_by_index(&self, index: usize) -> usize {
         // FIXME: get_block_palette_index_by_index sometimes returns out of bounds index :(
         match self.palette.len() {
@@ -54,14 +71,18 @@ impl ChunkSectionBlockStates {
     }
 
     fn get_block_by_index(&self, index: usize) -> Block {
-        self.palette[self.get_block_palette_index_by_index(index)].clone()
+        self.palette
+            .get(self.get_block_palette_index_by_index(index))
+            .cloned()
+            .unwrap()
     }
 
     fn get_block(&self, x: u8, y: u8, z: u8) -> Block {
+        debug_assert!((x as usize) < SECTION_SIZE);
+        debug_assert!((y as usize) < SECTION_SIZE);
+        debug_assert!((z as usize) < SECTION_SIZE);
         self.get_block_by_index(
-            ((y as usize) & (SECTION_SIZE - 1)) * SECTION_SIZE * SECTION_SIZE
-                + (z as usize) * SECTION_SIZE
-                + (x as usize),
+            (y as usize) * SECTION_SIZE * SECTION_SIZE + (z as usize) * SECTION_SIZE + (x as usize),
         )
     }
 
@@ -74,44 +95,63 @@ impl ChunkSectionBlockStates {
     }
 
     /// Returns none if any of the IDs are not found.
-    fn blocks_ids(&self) -> Option<[i32; BLOCKS_PER_SECTION]> {
-        let palette_ids = self
-            .palette
-            .iter()
-            .map(|b| b.id())
-            .collect::<Option<Box<[i32]>>>()?;
-        Some(
-            (0..BLOCKS_PER_SECTION)
-                // TODO: Remove safety check when get_block_palette_index_by_index is fixed.
-                .map(|index| palette_ids.get(self.get_block_palette_index_by_index(index)).cloned().unwrap_or(0))
-                .collect::<Vec<i32>>()
-                .try_into()
-                .unwrap(),
-        )
+    fn blocks_ids(&self) -> [i32; BLOCKS_PER_SECTION] {
+        (0..BLOCKS_PER_SECTION)
+            .map(|index| {
+                *self
+                    .palette_ids
+                    .get(self.get_block_palette_index_by_index(index))
+                    .unwrap()
+            })
+            .collect::<Vec<i32>>()
+            .try_into()
+            .unwrap()
     }
 
     // NOTE: Data from this is already paletted correctly, All that's needed to do is convert to
-    // IDs then send that into a packet, would be dramatically faster than what we're doing now.
+    // IDs then send that into a packet, would be dramatically faster if we included an option to
+    // just directly convert to packet data.
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ChunkSection {
     #[serde(rename = "Y")]
     y: i32,
-    block_states: ChunkSectionBlockStates,
+    block_states: Option<ChunkSectionBlockStates>,
 }
 
 impl ChunkSection {
+    fn initialize(&mut self) {
+        if let Some(ref mut block_states) = self.block_states {
+            block_states.initialize();
+        }
+    }
+
     pub fn get_block(&self, section_x: u8, section_y: u8, section_z: u8) -> Block {
-        self.block_states.get_block(section_x, section_y, section_z)
+        self.block_states
+            .as_ref()
+            .map(|block_states| block_states.get_block(section_x, section_y, section_z))
+            .unwrap_or(Block::air())
     }
 
     pub fn blocks(&self) -> [Block; BLOCKS_PER_SECTION] {
-        self.block_states.blocks()
+        self.block_states
+            .as_ref()
+            .map(|block_states| block_states.blocks())
+            .unwrap_or(
+                (0..BLOCKS_PER_SECTION)
+                    .map(|_| Block::air())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+            )
     }
 
-    pub fn blocks_ids(&self) -> Option<[i32; BLOCKS_PER_SECTION]> {
-        self.block_states.blocks_ids()
+    pub fn blocks_ids(&self) -> [i32; BLOCKS_PER_SECTION] {
+        self.block_states
+            .as_ref()
+            .map(|block_states| block_states.blocks_ids())
+            .unwrap_or([Block::air().id().unwrap(); BLOCKS_PER_SECTION])
     }
 }
 
@@ -124,24 +164,37 @@ pub struct Chunk {
     x_pos: i32,
     #[serde(rename = "zPos")]
     z_pos: i32,
-    #[serde(rename = "yPos")]
-    y_pos: i32,
+    // TODO: Why is this here?
+    //#[serde(rename = "yPos")]
+    //y_pos: i32,
     #[serde(rename = "Status")]
     status: String,
     #[serde(rename = "LastUpdate")]
     last_update: i64,
-    sections: Box<[ChunkSection]>,
+    sections: Vec<ChunkSection>,
 }
 
 impl Chunk {
+    fn initialize(&mut self) {
+        // Sometimes sections are unsorted.
+        self.sections.sort_by(|a, b| a.y.cmp(&b.y));
+        self.sections
+            .iter_mut()
+            .for_each(|section| section.initialize());
+    }
+
     pub fn get_block(&self, x: u8, y: i16, z: u8) -> Block {
+        debug_assert!((x as usize) < SECTION_SIZE);
+        debug_assert!((z as usize) < SECTION_SIZE);
         let section_y = (y / SECTION_SIZE as i16) as i32;
         let Some(section) = self.sections.iter().find(|section| section.y == section_y) else {
             return Block::air();
         };
-        section
-            .block_states
-            .get_block(x, (y & (SECTION_SIZE as i16 - 1)) as u8, z)
+        section.get_block(
+            x & (SECTION_SIZE as u8 - 1),
+            (y & (SECTION_SIZE as i16 - 1)) as u8,
+            z & (SECTION_SIZE as u8 - 1),
+        )
     }
 
     pub fn iter_sections(&self) -> impl Iterator<Item = &ChunkSection> + use<'_> {
@@ -224,7 +277,11 @@ impl Region {
             .map(|nbt| from_nbt::<Chunk>(nbt.1))
             .transpose()?
         {
-            Some(chunk) if chunk.status == "minecraft:full" => Ok(Some(chunk)),
+            //Some(chunk) if chunk.status == "minecraft:full" => Ok(Some(chunk)),
+            Some(mut chunk) => {
+                chunk.initialize();
+                Ok(Some(chunk))
+            }
             _ => Ok(None),
         }
     }

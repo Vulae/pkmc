@@ -255,7 +255,7 @@ impl Player {
                             let mut writer = Vec::new();
 
                             chunk.iter_sections().try_for_each(|section| {
-                                let block_ids = section.blocks_ids().unwrap();
+                                let block_ids = section.blocks_ids();
                                 // Num non-air blocks
                                 let block_count = block_ids
                                     .iter()

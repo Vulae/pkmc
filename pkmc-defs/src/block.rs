@@ -70,6 +70,10 @@ impl Block {
         Self::new_p(name, None::<(&str, &str)>)
     }
 
+    pub fn without_properties(&self) -> Self {
+        Self::new(&self.name)
+    }
+
     pub fn air() -> Self {
         Self::new("minecraft:air")
     }

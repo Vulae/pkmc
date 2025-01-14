@@ -89,6 +89,10 @@ impl Block {
     pub fn id(&self) -> Option<i32> {
         BLOCKS_TO_IDS.get(self).copied()
     }
+
+    pub fn id_with_default_fallback(&self) -> Option<i32> {
+        self.id().or_else(|| self.without_properties().id())
+    }
 }
 
 impl Default for Block {

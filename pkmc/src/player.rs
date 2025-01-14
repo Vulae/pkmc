@@ -1,23 +1,13 @@
-use std::{
-    io::Write as _,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
-use pkmc_defs::{
-    generated::{
-        generated, PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT,
-        PALETTED_DATA_BLOCKS_DIRECT, PALETTED_DATA_BLOCKS_INDIRECT,
-    },
-    packet,
-    text_component::TextComponent,
-};
+use pkmc_defs::{packet, text_component::TextComponent};
 use pkmc_server::world::{
+    anvil::AnvilError,
     chunk_loader::{ChunkLoader, ChunkPosition},
-    WorldError,
+    World as _,
 };
 use pkmc_util::{
-    nbt_compound,
-    packet::{to_paletted_data, Connection, ConnectionError},
+    packet::{Connection, ConnectionError},
     UUID,
 };
 use rand::Rng as _;
@@ -39,7 +29,7 @@ pub enum PlayerError {
     #[error(transparent)]
     IoError(#[from] std::io::Error),
     #[error(transparent)]
-    WorldError(#[from] WorldError),
+    WorldError(#[from] AnvilError),
     #[error(
         "Client bad keep alive response (No response, wrong id, or responded when not expected)"
     )]
@@ -243,46 +233,9 @@ impl Player {
 
         let server_state = self.server_state.read().unwrap();
         let mut world = server_state.world.lock().unwrap();
-        let level = world.get_level("minecraft:overworld").unwrap();
         if let Some(to_load) = self.chunk_loader.next_to_load() {
-            if let Some(chunk) = level.get_chunk(to_load.chunk_x, to_load.chunk_z)? {
-                self.connection.send(packet::play::LevelChunkWithLight {
-                    chunk_x: to_load.chunk_x,
-                    chunk_z: to_load.chunk_z,
-                    chunk_data: packet::play::LevelChunkData {
-                        heightmaps: nbt_compound!(),
-                        data: {
-                            let mut writer = Vec::new();
-
-                            chunk.iter_sections().try_for_each(|section| {
-                                let block_ids = section.blocks_ids();
-                                // Num non-air blocks
-                                let block_count = block_ids
-                                    .iter()
-                                    .filter(|b| !generated::block::is_air(**b))
-                                    .count();
-                                writer.write_all(&(block_count as u16).to_be_bytes())?;
-                                // Blocks
-                                writer.write_all(&to_paletted_data(
-                                    &block_ids,
-                                    PALETTED_DATA_BLOCKS_INDIRECT,
-                                    PALETTED_DATA_BLOCKS_DIRECT,
-                                )?)?;
-                                // Biome
-                                writer.write_all(&to_paletted_data(
-                                    &[0; 64],
-                                    PALETTED_DATA_BIOMES_INDIRECT,
-                                    PALETTED_DATA_BIOMES_DIRECT,
-                                )?)?;
-                                Ok::<_, PlayerError>(())
-                            })?;
-
-                            writer.into_boxed_slice()
-                        },
-                        block_entities: Vec::new(),
-                    },
-                    light_data: packet::play::LevelLightData::full_dark(PLAYER_DIMENSION_SECTIONS),
-                })?;
+            if let Some(packet) = world.get_chunk_as_packet(to_load.chunk_x, to_load.chunk_z)? {
+                self.connection.send(packet)?;
             } else {
                 self.connection
                     .send(packet::play::LevelChunkWithLight::generate_test(

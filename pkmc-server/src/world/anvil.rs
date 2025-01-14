@@ -8,15 +8,15 @@ use pkmc_util::{
 use serde::Deserialize;
 use thiserror::Error;
 
+use crate::world::SECTION_SIZE;
+
+use super::{Chunk, World, SECTION_BLOCKS};
+
 pub const REGION_SIZE: usize = 32;
 pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
-pub const CHUNK_SIZE: usize = 16;
-pub const SECTION_SIZE: usize = 16;
-pub const BLOCKS_PER_SECTION: usize = SECTION_SIZE * SECTION_SIZE * SECTION_SIZE;
-pub const BIOMES_PER_SECTION: usize = 64;
 
 #[derive(Error, Debug)]
-pub enum WorldError {
+pub enum AnvilError {
     #[error(transparent)]
     IoError(#[from] std::io::Error),
     #[error("Region chunk unknown compression \"{0}\"")]
@@ -27,9 +27,15 @@ pub enum WorldError {
     NBTError(#[from] NBTError),
 }
 
+fn default_blocks_palette() -> Box<[Block]> {
+    vec![Block::air()].into_boxed_slice()
+}
+
 #[derive(Debug, Deserialize, Clone)]
 struct ChunkSectionBlockStates {
+    #[serde(default = "default_blocks_palette")]
     palette: Box<[Block]>,
+    #[serde(default)]
     data: Option<Box<[i64]>>,
     #[serde(skip, default)]
     palette_ids: Box<[i32]>,
@@ -63,7 +69,7 @@ impl ChunkSectionBlockStates {
                         *PALETTED_DATA_BLOCKS_INDIRECT.start() as u8,
                         *PALETTED_DATA_BLOCKS_INDIRECT.end() as u8,
                     ),
-                    BLOCKS_PER_SECTION,
+                    SECTION_BLOCKS,
                 );
                 packed_indices.get_unchecked(index) as usize
             }
@@ -86,8 +92,8 @@ impl ChunkSectionBlockStates {
         )
     }
 
-    fn blocks(&self) -> [Block; BLOCKS_PER_SECTION] {
-        (0..BLOCKS_PER_SECTION)
+    fn blocks(&self) -> [Block; SECTION_BLOCKS] {
+        (0..SECTION_BLOCKS)
             .map(|index| self.get_block_by_index(index))
             .collect::<Vec<_>>()
             .try_into()
@@ -95,8 +101,8 @@ impl ChunkSectionBlockStates {
     }
 
     /// Returns none if any of the IDs are not found.
-    fn blocks_ids(&self) -> [i32; BLOCKS_PER_SECTION] {
-        (0..BLOCKS_PER_SECTION)
+    fn blocks_ids(&self) -> [i32; SECTION_BLOCKS] {
+        (0..SECTION_BLOCKS)
             .map(|index| {
                 *self
                     .palette_ids
@@ -114,9 +120,9 @@ impl ChunkSectionBlockStates {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ChunkSection {
+struct ChunkSection {
     #[serde(rename = "Y")]
-    y: i32,
+    y: i8,
     block_states: Option<ChunkSectionBlockStates>,
 }
 
@@ -126,55 +132,26 @@ impl ChunkSection {
             block_states.initialize();
         }
     }
-
-    pub fn get_block(&self, section_x: u8, section_y: u8, section_z: u8) -> Block {
-        self.block_states
-            .as_ref()
-            .map(|block_states| block_states.get_block(section_x, section_y, section_z))
-            .unwrap_or(Block::air())
-    }
-
-    pub fn blocks(&self) -> [Block; BLOCKS_PER_SECTION] {
-        self.block_states
-            .as_ref()
-            .map(|block_states| block_states.blocks())
-            .unwrap_or(
-                (0..BLOCKS_PER_SECTION)
-                    .map(|_| Block::air())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap(),
-            )
-    }
-
-    pub fn blocks_ids(&self) -> [i32; BLOCKS_PER_SECTION] {
-        self.block_states
-            .as_ref()
-            .map(|block_states| block_states.blocks_ids())
-            .unwrap_or([Block::air().id().unwrap(); BLOCKS_PER_SECTION])
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[allow(unused)]
-pub struct Chunk {
-    #[serde(rename = "DataVersion")]
-    data_version: i32,
-    #[serde(rename = "xPos")]
-    x_pos: i32,
-    #[serde(rename = "zPos")]
-    z_pos: i32,
-    // TODO: Why is this here?
+pub struct AnvilChunk {
+    //#[serde(rename = "DataVersion")]
+    //data_version: i32,
+    //#[serde(rename = "xPos")]
+    //x_pos: i32,
+    //#[serde(rename = "zPos")]
+    //z_pos: i32,
     //#[serde(rename = "yPos")]
     //y_pos: i32,
-    #[serde(rename = "Status")]
-    status: String,
-    #[serde(rename = "LastUpdate")]
-    last_update: i64,
+    //#[serde(rename = "Status")]
+    //status: String,
+    //#[serde(rename = "LastUpdate")]
+    //last_update: i64,
     sections: Vec<ChunkSection>,
 }
 
-impl Chunk {
+impl AnvilChunk {
     fn initialize(&mut self) {
         // Sometimes sections are unsorted.
         self.sections.sort_by(|a, b| a.y.cmp(&b.y));
@@ -183,22 +160,38 @@ impl Chunk {
             .for_each(|section| section.initialize());
     }
 
-    pub fn get_block(&self, x: u8, y: i16, z: u8) -> Block {
-        debug_assert!((x as usize) < SECTION_SIZE);
-        debug_assert!((z as usize) < SECTION_SIZE);
-        let section_y = (y / SECTION_SIZE as i16) as i32;
-        let Some(section) = self.sections.iter().find(|section| section.y == section_y) else {
-            return Block::air();
-        };
-        section.get_block(
-            x & (SECTION_SIZE as u8 - 1),
-            (y & (SECTION_SIZE as i16 - 1)) as u8,
-            z & (SECTION_SIZE as u8 - 1),
+    fn get_section(&self, section_y: i8) -> Option<&ChunkSection> {
+        self.sections.iter().find(|section| section.y == section_y)
+    }
+}
+
+impl Chunk for AnvilChunk {
+    fn get_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<Block> {
+        debug_assert!((block_x as usize) < SECTION_SIZE);
+        debug_assert!((block_z as usize) < SECTION_SIZE);
+        Some(
+            self.get_section((block_y / SECTION_SIZE as i16) as i8)?
+                .block_states
+                .as_ref()?
+                .get_block(
+                    block_x,
+                    (block_y.rem_euclid(SECTION_SIZE as i16)) as u8,
+                    block_z,
+                ),
         )
     }
 
-    pub fn iter_sections(&self) -> impl Iterator<Item = &ChunkSection> + use<'_> {
-        self.sections.iter()
+    fn get_section_blocks(&self, section_y: i8) -> Option<[Block; SECTION_BLOCKS]> {
+        Some(self.get_section(section_y)?.block_states.as_ref()?.blocks())
+    }
+
+    fn get_section_blocks_ids(&self, section_y: i8) -> Option<[i32; SECTION_BLOCKS]> {
+        Some(
+            self.get_section(section_y)?
+                .block_states
+                .as_ref()?
+                .blocks_ids(),
+        )
     }
 }
 
@@ -209,18 +202,18 @@ struct Region {
     region_x: i32,
     region_z: i32,
     locations: [(u32, u32); CHUNKS_PER_REGION],
-    loaded_chunks: HashMap<(u8, u8), Option<Chunk>>,
+    loaded_chunks: HashMap<(u8, u8), Option<AnvilChunk>>,
 }
 
 impl Region {
-    fn load(mut file: File, region_x: i32, region_z: i32) -> Result<Self, WorldError> {
+    fn load(mut file: File, region_x: i32, region_z: i32) -> Result<Self, AnvilError> {
         let mut locations = [(0, 0); REGION_SIZE * REGION_SIZE];
         file.rewind()?;
         locations.iter_mut().try_for_each(|(offset, length)| {
             let data = u32::from_be_bytes(file.read_const()?);
             *offset = ((data & 0xFFFFFF00) >> 8) * 0x1000;
             *length = (data & 0x000000FF) * 0x1000;
-            Ok::<_, WorldError>(())
+            Ok::<_, AnvilError>(())
         })?;
         Ok(Self {
             file,
@@ -231,7 +224,7 @@ impl Region {
         })
     }
 
-    fn read(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Box<[u8]>>, WorldError> {
+    fn read(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Box<[u8]>>, AnvilError> {
         let (offset, length) =
             self.locations[(chunk_x as usize) + (chunk_z as usize) * REGION_SIZE];
         if offset == 0 || length == 0 {
@@ -245,36 +238,36 @@ impl Region {
         let compression_type = u8::from_be_bytes(self.file.read_const()?);
         let compressed_data = self.file.read_var((length as usize) - 1)?;
         match compression_type {
-            1 => Err(WorldError::RegionUnsupportedCompression("GZip".to_owned())),
+            1 => Err(AnvilError::RegionUnsupportedCompression("GZip".to_owned())),
             2 => Ok(Some(
                 flate2::read::ZlibDecoder::new(std::io::Cursor::new(compressed_data)).read_all()?,
             )),
             3 => Ok(Some(compressed_data)),
-            4 => Err(WorldError::RegionUnsupportedCompression("LZ4".to_owned())),
+            4 => Err(AnvilError::RegionUnsupportedCompression("LZ4".to_owned())),
             127 => {
                 let mut data = std::io::Cursor::new(&compressed_data);
                 let string_length = u16::from_be_bytes(data.read_const()?);
                 let string_buf = data.read_var(string_length as usize)?;
-                Err(WorldError::RegionUnsupportedCompression(format!(
+                Err(AnvilError::RegionUnsupportedCompression(format!(
                     "Custom {}",
                     String::from_utf8_lossy(&string_buf)
                 )))
             }
-            _ => Err(WorldError::RegionUnknownCompression(compression_type)),
+            _ => Err(AnvilError::RegionUnknownCompression(compression_type)),
         }
     }
 
-    fn read_nbt(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<(String, NBT)>, WorldError> {
+    fn read_nbt(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<(String, NBT)>, AnvilError> {
         Ok(self
             .read(chunk_x, chunk_z)?
             .map(|data| NBT::read(std::io::Cursor::new(data), false))
             .transpose()?)
     }
 
-    fn load_chunk(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Chunk>, WorldError> {
+    fn load_chunk(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<AnvilChunk>, AnvilError> {
         match self
             .read_nbt(chunk_x, chunk_z)?
-            .map(|nbt| from_nbt::<Chunk>(nbt.1))
+            .map(|nbt| from_nbt::<AnvilChunk>(nbt.1))
             .transpose()?
         {
             //Some(chunk) if chunk.status == "minecraft:full" => Ok(Some(chunk)),
@@ -290,7 +283,7 @@ impl Region {
         &mut self,
         chunk_x: u8,
         chunk_z: u8,
-    ) -> Result<Option<&Chunk>, WorldError> {
+    ) -> Result<Option<&AnvilChunk>, AnvilError> {
         // Why does clippy complain? doing its suggestion breaks the code.
         #[allow(clippy::all)]
         if !self.loaded_chunks.contains_key(&(chunk_x, chunk_z)) {
@@ -307,23 +300,22 @@ impl Region {
 }
 
 #[derive(Debug)]
-#[allow(unused)]
-pub struct Level {
-    identifier: String,
+pub struct AnvilWorld {
     root: PathBuf,
     loaded_regions: HashMap<(i32, i32), Option<Region>>,
+    section_y_range: std::ops::RangeInclusive<i8>,
 }
 
-impl Level {
-    fn new(identifier: String, root: PathBuf) -> Self {
+impl AnvilWorld {
+    pub fn new<P: Into<PathBuf>>(root: P, section_y_range: std::ops::RangeInclusive<i8>) -> Self {
         Self {
-            identifier,
-            root,
+            root: root.into(),
             loaded_regions: HashMap::new(),
+            section_y_range,
         }
     }
 
-    fn load_region(&self, region_x: i32, region_z: i32) -> Result<Option<Region>, WorldError> {
+    fn load_region(&self, region_x: i32, region_z: i32) -> Result<Option<Region>, AnvilError> {
         let mut path = self.root.clone();
         path.push("region");
         path.push(format!("r.{}.{}.mca", region_x, region_z));
@@ -342,7 +334,7 @@ impl Level {
         &mut self,
         region_x: i32,
         region_z: i32,
-    ) -> Result<Option<&mut Region>, WorldError> {
+    ) -> Result<Option<&mut Region>, AnvilError> {
         // Why does clippy complain? doing its suggestion breaks the code.
         #[allow(clippy::all)]
         if !self.loaded_regions.contains_key(&(region_x, region_z)) {
@@ -357,62 +349,43 @@ impl Level {
             .as_mut())
     }
 
-    pub fn get_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Result<Option<&Chunk>, WorldError> {
+    fn get_chunk_inner(
+        &mut self,
+        chunk_x: i32,
+        chunk_z: i32,
+    ) -> Result<Option<&AnvilChunk>, AnvilError> {
         // FIXME: Use the const!
-        let Some(region) = self.get_or_load_region(chunk_x >> 5, chunk_z >> 5)? else {
-            //let Some(region) = self.get_or_load_region(chunk_x / REGION_SIZE as i32, chunk_z / REGION_SIZE as i32)? else {
+        let Some(region) = self.get_or_load_region(
+            chunk_x.div_euclid(REGION_SIZE as i32),
+            chunk_z.div_euclid(REGION_SIZE as i32),
+        )?
+        else {
             return Ok(None);
         };
         let Some(chunk) = region.get_or_load_chunk(
-            (chunk_x & (REGION_SIZE - 1) as i32) as u8,
-            (chunk_z & (REGION_SIZE - 1) as i32) as u8,
+            (chunk_x.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
+            (chunk_z.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
         )?
         else {
             return Ok(None);
         };
         Ok(Some(chunk))
     }
+}
 
-    pub fn get_block(
+impl World<AnvilChunk> for AnvilWorld {
+    type Error = AnvilError;
+
+    fn section_y_range(&self) -> std::ops::RangeInclusive<i8> {
+        self.section_y_range.clone()
+    }
+
+    fn get_chunk(
         &mut self,
-        block_x: i32,
-        block_y: i16,
-        block_z: i32,
-    ) -> Result<Option<Block>, WorldError> {
-        let Some(chunk) =
-            self.get_chunk(block_x / CHUNK_SIZE as i32, block_z / CHUNK_SIZE as i32)?
-        else {
-            return Ok(None);
-        };
-        let block = chunk.get_block(
-            (block_x & (CHUNK_SIZE - 1) as i32) as u8,
-            block_y,
-            (block_z & (CHUNK_SIZE - 1) as i32) as u8,
-        );
-        Ok(Some(block))
-    }
-}
-
-#[derive(Debug)]
-#[allow(unused)]
-pub struct World {
-    root: PathBuf,
-    levels: Vec<Level>,
-}
-
-impl World {
-    pub fn load<P: Into<PathBuf>>(root: P) -> Result<Self, WorldError> {
-        let root = root.into();
-        Ok(Self {
-            root: root.clone(),
-            levels: vec![Level::new("minecraft:overworld".to_owned(), root.clone())],
-        })
-    }
-
-    pub fn get_level(&mut self, identifier: &str) -> Option<&mut Level> {
-        self.levels
-            .iter_mut()
-            .find(|level| level.identifier == identifier)
+        chunk_x: i32,
+        chunk_z: i32,
+    ) -> Result<Option<&AnvilChunk>, Self::Error> {
+        self.get_chunk_inner(chunk_x, chunk_z)
     }
 }
 
@@ -420,19 +393,17 @@ impl World {
 mod test {
     use pkmc_defs::block::BLOCKS_TO_IDS;
 
-    use crate::world::world::World;
+    use crate::world::{anvil::AnvilWorld, World as _};
 
-    use super::WorldError;
+    use super::AnvilError;
 
     #[test]
-    fn test_worldload() -> Result<(), WorldError> {
+    fn test_worldload() -> Result<(), AnvilError> {
         // 1.21.4 debug world
         // https://minecraft.wiki/w/Debug_mode
         const WORLD_PATH: &str = "/home/vulae/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/pkmc/minecraft/saves/debug/";
 
-        let mut world = World::load(WORLD_PATH)?;
-
-        let level = world.get_level("minecraft:overworld").unwrap();
+        let mut world = AnvilWorld::new(WORLD_PATH);
 
         let max_block_id = *BLOCKS_TO_IDS.values().max().unwrap();
 
@@ -454,7 +425,7 @@ mod test {
             let y = 70;
             let z = 1 + grid_x * 2;
 
-            let Some(block) = level.get_block(x, y, z)? else {
+            let Some(block) = world.get_block(x, y, z)? else {
                 panic!("Expected loaded block at {} {} {}", x, y, z);
             };
 

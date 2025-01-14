@@ -12,7 +12,7 @@ use std::{
 use base64::Engine as _;
 use config::Config;
 use pkmc_defs::registry::Registries;
-use pkmc_server::{world::World, ClientHandler};
+use pkmc_server::{world::anvil::AnvilWorld, ClientHandler};
 use pkmc_util::{packet::Connection, IterRetain};
 use player::Player;
 
@@ -21,7 +21,7 @@ pub static REGISTRIES: LazyLock<Registries> =
 
 #[derive(Debug)]
 pub struct ServerState {
-    pub world: Arc<Mutex<World>>,
+    pub world: Arc<Mutex<AnvilWorld>>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         None
     };
 
-    let world = World::load(config.world)?;
+    let world = AnvilWorld::new(config.world, -4..=20);
     let state = Arc::new(RwLock::new(ServerState {
         world: Arc::new(Mutex::new(world)),
     }));

@@ -43,6 +43,10 @@ fn config_default_brand() -> String {
     "Vulae/pkmc".to_owned()
 }
 
+fn config_default_view_distance() -> u8 {
+    12
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     #[serde(default = "config_default_address")]
@@ -56,6 +60,8 @@ pub struct Config {
     #[serde(default, rename = "compression-level")]
     pub compression_level: u32,
     pub world: PathBuf,
+    #[serde(default = "config_default_view_distance", rename = "view-distance")]
+    pub view_distance: u8,
 }
 
 impl Config {

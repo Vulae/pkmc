@@ -302,17 +302,27 @@ impl Region {
 #[derive(Debug)]
 pub struct AnvilWorld {
     root: PathBuf,
+    identifier: String,
     loaded_regions: HashMap<(i32, i32), Option<Region>>,
     section_y_range: std::ops::RangeInclusive<i8>,
 }
 
 impl AnvilWorld {
-    pub fn new<P: Into<PathBuf>>(root: P, section_y_range: std::ops::RangeInclusive<i8>) -> Self {
+    pub fn new<P: Into<PathBuf>>(
+        root: P,
+        identifier: &str,
+        section_y_range: std::ops::RangeInclusive<i8>,
+    ) -> Self {
         Self {
             root: root.into(),
+            identifier: identifier.to_owned(),
             loaded_regions: HashMap::new(),
             section_y_range,
         }
+    }
+
+    pub fn identifier(&self) -> &str {
+        &self.identifier
     }
 
     fn load_region(&self, region_x: i32, region_z: i32) -> Result<Option<Region>, AnvilError> {

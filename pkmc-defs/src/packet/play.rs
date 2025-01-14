@@ -86,6 +86,7 @@ impl ClientboundPacket for Disconnect {
 
 #[derive(Debug)]
 pub enum GameEvent {
+    ChangeGamemode(u8),
     StartWaitingForLevelChunks,
 }
 
@@ -94,6 +95,10 @@ impl ClientboundPacket for GameEvent {
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         match self {
+            GameEvent::ChangeGamemode(gamemode) => {
+                writer.write_all(&3u8.to_be_bytes())?;
+                writer.write_all(&(*gamemode as f32).to_be_bytes())?;
+            }
             GameEvent::StartWaitingForLevelChunks => {
                 writer.write_all(&13u8.to_be_bytes())?;
                 writer.write_all(&0.0f32.to_be_bytes())?;
@@ -683,6 +688,33 @@ impl ClientboundPacket for ServerLinks {
     }
 }
 
+#[derive(Debug)]
+pub struct SetCarriedItem(pub u16);
+
+impl ServerboundPacket for SetCarriedItem {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_SET_CARRIED_ITEM;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self(u16::from_be_bytes(reader.read_const()?)))
+    }
+}
+
+#[derive(Debug)]
+pub struct SetChunkChacheRadius(pub i32);
+
+impl ClientboundPacket for SetChunkChacheRadius {
+    const CLIENTBOUND_ID: i32 =
+        generated::packet::play::CLIENTBOUND_MINECRAFT_SET_CHUNK_CACHE_RADIUS;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.0)?;
+        Ok(())
+    }
+}
+
 serverbound_packet_enum!(pub PlayPacket;
     KeepAlive, KeepAlive;
     PlayerLoaded, PlayerLoaded;
@@ -695,4 +727,5 @@ serverbound_packet_enum!(pub PlayPacket;
     PlayerInput, PlayerInput;
     PlayerAbilities_Serverbound, PlayerAbilities;
     PlayerCommand, PlayerCommand;
+    SetCarriedItem, SetHeldItem;
 );

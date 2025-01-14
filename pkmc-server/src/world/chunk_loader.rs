@@ -23,7 +23,7 @@ impl ChunkPosition {
 #[derive(Debug)]
 pub struct ChunkLoader {
     center: Option<ChunkPosition>,
-    pub radius: i32,
+    radius: i32,
     to_load: HashSet<ChunkPosition>,
     loaded: HashSet<ChunkPosition>,
     to_unload: Vec<ChunkPosition>,
@@ -55,17 +55,11 @@ impl ChunkLoader {
             .filter(move |chunk| center.distance(chunk) < radius as f32)
     }
 
-    /// Returns if updated center is new.
-    pub fn update_center(&mut self, center: Option<ChunkPosition>) -> bool {
-        if center == self.center {
-            return false;
-        }
-        self.center = center;
-
-        let Some(center) = center else {
+    fn force_update(&mut self) {
+        let Some(center) = self.center else {
             self.to_load.clear();
             self.to_unload.append(&mut self.loaded.drain().collect());
-            return true;
+            return;
         };
 
         self.to_load
@@ -81,8 +75,21 @@ impl ChunkLoader {
             }
             self.to_load.insert(chunk);
         });
+    }
 
+    /// Returns if updated center is new.
+    pub fn update_center(&mut self, center: Option<ChunkPosition>) -> bool {
+        if center == self.center {
+            return false;
+        }
+        self.center = center;
+        self.force_update();
         true
+    }
+
+    pub fn update_radius(&mut self, radius: i32) {
+        self.radius = radius;
+        self.force_update();
     }
 
     pub fn next_to_load(&mut self) -> Option<ChunkPosition> {

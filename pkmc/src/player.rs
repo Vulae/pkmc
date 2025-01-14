@@ -1,5 +1,3 @@
-use std::sync::{Arc, RwLock};
-
 use pkmc_defs::{packet, text_component::TextComponent};
 use pkmc_server::world::{
     anvil::AnvilError,
@@ -7,7 +5,7 @@ use pkmc_server::world::{
     World as _,
 };
 use pkmc_util::{
-    packet::{Connection, ConnectionError},
+    packet::{ClientboundPacket, Connection, ConnectionError},
     UUID,
 };
 use rand::Rng as _;
@@ -16,11 +14,6 @@ use thiserror::Error;
 use crate::{ServerState, REGISTRIES};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
-
-// NOTE: Temporary stuff for testing
-const PLAYER_DIMENSION: &str = "minecraft:overworld";
-const PLAYER_DIMENSION_SECTIONS: usize = 24;
-const VIEW_DISTANCE: i32 = 32;
 
 #[derive(Error, Debug)]
 pub enum PlayerError {
@@ -39,7 +32,7 @@ pub enum PlayerError {
 #[derive(Debug)]
 pub struct Player {
     connection: Connection,
-    server_state: Arc<RwLock<ServerState>>,
+    server_state: ServerState,
     name: String,
     uuid: UUID,
     keepalive_time: std::time::Instant,
@@ -47,15 +40,18 @@ pub struct Player {
     x: f64,
     y: f64,
     z: f64,
+    fly_speed: f32,
+    slot: u16,
     chunk_loader: ChunkLoader,
 }
 
 impl Player {
     pub fn new(
         connection: Connection,
-        server_state: Arc<RwLock<ServerState>>,
+        server_state: ServerState,
         uuid: UUID,
         name: String,
+        view_distance: u8,
     ) -> Result<Self, PlayerError> {
         let mut player = Self {
             connection,
@@ -67,8 +63,18 @@ impl Player {
             x: 0.0,
             y: 0.0,
             z: 0.0,
-            chunk_loader: ChunkLoader::new(VIEW_DISTANCE),
+            fly_speed: 0.1,
+            slot: 0,
+            chunk_loader: ChunkLoader::new(view_distance as i32),
         };
+
+        let dimension = player
+            .server_state
+            .world
+            .lock()
+            .unwrap()
+            .identifier()
+            .to_owned();
 
         player.connection.send(packet::play::Login {
             entity_id: 0,
@@ -80,7 +86,7 @@ impl Player {
                 .cloned()
                 .collect(),
             max_players: 42069,
-            view_distance: player.chunk_loader.radius,
+            view_distance: view_distance as i32,
             simulation_distance: 6,
             reduced_debug_info: false,
             enable_respawn_screen: true,
@@ -90,12 +96,12 @@ impl Player {
                 .unwrap()
                 .keys()
                 .enumerate()
-                .find(|(_, v)| *v == PLAYER_DIMENSION)
+                .find(|(_, v)| *v == &dimension)
                 .unwrap()
                 .0 as i32,
-            dimension_name: PLAYER_DIMENSION.to_owned(),
+            dimension_name: dimension,
             hashed_seed: 0,
-            game_mode: 1,
+            game_mode: 3,
             previous_game_mode: -1,
             is_debug: false,
             is_flat: false,
@@ -124,14 +130,6 @@ impl Player {
             .connection
             .send(packet::play::GameEvent::StartWaitingForLevelChunks)?;
 
-        player
-            .connection
-            .send(packet::play::PlayerAbilities_Clientbound {
-                flags: 0x01 | 0x02 | 0x04 | 0x08,
-                flying_speed: 0.5,
-                field_of_view_modifier: 0.1,
-            })?;
-
         player.connection.send(packet::play::PlayerPosition {
             x: 0.0,
             y: 128.0,
@@ -155,6 +153,13 @@ impl Player {
 
     pub fn uuid(&self) -> &UUID {
         &self.uuid
+    }
+
+    pub fn set_view_distance(&mut self, view_distance: u8) -> Result<(), PlayerError> {
+        self.chunk_loader.update_radius(view_distance as i32);
+        self.connection
+            .send(packet::play::SetChunkChacheRadius(view_distance as i32))?;
+        Ok(())
     }
 
     pub fn kick<T: Into<TextComponent>>(&mut self, text: T) -> Result<(), PlayerError> {
@@ -213,6 +218,29 @@ impl Player {
                 packet::play::PlayPacket::PlayerInput(_player_input) => {}
                 packet::play::PlayPacket::PlayerAbilities(_player_abilities) => {}
                 packet::play::PlayPacket::PlayerCommand(_player_command) => {}
+                packet::play::PlayPacket::SetHeldItem(set_held_item) => {
+                    let new_slot = set_held_item.0;
+                    let mut distance = new_slot as i16 - self.slot as i16;
+                    if distance.abs() > 5 {
+                        distance = if distance > 0 {
+                            distance - 9
+                        } else {
+                            distance + 9
+                        }
+                    }
+                    match distance {
+                        0 => {}
+                        ..0 => self.fly_speed *= 1.2,
+                        1.. => self.fly_speed /= 1.2,
+                    }
+                    self.connection
+                        .send(packet::play::PlayerAbilities_Clientbound {
+                            flags: 0x01 | 0x02 | 0x04,
+                            flying_speed: self.fly_speed,
+                            field_of_view_modifier: 0.1,
+                        })?;
+                    self.slot = new_slot;
+                }
             }
         }
 
@@ -231,8 +259,7 @@ impl Player {
             })?;
         }
 
-        let server_state = self.server_state.read().unwrap();
-        let mut world = server_state.world.lock().unwrap();
+        let mut world = self.server_state.world.lock().unwrap();
         if let Some(to_load) = self.chunk_loader.next_to_load() {
             if let Some(packet) = world.get_chunk_as_packet(to_load.chunk_x, to_load.chunk_z)? {
                 self.connection.send(packet)?;
@@ -241,7 +268,7 @@ impl Player {
                     .send(packet::play::LevelChunkWithLight::generate_test(
                         to_load.chunk_x,
                         to_load.chunk_z,
-                        PLAYER_DIMENSION_SECTIONS,
+                        world.section_y_range().count(),
                     )?)?;
             }
         }

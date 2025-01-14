@@ -19,7 +19,7 @@ use player::Player;
 pub static REGISTRIES: LazyLock<Registries> =
     LazyLock::new(|| serde_json::from_str(include_str!("./registry.json")).unwrap());
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServerState {
     pub world: Arc<Mutex<AnvilWorld>>,
 }
@@ -45,10 +45,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         None
     };
 
-    let world = AnvilWorld::new(config.world, -4..=20);
-    let state = Arc::new(RwLock::new(ServerState {
+    let world = AnvilWorld::new(config.world, "minecraft:overworld", -4..=20);
+    let state = ServerState {
         world: Arc::new(Mutex::new(world)),
-    }));
+    };
 
     let listener = TcpListener::bind(config.address)?;
     listener.set_nonblocking(true)?;
@@ -83,11 +83,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             .into_iter()
             .flat_map(|player| player.finalized_play_state())
             .try_for_each(|player| {
-                let player = Player::new(
+                let mut player = Player::new(
                     player.connection,
                     state.clone(),
                     player.player_id,
                     player.player_name,
+                    config.view_distance,
                 )?;
                 println!("{} Connected", player.name());
                 players.push(player);

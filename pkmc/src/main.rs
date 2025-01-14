@@ -50,8 +50,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         world: Arc::new(Mutex::new(world)),
     }));
 
-    let listener = TcpListener::bind("[::1]:52817")?;
+    let listener = TcpListener::bind(config.address)?;
     listener.set_nonblocking(true)?;
+
+    println!("Server started on {}", listener.local_addr()?);
 
     let mut clients: Vec<ClientHandler> = Vec::new();
     let mut players: Vec<Player> = Vec::new();
@@ -62,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         while let Ok((stream, _)) = listener.accept() {
             let connection = Connection::new(stream)?;
             let mut client = ClientHandler::new(connection)
-                .with_brand("vulae/pkmc")
+                .with_brand(&config.brand)
                 .with_compression(config.compression_threshold, config.compression_level)
                 .with_registies(REGISTRIES.clone());
             if let Some(status_description) = &config.server_list.text {

@@ -364,7 +364,6 @@ impl AnvilWorld {
         chunk_x: i32,
         chunk_z: i32,
     ) -> Result<Option<&AnvilChunk>, AnvilError> {
-        // FIXME: Use the const!
         let Some(region) = self.get_or_load_region(
             chunk_x.div_euclid(REGION_SIZE as i32),
             chunk_z.div_euclid(REGION_SIZE as i32),
@@ -408,12 +407,16 @@ mod test {
     use super::AnvilError;
 
     #[test]
-    fn test_worldload() -> Result<(), AnvilError> {
+    fn test_debug_mode_world() -> Result<(), AnvilError> {
         // 1.21.4 debug world
         // https://minecraft.wiki/w/Debug_mode
-        const WORLD_PATH: &str = "/home/vulae/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/pkmc/minecraft/saves/debug/";
+        const WORLD_PATH: &str = "./src/world/anvil-test-server/world/";
+        println!(
+            "Testing debug world: {:?}",
+            std::fs::canonicalize(WORLD_PATH)?
+        );
 
-        let mut world = AnvilWorld::new(WORLD_PATH);
+        let mut world = AnvilWorld::new(WORLD_PATH, "minecraft:overworld", -4..=20);
 
         let max_block_id = *BLOCKS_TO_IDS.values().max().unwrap();
 

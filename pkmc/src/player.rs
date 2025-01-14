@@ -40,6 +40,7 @@ pub struct Player {
     x: f64,
     y: f64,
     z: f64,
+    is_flying: bool,
     fly_speed: f32,
     slot: u16,
     chunk_loader: ChunkLoader,
@@ -63,6 +64,7 @@ impl Player {
             x: 0.0,
             y: 0.0,
             z: 0.0,
+            is_flying: true,
             fly_speed: 0.1,
             slot: 0,
             chunk_loader: ChunkLoader::new(view_distance as i32),
@@ -101,7 +103,7 @@ impl Player {
                 .0 as i32,
             dimension_name: dimension,
             hashed_seed: 0,
-            game_mode: 3,
+            game_mode: 1,
             previous_game_mode: -1,
             is_debug: false,
             is_flat: false,
@@ -137,6 +139,8 @@ impl Player {
             ..Default::default()
         })?;
 
+        player.update_flyspeed()?;
+
         player
             .connection
             .send(packet::play::SetActionBarText(TextComponent::rainbow(
@@ -171,6 +175,16 @@ impl Player {
 
     pub fn is_closed(&self) -> bool {
         self.connection.is_closed()
+    }
+
+    fn update_flyspeed(&mut self) -> Result<(), PlayerError> {
+        self.connection
+            .send(packet::play::PlayerAbilities_Clientbound {
+                flags: 0x01 | if self.is_flying { 0x02 } else { 0 } | 0x04,
+                flying_speed: self.fly_speed,
+                field_of_view_modifier: 0.1,
+            })?;
+        Ok(())
     }
 
     pub fn update(&mut self) -> Result<(), PlayerError> {
@@ -216,7 +230,9 @@ impl Player {
                 packet::play::PlayPacket::MovePlayerStatusOnly(_move_player_status_only) => {}
                 packet::play::PlayPacket::ClientTickEnd(_client_tick_end) => {}
                 packet::play::PlayPacket::PlayerInput(_player_input) => {}
-                packet::play::PlayPacket::PlayerAbilities(_player_abilities) => {}
+                packet::play::PlayPacket::PlayerAbilities(player_abilities) => {
+                    self.is_flying = (player_abilities.flags & 0x02 != 0);
+                }
                 packet::play::PlayPacket::PlayerCommand(_player_command) => {}
                 packet::play::PlayPacket::SetHeldItem(set_held_item) => {
                     let new_slot = set_held_item.0;
@@ -233,12 +249,7 @@ impl Player {
                         ..0 => self.fly_speed *= 1.2,
                         1.. => self.fly_speed /= 1.2,
                     }
-                    self.connection
-                        .send(packet::play::PlayerAbilities_Clientbound {
-                            flags: 0x01 | 0x02 | 0x04,
-                            flying_speed: self.fly_speed,
-                            field_of_view_modifier: 0.1,
-                        })?;
+                    self.update_flyspeed()?;
                     self.slot = new_slot;
                 }
             }

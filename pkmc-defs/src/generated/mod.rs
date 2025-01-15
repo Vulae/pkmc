@@ -26,21 +26,34 @@ pub struct DataBlockState {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct DataBlockDefinition {
+    pub r#type: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct DataBlock {
-    #[serde(default)]
-    pub definition: HashMap<String, serde_json::Value>,
+    pub definition: DataBlockDefinition,
     #[serde(default)]
     pub properties: HashMap<String, Vec<String>>,
     pub states: Vec<DataBlockState>,
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RegistriesIDs {
+    pub protocol_id: i32,
+    pub default: Option<String>,
+    pub entries: HashMap<String, i32>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Data {
     pub block: HashMap<String, DataBlock>,
+    pub registries: HashMap<String, RegistriesIDs>,
 }
 
 impl Data {
     pub fn load() -> Result<Self, std::io::Error> {
+        // TODO: Compress this to half the binary size.
         Ok(serde_json::from_str(include_str!("./generated.json"))?)
     }
 }

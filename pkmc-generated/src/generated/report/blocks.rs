@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -17,18 +17,22 @@ pub struct GeneratedReportBlocksBlockState {
     #[serde(default)]
     pub default: bool,
     pub id: i32,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(default)]
-    pub properties: HashMap<String, String>,
+    pub properties: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct GeneratedReportBlocksBlockDefinition {
+    pub r#type: String,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct GeneratedReportBlocksBlock {
-    #[serde(skip_serializing)]
-    pub definition: HashMap<String, serde_json::Value>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub definition: GeneratedReportBlocksBlockDefinition,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(default)]
-    pub properties: HashMap<String, Vec<String>>,
+    pub properties: BTreeMap<String, Vec<String>>,
     pub states: Vec<GeneratedReportBlocksBlockState>,
 }
 

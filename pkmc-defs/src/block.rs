@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::LazyLock};
 
-use pkmc_util::IdTable;
+use pkmc_util::{nbt::NBT, IdTable};
 use serde::{Deserialize, Serialize};
 
 use crate::generated::{generated, DATA};
@@ -101,6 +101,37 @@ impl Default for Block {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockEntity {
+    pub block: Block,
+    pub r#type: String,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub data: NBT,
+}
+
+impl BlockEntity {
+    pub fn new<T: ToString>(block: Block, r#type: T, x: i32, y: i32, z: i32, data: NBT) -> Self {
+        Self {
+            block,
+            r#type: r#type.to_string(),
+            x,
+            y,
+            z,
+            data,
+        }
+    }
+
+    pub fn into_block(self) -> Block {
+        self.block
+    }
+
+    pub fn block_entity_id(&self) -> Option<i32> {
+        BLOCK_ENTITIES_TO_IDS.get(&self.r#type).copied()
+    }
+}
+
 pub static BLOCKS_TO_IDS: LazyLock<IdTable<Block>> = LazyLock::new(|| {
     let mut blocks_to_ids = IdTable::new();
     DATA.block.iter().for_each(|(name, block)| {
@@ -112,6 +143,15 @@ pub static BLOCKS_TO_IDS: LazyLock<IdTable<Block>> = LazyLock::new(|| {
         });
     });
     blocks_to_ids
+});
+
+pub static BLOCK_ENTITIES_TO_IDS: LazyLock<IdTable<String>> = LazyLock::new(|| {
+    let registry = DATA.registries.get("minecraft:block_entity_type").unwrap();
+    let mut blocks_entities_to_ids = IdTable::new();
+    registry.entries.iter().for_each(|(name, id)| {
+        blocks_entities_to_ids.insert(name.to_owned(), *id);
+    });
+    blocks_entities_to_ids
 });
 
 #[cfg(test)]

@@ -8,7 +8,7 @@ compression-threshold = 64
 compression-level = 0
 # NOTE: Compression is very buggy, See pkmc_util::connection::ZLibHandler
 
-# world = "/home/vulae/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/pkmc/minecraft/saves/pkmc/"
+# world = "/home/vulae/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/Fabulously Optimized 1.21.4/.minecraft/saves/pkmc/"
 # NOTE: If you are loading an old world (<=1.19), you will want to optimize it first, or it will not load.
 # Worlds > Edit World > Optimize World > Confirm (And wait (-.-)...Zzz)
 # If it is a massive world you're optimizing, it's very likely you'll want to create a tmpfs directory for that folder.

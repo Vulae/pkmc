@@ -2,7 +2,7 @@ use pkmc_defs::{packet, text_component::TextComponent};
 use pkmc_server::world::{
     anvil::AnvilError,
     chunk_loader::{ChunkLoader, ChunkPosition},
-    World as _,
+    World,
 };
 use pkmc_util::{
     packet::{ClientboundPacket, Connection, ConnectionError},
@@ -272,6 +272,10 @@ impl Player {
 
         let mut world = self.server_state.world.lock().unwrap();
         if let Some(to_load) = self.chunk_loader.next_to_load() {
+            //if to_load.chunk_x == 0 && to_load.chunk_z == 0 {
+            //    let chunk = world.get_chunk(to_load.chunk_x, to_load.chunk_z)?.unwrap();
+            //    println!("{:#?}", chunk);
+            //}
             if let Some(packet) = world.get_chunk_as_packet(to_load.chunk_x, to_load.chunk_z)? {
                 self.connection.send(packet)?;
             } else {

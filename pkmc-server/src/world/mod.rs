@@ -1,7 +1,7 @@
 use std::io::Write as _;
 
 use pkmc_defs::{
-    block::Block,
+    block::{Block, BlockEntity},
     generated::{
         generated, PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT,
         PALETTED_DATA_BLOCKS_DIRECT, PALETTED_DATA_BLOCKS_INDIRECT,
@@ -36,6 +36,8 @@ pub trait Chunk {
                 .map(|inner| inner.try_into().unwrap())
         })
     }
+
+    fn block_entities(&self) -> &[BlockEntity];
 }
 
 pub trait World<C: Chunk> {
@@ -89,8 +91,17 @@ pub trait World<C: Chunk> {
 
                     writer.into_boxed_slice()
                 },
-                // TODO: Block entities
-                block_entities: Vec::new(),
+                block_entities: chunk
+                    .block_entities()
+                    .iter()
+                    .map(|b| packet::play::BlockEntity {
+                        x: b.x.rem_euclid(CHUNK_SIZE as i32) as u8,
+                        z: b.z.rem_euclid(CHUNK_SIZE as i32) as u8,
+                        y: b.y as i16,
+                        r#type: b.block_entity_id().unwrap(),
+                        data: b.data.clone(),
+                    })
+                    .collect(),
             },
             // TODO: Light data
             light_data: packet::play::LevelLightData::full_dark(self.section_y_range().count()),

@@ -1,5 +1,6 @@
 pub mod blocks;
 pub mod packets;
+pub mod registries;
 
 use std::path::Path;
 

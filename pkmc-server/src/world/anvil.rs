@@ -1,6 +1,9 @@
 use std::{collections::HashMap, fs::File, io::Seek, path::PathBuf};
 
-use pkmc_defs::{block::Block, generated::PALETTED_DATA_BLOCKS_INDIRECT};
+use pkmc_defs::{
+    block::{Block, BlockEntity},
+    generated::PALETTED_DATA_BLOCKS_INDIRECT,
+};
 use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
     PackedArray, ReadExt, Transmutable,
@@ -10,7 +13,7 @@ use thiserror::Error;
 
 use crate::world::SECTION_SIZE;
 
-use super::{Chunk, World, SECTION_BLOCKS};
+use super::{Chunk, World, CHUNK_SIZE, SECTION_BLOCKS};
 
 pub const REGION_SIZE: usize = 32;
 pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
@@ -39,6 +42,8 @@ struct ChunkSectionBlockStates {
     data: Option<Box<[i64]>>,
     #[serde(skip, default)]
     palette_ids: Box<[i32]>,
+    #[serde(skip, default)]
+    palette_bits_size: u8,
 }
 
 impl ChunkSectionBlockStates {
@@ -54,6 +59,14 @@ impl ChunkSectionBlockStates {
                 })
             })
             .collect();
+        self.palette_bits_size = match self.palette.len() {
+            0 => unreachable!(),
+            1 => 0,
+            palette_count => PackedArray::bits_per_entry(palette_count as u64 - 1).clamp(
+                *PALETTED_DATA_BLOCKS_INDIRECT.start() as u8,
+                *PALETTED_DATA_BLOCKS_INDIRECT.end() as u8,
+            ),
+        };
     }
 
     #[inline(always)]
@@ -62,13 +75,10 @@ impl ChunkSectionBlockStates {
         match self.palette.len() {
             0 => unreachable!(),
             1 => 0,
-            palette_count => {
+            _ => {
                 let packed_indices = PackedArray::from_inner(
                     self.data.as_ref().unwrap().as_ref().transmute(),
-                    PackedArray::bits_per_entry(palette_count as u64 - 1).clamp(
-                        *PALETTED_DATA_BLOCKS_INDIRECT.start() as u8,
-                        *PALETTED_DATA_BLOCKS_INDIRECT.end() as u8,
-                    ),
+                    self.palette_bits_size,
                     SECTION_BLOCKS,
                 );
                 packed_indices.get_unchecked(index) as usize
@@ -135,6 +145,19 @@ impl ChunkSection {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+struct AnvilBlockEntity {
+    id: String,
+    #[allow(unused)]
+    #[serde(rename = "keepPacked")]
+    keep_packed: bool,
+    x: i32,
+    y: i32,
+    z: i32,
+    #[serde(flatten)]
+    data: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct AnvilChunk {
     //#[serde(rename = "DataVersion")]
     //data_version: i32,
@@ -149,15 +172,39 @@ pub struct AnvilChunk {
     //#[serde(rename = "LastUpdate")]
     //last_update: i64,
     sections: Vec<ChunkSection>,
+    block_entities: Vec<AnvilBlockEntity>,
+    #[serde(skip, default)]
+    parsed_block_entities: Vec<BlockEntity>,
 }
 
 impl AnvilChunk {
     fn initialize(&mut self) {
         // Sometimes sections are unsorted.
         self.sections.sort_by(|a, b| a.y.cmp(&b.y));
+
         self.sections
             .iter_mut()
             .for_each(|section| section.initialize());
+
+        self.parsed_block_entities = self
+            .block_entities
+            .iter()
+            .map(|b| {
+                BlockEntity::new(
+                    self.get_block(
+                        b.x.rem_euclid(CHUNK_SIZE as i32) as u8,
+                        b.y as i16,
+                        b.z.rem_euclid(CHUNK_SIZE as i32) as u8,
+                    )
+                    .unwrap(),
+                    b.id.clone(),
+                    b.x,
+                    b.y,
+                    b.z,
+                    NBT::try_from(serde_json::Value::from_iter(b.data.clone())).unwrap(),
+                )
+            })
+            .collect();
     }
 
     fn get_section(&self, section_y: i8) -> Option<&ChunkSection> {
@@ -192,6 +239,10 @@ impl Chunk for AnvilChunk {
                 .as_ref()?
                 .blocks_ids(),
         )
+    }
+
+    fn block_entities(&self) -> &[pkmc_defs::block::BlockEntity] {
+        &self.parsed_block_entities
     }
 }
 

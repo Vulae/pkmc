@@ -375,13 +375,14 @@ impl LevelChunkData {
         writer.write_all(&self.data)?;
         writer.write_varint(self.block_entities.len() as i32)?;
         for block_entity in self.block_entities.iter() {
-            writer.write_all(
-                &(((block_entity.x & 0x0F) << 4) | (block_entity.z & 0x0F)).to_ne_bytes(),
-            )?;
+            debug_assert!(block_entity.x <= 15);
+            debug_assert!(block_entity.z <= 15);
+            writer.write_all(&((block_entity.x << 4) | block_entity.z).to_be_bytes())?;
             writer.write_all(&block_entity.y.to_be_bytes())?;
             writer.write_varint(block_entity.r#type)?;
             writer.write_nbt(&block_entity.data)?;
         }
+        //println!("{:#?}", self.block_entities);
         Ok(())
     }
 }

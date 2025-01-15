@@ -1,7 +1,10 @@
 use std::{collections::BTreeMap, io::Read, path::Path};
 
 use generated::{
-    report::{blocks::GeneratedReportBlocks, packets::GeneratedReportPackets, GeneratedReport},
+    report::{
+        blocks::GeneratedReportBlocks, packets::GeneratedReportPackets,
+        registries::GeneratedReportRegistries, GeneratedReport,
+    },
     GeneratedRegistry,
 };
 use itertools::Itertools;
@@ -117,6 +120,11 @@ pub fn generate_generated_code<P1: AsRef<Path>, P2: AsRef<Path>, P3: AsRef<Path>
         &mut generated_report_json,
     )?;
     generate_report::<GeneratedReportBlocks>(
+        &registry,
+        &mut generated_code,
+        &mut generated_report_json,
+    )?;
+    generate_report::<GeneratedReportRegistries>(
         &registry,
         &mut generated_code,
         &mut generated_report_json,

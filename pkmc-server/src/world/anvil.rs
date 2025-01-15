@@ -148,7 +148,7 @@ impl ChunkSection {
 struct AnvilBlockEntity {
     id: String,
     #[allow(unused)]
-    #[serde(rename = "keepPacked")]
+    #[serde(rename = "keepPacked", default)]
     keep_packed: bool,
     x: i32,
     y: i32,

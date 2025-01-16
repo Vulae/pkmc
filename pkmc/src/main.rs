@@ -25,7 +25,7 @@ pub struct ServerState {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let config = Config::load("pkmc.toml")?;
+    let config = Config::load(&["pkmc.toml", "pkmc/pkmc.toml"])?;
 
     let config_favicon = if let Some(icon_path) = config.server_list.icon {
         let img = image::open(icon_path)?;

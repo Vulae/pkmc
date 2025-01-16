@@ -35,10 +35,6 @@ pub struct ConfigServerList {
     pub icon_filtering_method: ConfigImageFilteringMethod,
 }
 
-fn config_default_address() -> String {
-    "127.0.0.1:25565".to_owned()
-}
-
 fn config_default_brand() -> String {
     "Vulae/pkmc".to_owned()
 }
@@ -49,7 +45,6 @@ fn config_default_view_distance() -> u8 {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    #[serde(default = "config_default_address")]
     pub address: String,
     #[serde(default = "config_default_brand")]
     pub brand: String,
@@ -65,7 +60,15 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Config, Box<dyn Error>> {
-        Ok(toml::from_str(&std::fs::read_to_string(path)?)?)
+    /// First file that is found is loaded as config.
+    pub fn load<P: AsRef<Path>>(paths: &[P]) -> Result<Config, Box<dyn Error>> {
+        for path in paths {
+            match std::fs::read_to_string(path) {
+                Ok(str) => return Ok(toml::from_str(&str)?),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(Box::new(err)),
+            }
+        }
+        Err("Could not find config file.".into())
     }
 }

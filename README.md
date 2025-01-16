@@ -1,7 +1,5 @@
 # [pkmc](https://github.com/Vulae/pkmc)
 
-Yet another Rust Minecraft server implementation.
-
 A bunch of stuff to build a Minecraft server.
 See [pkmc](./pkmc/) for example server.
 
@@ -17,25 +15,25 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 2. Start the server `cargo run --release`
 3. Join the server (Default IP is `[::1]:52817`)
 
-[pkmc.toml](./pkmc.toml) to configure.
+[pkmc/pkmc.toml](./pkmc/pkmc.toml) to configure.
 
 ## [Features](#features)
 
-| Feature               | Implemented | Comment                   |
-| --------------------- | ----------- | ------------------------- |
-| Server List Ping      | ✅          |                           |
-| World Loading         | ✅          | (Single-threaded)         |
-| World Editing         | ❌          |                           |
-| World Saving          | ❌          | (Probably never)          |
-| Dimensions/Multiworld | ❌          |                           |
-| Entities              | ❌          |                           |
-| Inventories           | ❌          |                           |
-| Resource Pack         | ❌          |                           |
-| Online Mode           | ❌          |                           |
-| Packet Compression    | ✅          |                           |
-| Players & Chat        | ❌          |                           |
-| Commands Definitions  | ❌          |                           |
-| Cookies 🍪            | ❌          |                           |
+| Feature               | Implemented | Comment           |
+| --------------------- | ----------- | ----------------- |
+| Server List Ping      | ✅          |                   |
+| World Loading         | ✅          | (Single-threaded) |
+| World Editing         | ❌          |                   |
+| World Saving          | ❌          | (Probably never)  |
+| Dimensions/Multiworld | ❌          |                   |
+| Entities              | ❌          |                   |
+| Inventories           | ❌          |                   |
+| Resource Pack         | ❌          |                   |
+| Online Mode           | ❌          |                   |
+| Packet Compression    | ✅          |                   |
+| Players & Chat        | ❌          |                   |
+| Commands Definitions  | ❌          |                   |
+| Cookies 🍪            | ❌          |                   |
 
 Some extra features may be implemented inside the example server.
 

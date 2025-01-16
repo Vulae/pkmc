@@ -27,14 +27,13 @@ pub struct ServerState {
 fn main() -> Result<(), Box<dyn Error>> {
     let config = Config::load(&["pkmc.toml", "pkmc/pkmc.toml"])?;
 
-    let config_favicon = if let Some(icon_path) = config.server_list.icon {
+    let config_favicon = if let Some(icon_path) = config.motd_icon {
         let img = image::open(icon_path)?;
         let img_resized = img.resize_exact(
             64,
             64,
             config
-                .server_list
-                .icon_filtering_method
+                .motd_icon_filtering_method
                 .to_image_rs_filtering_method(),
         );
         let mut png = std::io::Cursor::new(Vec::new());
@@ -67,7 +66,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .with_brand(&config.brand)
                 .with_compression(config.compression_threshold, config.compression_level)
                 .with_registies(REGISTRIES.clone());
-            if let Some(status_description) = &config.server_list.text {
+            if let Some(status_description) = &config.motd_text {
                 client = client.with_status_description(status_description);
             }
             if let Some(status_favicon) = &config_favicon {

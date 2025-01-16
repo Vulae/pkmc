@@ -16,12 +16,11 @@ world = "/home/vulae/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher
 
 view-distance = 32
 
-[server-list]
-text = "https://github.com/Vulae/pkmc"
+motd-text = "https://github.com/Vulae/pkmc"
 # FIXME: Currently only supports .png format on release build.
 # Please figure out how to build with all formats on release build.
-icon = "server_icon.png"
+# FIXME: Load relative to pkmc.toml file
+motd-icon = "server_icon.png"
 # Icon filtering method to downscale/upscale image to 64x64 pixels.
 # Possible values: Nearest, Triangle, CatmullRom, Gaussian, Lanczos3 (Default)
-icon-filtering-method = "Nearest"
-
+motd-icon-filtering-method = "Nearest"

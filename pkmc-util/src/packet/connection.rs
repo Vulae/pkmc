@@ -46,14 +46,6 @@ impl UncompressedStreamHandler {
     }
 }
 
-// FIXME: For some unknown reason, zlib stream sometimes produces compressed data that is
-// unreadable by Minecraft. Like, when the world is loading it loads fine, then randomly it
-// disconnects with a compression error.
-// It is beyond me to know what the hell is going wrong.
-// But here's just some errors it randomly spits out:
-// io.netty.handler.codec.DecoderException: java.util.zip.DataFormatException: invalid block type
-// io.netty.handler.codec.DecoderException: java.util.zip.DataFormatException: invalid stored block lengths
-// io.netty.handler.codec.DecoderException: java.util.zip.DataFormatException: incorrect header check
 #[derive(Debug)]
 pub struct ZlibStreamHandler {
     threshold: usize,
@@ -74,10 +66,10 @@ impl ZlibStreamHandler {
     }
 
     fn send(&mut self, mut writer: impl Write, packet: &RawPacket) -> Result<(), ConnectionError> {
-        if packet.data.len() < self.threshold {
-            writer.write_varint(
-                varint_size(packet.id) + varint_size(0) + (packet.data.len() as i32),
-            )?;
+        let total_uncompressed_size =
+            varint_size(0) as usize + varint_size(packet.id) as usize + packet.data.len();
+        if total_uncompressed_size < self.threshold {
+            writer.write_varint(total_uncompressed_size as i32)?;
             writer.write_varint(0)?;
             writer.write_varint(packet.id)?;
             writer.write_all(&packet.data)?;

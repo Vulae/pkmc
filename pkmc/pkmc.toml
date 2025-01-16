@@ -6,7 +6,6 @@ brand = "Vulae/pkmc"
 compression-threshold = 64
 # Packet compression level 0..=9 (0 is no compression)
 compression-level = 3
-# NOTE: Compression is very buggy, See pkmc_util::connection::ZLibHandler
 
 # world = "/home/vulae/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/Fabulously Optimized 1.21.4/.minecraft/saves/pkmc/"
 # NOTE: If you are loading an old world (<=1.19), you will want to optimize it first, or it will not load.

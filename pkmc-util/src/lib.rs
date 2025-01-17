@@ -15,3 +15,10 @@ pub use transmutable::*;
 pub use uuid::*;
 
 pub type IdTable<T> = HashMap<T, i32>;
+
+pub fn normalize_identifier(identifier: &str, default_namespace: &str) -> String {
+    if identifier.contains(":") {
+        return identifier.to_owned();
+    }
+    format!("{}:{}", default_namespace, identifier)
+}

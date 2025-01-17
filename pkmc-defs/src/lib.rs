@@ -1,3 +1,4 @@
+pub mod biome;
 pub mod block;
 pub mod generated;
 pub mod packet;

@@ -389,39 +389,62 @@ impl LevelChunkData {
 
 #[derive(Debug)]
 pub struct LevelLightData {
-    pub sky_light_mask: BitSet,
-    pub block_light_mask: BitSet,
-    pub empty_sky_light_mask: BitSet,
-    pub empty_block_light_mask: BitSet,
-    pub sky_lights_arrays: Box<[[u8; 2048]]>,
-    pub block_lights_arrays: Box<[[u8; 2048]]>,
+    pub num_sections: usize,
+    pub sky_lights_arrays: Box<[Option<[u8; 2048]>]>,
+    pub block_lights_arrays: Box<[Option<[u8; 2048]>]>,
 }
 
 impl LevelLightData {
     pub fn full_dark(num_sections: usize) -> Self {
         Self {
-            sky_light_mask: BitSet::new(num_sections + 2),
-            block_light_mask: BitSet::new(num_sections + 2),
-            empty_sky_light_mask: BitSet::new(num_sections + 2),
-            empty_block_light_mask: BitSet::new(num_sections + 2),
-            sky_lights_arrays: Vec::new().into_boxed_slice(),
-            block_lights_arrays: Vec::new().into_boxed_slice(),
+            num_sections,
+            sky_lights_arrays: vec![None; num_sections + 2].into_boxed_slice(),
+            block_lights_arrays: vec![None; num_sections + 2].into_boxed_slice(),
         }
     }
 
-    pub fn full_bright() -> Self {
-        unimplemented!()
+    pub fn full_bright(num_sections: usize) -> Self {
+        Self {
+            num_sections,
+            sky_lights_arrays: vec![Some([0xFF; 2048]); num_sections + 2].into_boxed_slice(),
+            block_lights_arrays: vec![Some([0xFF; 2048]); num_sections + 2].into_boxed_slice(),
+        }
     }
 
     fn write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        // Skip lighting data for now.
-        // I have absolutely no clue on how the lighting information works right now.
+        assert_eq!(self.sky_lights_arrays.len(), self.num_sections + 2);
+        assert_eq!(self.block_lights_arrays.len(), self.num_sections + 2);
+
+        let mut sky_light_bitset = BitSet::new(self.num_sections + 2);
+        self.sky_lights_arrays
+            .iter()
+            .enumerate()
+            .for_each(|(i, a)| sky_light_bitset.set(i, a.is_some()));
+        writer.write_bitset(&sky_light_bitset)?;
+
+        let mut block_light_bitset = BitSet::new(self.num_sections + 2);
+        self.block_lights_arrays
+            .iter()
+            .enumerate()
+            .for_each(|(i, a)| block_light_bitset.set(i, a.is_some()));
+        writer.write_bitset(&block_light_bitset)?;
+
+        // ?????
         writer.write_varint(0)?;
         writer.write_varint(0)?;
-        writer.write_varint(0)?;
-        writer.write_varint(0)?;
-        writer.write_varint(0)?;
-        writer.write_varint(0)?;
+
+        writer.write_varint(self.sky_lights_arrays.iter().flatten().count() as i32)?;
+        for sky_light_array in self.sky_lights_arrays.iter().flatten() {
+            writer.write_varint(2048)?;
+            writer.write_all(sky_light_array)?;
+        }
+
+        writer.write_varint(self.block_lights_arrays.iter().flatten().count() as i32)?;
+        for block_light_array in self.block_lights_arrays.iter().flatten() {
+            writer.write_varint(2048)?;
+            writer.write_all(block_light_array)?;
+        }
+
         Ok(())
     }
 }

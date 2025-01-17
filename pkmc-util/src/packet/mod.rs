@@ -31,27 +31,39 @@ pub struct Position {
     pub z: i32,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct BitSet {
+    length: usize,
     data: Box<[u64]>,
 }
 
 impl BitSet {
-    pub fn new(num_bits: usize) -> Self {
+    pub fn new(length: usize) -> Self {
         Self {
-            data: vec![0; (num_bits + 63) / 64].into_boxed_slice(),
+            length,
+            data: vec![0; length.div_ceil(64)].into_boxed_slice(),
         }
     }
 
-    pub fn get(&self, index: usize) -> bool {
-        (self.data[index >> 6] & (1 << (index & 0b00111111))) != 0
+    pub fn length(&self) -> usize {
+        self.length
+    }
+
+    pub fn get(&self, index: usize) -> Option<bool> {
+        if index >= self.length {
+            None
+        } else {
+            Some((self.data[index >> 6] & (1 << (index & 0b00111111))) != 0)
+        }
     }
 
     pub fn set(&mut self, index: usize, set: bool) {
-        if set {
-            self.data[index >> 6] |= 1 << (index & 0b00111111);
-        } else {
-            self.data[index >> 6] &= !(1 << (index & 0b00111111));
+        if index < self.length {
+            if set {
+                self.data[index >> 6] |= 1 << (index & 0b00111111);
+            } else {
+                self.data[index >> 6] &= !(1 << (index & 0b00111111));
+            }
         }
     }
 
@@ -59,7 +71,11 @@ impl BitSet {
         self.data.len()
     }
 
-    pub fn longs_iter(&self) -> impl Iterator<Item = &u64> {
-        self.data.iter()
+    pub fn longs_iter(&self) -> impl Iterator<Item = u64> + use<'_> {
+        self.data.iter().cloned()
+    }
+
+    pub fn into_inner(self) -> Box<[u64]> {
+        self.data
     }
 }

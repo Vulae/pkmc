@@ -1,4 +1,4 @@
-use pkmc_defs::{packet, text_component::TextComponent};
+use pkmc_defs::{biome::Biome, packet, text_component::TextComponent};
 use pkmc_server::world::{
     anvil::AnvilError,
     chunk_loader::{ChunkLoader, ChunkPosition},
@@ -6,7 +6,7 @@ use pkmc_server::world::{
 };
 use pkmc_util::{
     packet::{ClientboundPacket, Connection, ConnectionError},
-    UUID,
+    IdTable, UUID,
 };
 use rand::Rng as _;
 use thiserror::Error;
@@ -44,6 +44,7 @@ pub struct Player {
     fly_speed: f32,
     slot: u16,
     chunk_loader: ChunkLoader,
+    biome_mapper: IdTable<Biome>,
 }
 
 impl Player {
@@ -53,6 +54,7 @@ impl Player {
         uuid: UUID,
         name: String,
         view_distance: u8,
+        biome_mapper: IdTable<Biome>,
     ) -> Result<Self, PlayerError> {
         let mut player = Self {
             connection,
@@ -68,6 +70,7 @@ impl Player {
             fly_speed: 0.1,
             slot: 0,
             chunk_loader: ChunkLoader::new(view_distance as i32),
+            biome_mapper,
         };
 
         let dimension = player
@@ -276,7 +279,9 @@ impl Player {
             //    let chunk = world.get_chunk(to_load.chunk_x, to_load.chunk_z)?.unwrap();
             //    println!("{:#?}", chunk);
             //}
-            if let Some(packet) = world.get_chunk_as_packet(to_load.chunk_x, to_load.chunk_z)? {
+            if let Some(packet) =
+                world.get_chunk_as_packet(to_load.chunk_x, to_load.chunk_z, &self.biome_mapper)?
+            {
                 self.connection.send(packet)?;
             } else {
                 self.connection

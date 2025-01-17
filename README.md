@@ -19,21 +19,22 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 
 ## [Features](#features)
 
-| Feature               | Implemented | Comment           |
-| --------------------- | ----------- | ----------------- |
-| Server List Ping      | ✅          |                   |
-| World Loading         | ✅          | (Single-threaded) |
-| World Editing         | ❌          |                   |
-| World Saving          | ❌          | (Probably never)  |
-| Dimensions/Multiworld | ❌          |                   |
-| Entities              | ❌          |                   |
-| Inventories           | ❌          |                   |
-| Resource Pack         | ❌          |                   |
-| Online Mode           | ❌          |                   |
-| Packet Compression    | ✅          |                   |
-| Players & Chat        | ❌          |                   |
-| Commands Definitions  | ❌          |                   |
-| Cookies 🍪            | ❌          |                   |
+| Feature               | Implemented | Comment                                    |
+| --------------------- | ----------- | ------------------------------------------ |
+| Server List Ping      | ✅          |                                            |
+| World Loading         | ✅          | (Single-threaded[^threaded-chunk-loading]) |
+| World Editing         | ❌          |                                            |
+| World Lighting        | ❌          |                                            |
+| World Saving          | ❌          | (Probably never)                           |
+| Dimensions/Multiworld | ❌          |                                            |
+| Entities              | ❌          |                                            |
+| Inventories           | ❌          |                                            |
+| Resource Pack         | ❌          |                                            |
+| Online Mode           | ❌          |                                            |
+| Packet Compression    | ✅          |                                            |
+| Players & Chat        | ❌          |                                            |
+| Commands Definitions  | ❌          |                                            |
+| Cookies 🍪            | ❌          |                                            |
 
 Some extra features may be implemented inside the example server.
 
@@ -50,4 +51,6 @@ Some extra features may be implemented inside the example server.
 [`MIT License`](./LICENSE)
 License is very likely change to MIT-0 or 0BSD in the future, if I feel like it.
 
-<!--## [Notes](#notes)-->
+## [Notes](#notes)
+
+[^threaded-chunk-loading]: Currently only single-threaded for world stuff, but definitely going to be multi-threaded in the future.

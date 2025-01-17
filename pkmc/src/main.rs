@@ -11,9 +11,9 @@ use std::{
 
 use base64::Engine as _;
 use config::Config;
-use pkmc_defs::registry::Registries;
+use pkmc_defs::{biome::Biome, registry::Registries};
 use pkmc_server::{world::anvil::AnvilWorld, ClientHandler};
-use pkmc_util::{packet::Connection, IterRetain};
+use pkmc_util::{normalize_identifier, packet::Connection, IdTable, IterRetain};
 use player::Player;
 
 pub static REGISTRIES: LazyLock<Registries> =
@@ -57,6 +57,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut clients: Vec<ClientHandler> = Vec::new();
     let mut players: Vec<Player> = Vec::new();
 
+    let biome_mapper: IdTable<Biome> = REGISTRIES
+        .get("minecraft:worldgen/biome")
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, (k, _v))| (normalize_identifier(k, "minecraft").into(), i as i32))
+        .collect();
+
     loop {
         std::thread::sleep(std::time::Duration::from_millis(1));
 
@@ -88,6 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     player.player_id,
                     player.player_name,
                     config.view_distance,
+                    biome_mapper.clone(),
                 )?;
                 println!("{} Connected", player.name());
                 players.push(player);

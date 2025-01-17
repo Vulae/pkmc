@@ -1,6 +1,7 @@
 use std::io::Write as _;
 
 use pkmc_defs::{
+    biome::Biome,
     block::{Block, BlockEntity},
     generated::{
         generated, PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT,
@@ -8,7 +9,7 @@ use pkmc_defs::{
     },
     packet,
 };
-use pkmc_util::{nbt_compound, packet::to_paletted_data};
+use pkmc_util::{nbt_compound, packet::to_paletted_data, IdTable};
 
 pub mod anvil;
 pub mod chunk_loader;
@@ -16,6 +17,8 @@ pub mod chunk_loader;
 pub const CHUNK_SIZE: usize = 16;
 pub const SECTION_SIZE: usize = 16;
 pub const SECTION_BLOCKS: usize = 4096;
+pub const SECTION_BIOMES_SIZE: usize = 4;
+pub const SECTION_BIOMES: usize = 64;
 
 pub trait Chunk {
     fn get_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<Block>;
@@ -37,6 +40,52 @@ pub trait Chunk {
         })
     }
 
+    fn get_biome(&self, biome_x: u8, biome_y: i16, biome_z: u8) -> Option<Biome>;
+
+    /// Biomes take up x4 blocks on xyz, So there's only 4x4x4 biomes in each section.
+    fn get_biome_id(
+        &self,
+        biome_x: u8,
+        biome_y: i16,
+        biome_z: u8,
+        mapper: &IdTable<Biome>,
+    ) -> Option<i32> {
+        self.get_biome(biome_x, biome_y, biome_z)
+            .and_then(|b| b.id(&mapper))
+    }
+
+    fn get_section_biomes(&self, section_y: i8) -> Option<[Biome; SECTION_BIOMES]>;
+
+    fn get_section_biomes_ids(
+        &self,
+        section_y: i8,
+        mapper: &IdTable<Biome>,
+    ) -> Option<[i32; SECTION_BIOMES]> {
+        self.get_section_biomes(section_y).and_then(|biomes| {
+            biomes
+                .iter()
+                .map(|biome| biome.id(&mapper))
+                .collect::<Option<Vec<_>>>()
+                .map(|inner| inner.try_into().unwrap())
+        })
+    }
+
+    fn get_section_biomes_ids_with_fallback(
+        &self,
+        section_y: i8,
+        mapper: &IdTable<Biome>,
+        fallback: i32,
+    ) -> Option<[i32; SECTION_BIOMES]> {
+        self.get_section_biomes(section_y).map(|biomes| {
+            biomes
+                .iter()
+                .map(|biome| biome.id(&mapper).unwrap_or(fallback))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap()
+        })
+    }
+
     fn block_entities(&self) -> &[BlockEntity];
 }
 
@@ -51,6 +100,7 @@ pub trait World<C: Chunk> {
         &mut self,
         chunk_x: i32,
         chunk_z: i32,
+        biome_mapper: &IdTable<Biome>,
     ) -> Result<Option<packet::play::LevelChunkWithLight>, Self::Error> {
         let section_y_range = self.section_y_range();
         let Some(chunk) = self.get_chunk(chunk_x, chunk_z)? else {
@@ -82,7 +132,15 @@ pub trait World<C: Chunk> {
                         )?)?;
                         // Biome
                         writer.write_all(&to_paletted_data(
-                            &[0; 64],
+                            &chunk
+                                .get_section_biomes_ids_with_fallback(
+                                    section_y,
+                                    biome_mapper,
+                                    Biome::default().id(biome_mapper).unwrap(),
+                                )
+                                .unwrap_or_else(|| {
+                                    [Biome::default().id(biome_mapper).unwrap(); SECTION_BIOMES]
+                                }),
                             PALETTED_DATA_BIOMES_INDIRECT,
                             PALETTED_DATA_BIOMES_DIRECT,
                         )?)?;
@@ -104,7 +162,7 @@ pub trait World<C: Chunk> {
                     .collect(),
             },
             // TODO: Light data
-            light_data: packet::play::LevelLightData::full_dark(self.section_y_range().count()),
+            light_data: packet::play::LevelLightData::full_bright(self.section_y_range().count()),
         }))
     }
 

@@ -1,19 +1,20 @@
 use std::{collections::HashMap, fs::File, io::Seek, path::PathBuf};
 
 use pkmc_defs::{
+    biome::Biome,
     block::{Block, BlockEntity},
-    generated::PALETTED_DATA_BLOCKS_INDIRECT,
+    generated::{PALETTED_DATA_BIOMES_INDIRECT, PALETTED_DATA_BLOCKS_INDIRECT},
 };
 use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
-    PackedArray, ReadExt, Transmutable,
+    IdTable, PackedArray, ReadExt, Transmutable,
 };
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::world::SECTION_SIZE;
+use crate::world::{SECTION_BIOMES_SIZE, SECTION_SIZE};
 
-use super::{Chunk, World, CHUNK_SIZE, SECTION_BLOCKS};
+use super::{Chunk, World, CHUNK_SIZE, SECTION_BIOMES, SECTION_BLOCKS};
 
 pub const REGION_SIZE: usize = 32;
 pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
@@ -129,11 +130,97 @@ impl ChunkSectionBlockStates {
     // just directly convert to packet data.
 }
 
+fn default_biomes_palette() -> Box<[Biome]> {
+    vec![Biome::default()].into_boxed_slice()
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct ChunkSectionBiomes {
+    #[serde(default = "default_biomes_palette")]
+    palette: Box<[Biome]>,
+    #[serde(default)]
+    data: Option<Box<[i64]>>,
+}
+
+impl ChunkSectionBiomes {
+    #[inline(always)]
+    fn get_biome_palette_index_by_index(&self, index: usize) -> usize {
+        // FIXME: get_block_palette_index_by_index sometimes returns out of bounds index :(
+        match self.palette.len() {
+            0 => unreachable!(),
+            1 => 0,
+            palette_count => {
+                let packed_indices = PackedArray::from_inner(
+                    self.data.as_ref().unwrap().as_ref().transmute(),
+                    PackedArray::bits_per_entry(palette_count as u64 - 1).clamp(
+                        *PALETTED_DATA_BIOMES_INDIRECT.start() as u8,
+                        *PALETTED_DATA_BIOMES_INDIRECT.end() as u8,
+                    ),
+                    SECTION_BIOMES,
+                );
+                packed_indices.get_unchecked(index) as usize
+            }
+        }
+    }
+
+    fn get_biome_by_index(&self, index: usize) -> Biome {
+        self.palette
+            .get(self.get_biome_palette_index_by_index(index))
+            .cloned()
+            .unwrap()
+    }
+
+    fn get_block(&self, x: u8, y: u8, z: u8) -> Biome {
+        debug_assert!((x as usize) < SECTION_BIOMES_SIZE);
+        debug_assert!((y as usize) < SECTION_BIOMES_SIZE);
+        debug_assert!((z as usize) < SECTION_BIOMES_SIZE);
+        self.get_biome_by_index(
+            (y as usize) * SECTION_BIOMES_SIZE * SECTION_BIOMES_SIZE
+                + (z as usize) * SECTION_BIOMES_SIZE
+                + (x as usize),
+        )
+    }
+
+    fn biomes(&self) -> [Biome; SECTION_BIOMES] {
+        (0..SECTION_BIOMES)
+            .map(|index| self.get_biome_by_index(index))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap()
+    }
+
+    /// Returns none if any of the IDs are not found.
+    fn biomes_ids(&self, mapper: &IdTable<Biome>) -> [i32; SECTION_BIOMES] {
+        let palette_ids: Box<[i32]> = self
+            .palette
+            .iter()
+            .map(|b| {
+                b.id(mapper)
+                    .unwrap_or_else(|| Biome::default().id(mapper).unwrap())
+            })
+            .collect();
+        (0..SECTION_BIOMES)
+            .map(|index| {
+                *palette_ids
+                    .get(self.get_biome_palette_index_by_index(index))
+                    .unwrap()
+            })
+            .collect::<Vec<i32>>()
+            .try_into()
+            .unwrap()
+    }
+
+    // NOTE: Data from this is already paletted correctly, All that's needed to do is convert to
+    // IDs then send that into a packet, would be dramatically faster if we included an option to
+    // just directly convert to packet data.
+}
+
 #[derive(Debug, Deserialize, Clone)]
 struct ChunkSection {
     #[serde(rename = "Y")]
     y: i8,
     block_states: Option<ChunkSectionBlockStates>,
+    biomes: Option<ChunkSectionBiomes>,
 }
 
 impl ChunkSection {
@@ -239,6 +326,16 @@ impl Chunk for AnvilChunk {
                 .as_ref()?
                 .blocks_ids(),
         )
+    }
+
+    fn get_biome(&self, biome_x: u8, _biome_y: i16, biome_z: u8) -> Option<Biome> {
+        debug_assert!((biome_x as usize) < SECTION_BIOMES_SIZE);
+        debug_assert!((biome_z as usize) < SECTION_BIOMES_SIZE);
+        unimplemented!()
+    }
+
+    fn get_section_biomes(&self, section_y: i8) -> Option<[Biome; SECTION_BIOMES]> {
+        Some(self.get_section(section_y)?.biomes.as_ref()?.biomes())
     }
 
     fn block_entities(&self) -> &[pkmc_defs::block::BlockEntity] {

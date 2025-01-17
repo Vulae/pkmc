@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use pkmc_defs::{packet, registry::Registries};
 use pkmc_util::{
     nbt::{NBTError, NBT},
     packet::{Connection, ConnectionError, ServerboundPacket, StreamHandler, ZlibStreamHandler},
-    UUID,
+    IdTable, UUID,
 };
 use thiserror::Error;
 
@@ -67,6 +69,7 @@ pub struct ClientHandler {
     status_description: Option<String>,
     status_favicon: Option<String>,
     registries: Option<Registries>,
+    tags: Option<HashMap<String, IdTable<String>>>,
 }
 
 impl ClientHandler {
@@ -79,6 +82,7 @@ impl ClientHandler {
             status_description: None,
             status_favicon: None,
             registries: None,
+            tags: None,
         }
     }
 
@@ -115,6 +119,11 @@ impl ClientHandler {
 
     pub fn with_registies(mut self, registries: impl Into<Registries>) -> Self {
         self.registries = Some(registries.into());
+        self
+    }
+
+    pub fn with_tags(mut self, tags: impl Into<HashMap<String, IdTable<String>>>) -> Self {
+        self.tags = Some(tags.into());
         self
     }
 
@@ -279,6 +288,22 @@ impl ClientHandler {
                                                 .collect::<Result<Vec<_>, _>>()?,
                                         })?;
                                         Ok::<_, ClientHandlerError>(())
+                                    })?;
+                                }
+
+                                if let Some(tags) = self.tags.take() {
+                                    self.connection.send(packet::configuration::UpdateTags {
+                                        registries: tags
+                                            .into_iter()
+                                            .map(|(k, v)| {
+                                                (
+                                                    k,
+                                                    v.into_iter()
+                                                        .map(|(k, v)| (k, vec![v]))
+                                                        .collect(),
+                                                )
+                                            })
+                                            .collect(),
                                     })?;
                                 }
 

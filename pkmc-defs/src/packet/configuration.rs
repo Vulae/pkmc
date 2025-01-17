@@ -179,7 +179,7 @@ impl ClientboundPacket for RegistryData {
 
 #[derive(Debug)]
 pub struct UpdateTags {
-    registries: HashMap<String, HashMap<String, Vec<i32>>>,
+    pub registries: HashMap<String, HashMap<String, Vec<i32>>>,
 }
 
 impl ClientboundPacket for UpdateTags {

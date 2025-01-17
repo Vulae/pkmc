@@ -26,10 +26,6 @@ impl ConnectionSender {
         self.inner.lock().unwrap().stream.is_none()
     }
 
-    fn close(&self) {
-        self.inner.lock().unwrap().stream = None;
-    }
-
     pub fn send(&self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
         let raw: RawPacket = packet.raw_packet()?;
         let handler = self.inner.lock().unwrap().handler.clone();
@@ -40,7 +36,7 @@ impl ConnectionSender {
             return Ok(());
         };
         match stream.write_all(&encoded) {
-            Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => self.close(),
+            Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => inner.stream = None,
             v => v?,
         }
         Ok(())

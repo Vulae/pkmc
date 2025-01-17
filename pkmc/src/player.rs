@@ -172,7 +172,7 @@ impl Player {
     pub fn kick<T: Into<TextComponent>>(&mut self, text: T) -> Result<(), PlayerError> {
         self.connection
             .send(packet::play::Disconnect(text.into()))?;
-        self.connection.close()?;
+        self.connection.close();
         Ok(())
     }
 

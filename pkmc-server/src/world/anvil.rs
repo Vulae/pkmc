@@ -196,7 +196,7 @@ impl ChunkSectionBiomes {
             .iter()
             .map(|b| {
                 b.id(mapper)
-                    .or_else(|| fallback)
+                    .or(fallback)
                     .unwrap_or_else(|| Biome::default().id(mapper).unwrap())
             })
             .collect();

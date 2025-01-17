@@ -1,275 +1,132 @@
 use std::{
     collections::VecDeque,
-    io::{self, Read, Write},
+    io::{Read, Write},
     net::TcpStream,
     sync::{Arc, Mutex},
 };
 
-use crate::ReadExt as _;
-
 use super::{
-    try_read_varint_ret_bytes, varint_size, ClientboundPacket, ConnectionError, RawPacket,
-    WriteExtPacket as _,
+    handler::{PacketHandler, UncompressedPacketHandler},
+    ClientboundPacket, ConnectionError, RawPacket,
 };
 
 #[derive(Debug)]
-pub struct UncompressedStreamHandler;
-
-impl UncompressedStreamHandler {
-    fn send(&mut self, mut writer: impl Write, packet: &RawPacket) -> Result<(), ConnectionError> {
-        writer.write_varint(varint_size(packet.id) + (packet.data.len() as i32))?;
-        writer.write_varint(packet.id)?;
-        writer.write_all(&packet.data)?;
-        writer.flush()?;
-        Ok(())
-    }
-
-    fn recieve(&mut self, buf: &mut VecDeque<u8>) -> Result<Option<RawPacket>, ConnectionError> {
-        // I'm so sorry.
-        let Some((length_bytes, length)) = try_read_varint_ret_bytes(buf.make_contiguous())? else {
-            return Ok(None);
-        };
-        if buf.len() < length as usize {
-            return Ok(None);
-        }
-        buf.drain(0..length_bytes);
-        let Some((id_bytes, id)) = try_read_varint_ret_bytes(buf.make_contiguous())? else {
-            todo!();
-        };
-        buf.drain(0..id_bytes);
-        let mut data = vec![0u8; (length as usize) - id_bytes];
-        buf.read_exact(&mut data)?;
-        Ok(Some(RawPacket {
-            id,
-            data: data.into_boxed_slice(),
-        }))
-    }
-}
-
-#[derive(Debug)]
-pub struct ZlibStreamHandler {
-    threshold: usize,
-    compression_level: u32,
-}
-
-impl ZlibStreamHandler {
-    /// compression_level 1..=9
-    pub fn new(threshold: usize, compression_level: u32) -> Self {
-        // TODO: Error handling
-        if compression_level > 9 {
-            panic!("INVALID COMPRESSION LEVEL");
-        }
-        Self {
-            threshold,
-            compression_level,
-        }
-    }
-
-    fn send(&mut self, mut writer: impl Write, packet: &RawPacket) -> Result<(), ConnectionError> {
-        let total_uncompressed_size =
-            varint_size(0) as usize + varint_size(packet.id) as usize + packet.data.len();
-        if total_uncompressed_size < self.threshold {
-            writer.write_varint(total_uncompressed_size as i32)?;
-            writer.write_varint(0)?;
-            writer.write_varint(packet.id)?;
-            writer.write_all(&packet.data)?;
-        } else {
-            let mut encoder = flate2::write::ZlibEncoder::new(
-                Vec::new(),
-                flate2::Compression::new(self.compression_level),
-            );
-            encoder.write_varint(packet.id)?;
-            encoder.write_all(&packet.data)?;
-            let compressed = encoder.flush_finish()?;
-            writer.write_varint(varint_size(packet.data.len() as i32) + compressed.len() as i32)?;
-            writer.write_varint(varint_size(packet.id) + packet.data.len() as i32)?;
-            writer.write_all(&compressed)?;
-        }
-        writer.flush()?;
-        Ok(())
-    }
-
-    fn recieve(&mut self, buf: &mut VecDeque<u8>) -> Result<Option<RawPacket>, ConnectionError> {
-        // I'm even more sorry.
-        let Some((length_bytes, length)) = try_read_varint_ret_bytes(buf.make_contiguous())? else {
-            return Ok(None);
-        };
-        if buf.len() < length as usize {
-            return Ok(None);
-        }
-        buf.drain(0..length_bytes);
-        let Some((uncompressed_length_bytes, uncompressed_length)) =
-            try_read_varint_ret_bytes(buf.make_contiguous())?
-        else {
-            todo!()
-        };
-        buf.drain(0..uncompressed_length_bytes);
-        let (id, data) = if uncompressed_length == 0 {
-            let Some((id_bytes, id)) = try_read_varint_ret_bytes(buf.make_contiguous())? else {
-                todo!();
-            };
-            buf.drain(0..id_bytes);
-            let mut data = vec![0u8; (length as usize) - uncompressed_length_bytes - id_bytes];
-            buf.read_exact(&mut data)?;
-            (id, data)
-        } else {
-            let mut compressed = vec![0u8; (length as usize) - uncompressed_length_bytes];
-            buf.read_exact(&mut compressed)?;
-            let uncompressed =
-                flate2::read::ZlibDecoder::new(std::io::Cursor::new(compressed)).read_all()?;
-            let Some((id_bytes, id)) = try_read_varint_ret_bytes(&uncompressed)? else {
-                todo!();
-            };
-            (id, uncompressed[id_bytes..].to_vec())
-        };
-        Ok(Some(RawPacket {
-            id,
-            data: data.into_boxed_slice(),
-        }))
-    }
-}
-
-#[derive(Debug)]
-pub enum StreamHandler {
-    Uncompressed(UncompressedStreamHandler),
-    Zlib(ZlibStreamHandler),
-}
-
-impl StreamHandler {
-    fn send(&mut self, writer: impl Write, packet: &RawPacket) -> Result<(), ConnectionError> {
-        match self {
-            StreamHandler::Uncompressed(handler) => handler.send(writer, packet),
-            StreamHandler::Zlib(handler) => handler.send(writer, packet),
-        }
-    }
-
-    fn recieve(&mut self, buf: &mut VecDeque<u8>) -> Result<Option<RawPacket>, ConnectionError> {
-        match self {
-            StreamHandler::Uncompressed(handler) => handler.recieve(buf),
-            StreamHandler::Zlib(handler) => handler.recieve(buf),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct InnerConnection {
-    stream: TcpStream,
-    bytes: VecDeque<u8>,
-    handler: StreamHandler,
-    closed: bool,
-}
-
-impl InnerConnection {
-    fn recieve_bytes(&mut self) -> Result<(), std::io::Error> {
-        let mut buf = [0u8; 1024];
-        loop {
-            match self.stream.read(&mut buf) {
-                Ok(0) => {
-                    self.closed = true;
-                    break;
-                }
-                Ok(n) => {
-                    self.bytes.extend(&buf[..n]);
-                }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    break;
-                }
-                Err(ref e)
-                    if e.kind() == io::ErrorKind::BrokenPipe
-                        || e.kind() == io::ErrorKind::UnexpectedEof =>
-                {
-                    self.closed = true;
-                    break;
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(())
-    }
-
-    fn send(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
-        match self.handler.send(&mut self.stream, &packet.raw_packet()?) {
-            Ok(()) => Ok(()),
-            Err(ConnectionError::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::BrokenPipe
-                    || e.kind() == io::ErrorKind::UnexpectedEof =>
-            {
-                self.closed = true;
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
-        self.recieve_bytes()?;
-        if self.closed {
-            return Ok(None);
-        }
-        self.handler.recieve(&mut self.bytes)
-    }
+struct ConnectionInner {
+    stream: Option<TcpStream>,
+    handler: PacketHandler,
 }
 
 #[derive(Debug, Clone)]
+pub struct ConnectionSender {
+    inner: Arc<Mutex<ConnectionInner>>,
+}
+
+impl ConnectionSender {
+    pub fn is_closed(&self) -> bool {
+        self.inner.lock().unwrap().stream.is_none()
+    }
+
+    fn close(&self) {
+        self.inner.lock().unwrap().stream = None;
+    }
+
+    pub fn send(&self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
+        let raw: RawPacket = packet.raw_packet()?;
+        let handler = self.inner.lock().unwrap().handler.clone();
+        let mut encoded = Vec::new();
+        handler.write(&raw, &mut encoded)?;
+        let mut inner = self.inner.lock().unwrap();
+        let Some(stream) = inner.stream.as_mut() else {
+            return Ok(());
+        };
+        match stream.write_all(&encoded) {
+            Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => self.close(),
+            v => v?,
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct Connection {
-    inner: Arc<Mutex<Option<InnerConnection>>>,
+    inner: Arc<Mutex<ConnectionInner>>,
+    bytes: VecDeque<u8>,
 }
 
 impl Connection {
     pub fn new(stream: TcpStream) -> Result<Self, ConnectionError> {
         stream.set_nonblocking(true)?;
         Ok(Self {
-            inner: Arc::new(Mutex::new(Some(InnerConnection {
-                stream,
-                bytes: VecDeque::new(),
-                handler: StreamHandler::Uncompressed(UncompressedStreamHandler),
-                closed: false,
-            }))),
+            inner: Arc::new(Mutex::new(ConnectionInner {
+                stream: Some(stream),
+                handler: PacketHandler::Uncompressed(UncompressedPacketHandler),
+            })),
+            bytes: VecDeque::new(),
         })
     }
 
-    fn update_closed_state(&mut self) {
-        self.inner.lock().unwrap().take_if(|inner| inner.closed);
+    pub fn sender(&self) -> ConnectionSender {
+        ConnectionSender {
+            inner: self.inner.clone(),
+        }
     }
 
-    pub fn close(&mut self) -> Result<(), ConnectionError> {
-        if let Some(inner) = self.inner.lock().unwrap().take() {
-            inner.stream.shutdown(std::net::Shutdown::Both)?;
-        }
-        Ok(())
+    pub fn set_packet_handler(&self, handler: PacketHandler) {
+        self.inner.lock().unwrap().handler = handler;
     }
 
     pub fn is_closed(&self) -> bool {
-        self.inner
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|inner| inner.closed)
-            .unwrap_or(true)
+        self.inner.lock().unwrap().stream.is_none()
     }
 
-    pub fn set_handler(&mut self, handler: StreamHandler) {
-        self.update_closed_state();
-        if let Some(inner) = self.inner.lock().unwrap().as_mut() {
-            inner.handler = handler;
-        }
+    pub fn close(&self) {
+        self.inner.lock().unwrap().stream = None;
     }
 
-    pub fn send(&mut self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
-        self.update_closed_state();
-        if let Some(inner) = self.inner.lock().unwrap().as_mut() {
-            inner.send(packet)?;
+    pub fn send(&self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
+        self.sender().send(packet)
+    }
+
+    fn recieve_bytes(&mut self) -> Result<(), ConnectionError> {
+        // TODO: What is best size for this?
+        let mut buf = [0u8; 1024];
+        let mut inner = self.inner.lock().unwrap();
+        let Some(stream) = inner.stream.as_mut() else {
+            return Ok(());
+        };
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) => {
+                    inner.stream = None;
+                    break;
+                }
+                Ok(n) => self.bytes.extend(&buf[..n]),
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                Err(err)
+                    if err.kind() == std::io::ErrorKind::BrokenPipe
+                        || err.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    inner.stream = None;
+                    break;
+                }
+                Err(err) => return Err(err)?,
+            }
         }
         Ok(())
     }
 
     pub fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
-        self.update_closed_state();
-        if let Some(inner) = self.inner.lock().unwrap().as_mut() {
-            inner.recieve()
-        } else {
-            Ok(None)
-        }
+        self.recieve_bytes()?;
+        let raw = self
+            .inner
+            .lock()
+            .unwrap()
+            .handler
+            .clone()
+            .read(&mut self.bytes)?;
+        Ok(raw)
     }
 
     pub fn recieve_into<T>(&mut self) -> Result<Option<T>, ConnectionError>

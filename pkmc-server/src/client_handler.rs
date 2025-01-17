@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use pkmc_defs::{packet, registry::Registries};
 use pkmc_util::{
     nbt::{NBTError, NBT},
-    packet::{Connection, ConnectionError, ServerboundPacket, StreamHandler, ZlibStreamHandler},
+    packet::{
+        handler::{PacketHandler, ZlibPacketHandler},
+        Connection, ConnectionError, ServerboundPacket,
+    },
     IdTable, UUID,
 };
 use thiserror::Error;
@@ -196,8 +199,8 @@ impl ClientHandler {
                                 self.connection.send(packet::login::Compression {
                                     threshold: threshold as i32,
                                 })?;
-                                self.connection.set_handler(StreamHandler::Zlib(
-                                    ZlibStreamHandler::new(threshold, level),
+                                self.connection.set_packet_handler(PacketHandler::Zlib(
+                                    ZlibPacketHandler::new(threshold, level),
                                 ));
                             }
 

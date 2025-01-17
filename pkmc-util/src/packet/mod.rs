@@ -1,4 +1,5 @@
 mod connection;
+pub mod handler;
 mod packet;
 mod paletted_container;
 mod reader;

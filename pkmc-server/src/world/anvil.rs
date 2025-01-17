@@ -170,7 +170,7 @@ impl ChunkSectionBiomes {
             .unwrap()
     }
 
-    fn get_block(&self, x: u8, y: u8, z: u8) -> Biome {
+    fn get_biome(&self, x: u8, y: u8, z: u8) -> Biome {
         debug_assert!((x as usize) < SECTION_BIOMES_SIZE);
         debug_assert!((y as usize) < SECTION_BIOMES_SIZE);
         debug_assert!((z as usize) < SECTION_BIOMES_SIZE);
@@ -190,12 +190,13 @@ impl ChunkSectionBiomes {
     }
 
     /// Returns none if any of the IDs are not found.
-    fn biomes_ids(&self, mapper: &IdTable<Biome>) -> [i32; SECTION_BIOMES] {
+    fn biomes_ids(&self, mapper: &IdTable<Biome>, fallback: Option<i32>) -> [i32; SECTION_BIOMES] {
         let palette_ids: Box<[i32]> = self
             .palette
             .iter()
             .map(|b| {
                 b.id(mapper)
+                    .or_else(|| fallback)
                     .unwrap_or_else(|| Biome::default().id(mapper).unwrap())
             })
             .collect();
@@ -328,14 +329,50 @@ impl Chunk for AnvilChunk {
         )
     }
 
-    fn get_biome(&self, biome_x: u8, _biome_y: i16, biome_z: u8) -> Option<Biome> {
+    fn get_biome(&self, biome_x: u8, biome_y: i16, biome_z: u8) -> Option<Biome> {
         debug_assert!((biome_x as usize) < SECTION_BIOMES_SIZE);
         debug_assert!((biome_z as usize) < SECTION_BIOMES_SIZE);
-        unimplemented!()
+        Some(
+            self.get_section((biome_y / SECTION_BIOMES_SIZE as i16) as i8)?
+                .biomes
+                .as_ref()?
+                .get_biome(
+                    biome_x,
+                    biome_y.rem_euclid(SECTION_BIOMES_SIZE as i16) as u8,
+                    biome_z,
+                ),
+        )
     }
 
     fn get_section_biomes(&self, section_y: i8) -> Option<[Biome; SECTION_BIOMES]> {
         Some(self.get_section(section_y)?.biomes.as_ref()?.biomes())
+    }
+
+    fn get_section_biomes_ids(
+        &self,
+        section_y: i8,
+        mapper: &IdTable<Biome>,
+    ) -> Option<[i32; SECTION_BIOMES]> {
+        Some(
+            self.get_section(section_y)?
+                .biomes
+                .as_ref()?
+                .biomes_ids(mapper, None),
+        )
+    }
+
+    fn get_section_biomes_ids_with_fallback(
+        &self,
+        section_y: i8,
+        mapper: &IdTable<Biome>,
+        fallback: i32,
+    ) -> Option<[i32; SECTION_BIOMES]> {
+        Some(
+            self.get_section(section_y)?
+                .biomes
+                .as_ref()?
+                .biomes_ids(mapper, Some(fallback)),
+        )
     }
 
     fn block_entities(&self) -> &[pkmc_defs::block::BlockEntity] {

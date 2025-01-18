@@ -927,6 +927,7 @@ dependencies = [
 name = "pkmc-defs"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "pkmc-util",
  "serde",
  "serde_json",
@@ -939,6 +940,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "convert_case",
+ "flate2",
  "itertools",
  "reqwest",
  "serde",

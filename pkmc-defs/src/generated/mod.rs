@@ -2,7 +2,7 @@
 pub mod generated;
 
 use serde::Deserialize;
-use std::{collections::HashMap, ops::RangeInclusive, sync::LazyLock};
+use std::{collections::HashMap, io::Read, ops::RangeInclusive, sync::LazyLock};
 
 #[macro_export]
 macro_rules! generated_util_create_basic_enum {
@@ -53,8 +53,11 @@ pub struct Data {
 
 impl Data {
     pub fn load() -> Result<Self, std::io::Error> {
-        // TODO: Compress this to half the binary size.
-        Ok(serde_json::from_str(include_str!("./generated.json"))?)
+        let compressed = include_bytes!("./generated.json.gz");
+        let mut decompressed = Vec::new();
+        flate2::read::GzDecoder::new(std::io::Cursor::new(&compressed))
+            .read_to_end(&mut decompressed)?;
+        Ok(serde_json::from_slice(&decompressed)?)
     }
 }
 

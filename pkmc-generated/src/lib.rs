@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, io::Read, path::Path};
+use std::{
+    collections::BTreeMap,
+    io::{Read, Write},
+    path::Path,
+};
 
 use generated::{
     report::{
@@ -149,10 +153,11 @@ pub fn generate_generated_code<P1: AsRef<Path>, P2: AsRef<Path>, P3: AsRef<Path>
             .output()?;
     }
 
-    std::fs::write(
-        &generated_json_output,
-        serde_json::to_string(&generated_report_json)?,
-    )?;
+    let json = serde_json::to_string(&generated_report_json)?;
+    let mut json_compressed = Vec::new();
+    flate2::write::GzEncoder::new(&mut json_compressed, flate2::Compression::best())
+        .write_all(json.as_ref())?;
+    std::fs::write(&generated_json_output, &json_compressed)?;
 
     Ok(())
 }

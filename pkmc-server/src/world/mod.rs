@@ -1,15 +1,11 @@
-use std::io::Write as _;
-
-use pkmc_defs::{
-    biome::Biome,
-    block::{Block, BlockEntity},
-    generated::{
-        generated, PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT,
-        PALETTED_DATA_BLOCKS_DIRECT, PALETTED_DATA_BLOCKS_INDIRECT,
-    },
-    packet,
+use std::{
+    fmt::Debug,
+    sync::{Arc, Mutex},
 };
-use pkmc_util::{nbt_compound, packet::to_paletted_data, IdTable};
+
+use chunk_loader::ChunkLoader;
+use pkmc_defs::block::{Block, BlockEntity};
+use pkmc_util::packet::ConnectionSender;
 
 pub mod anvil;
 pub mod chunk_loader;
@@ -20,169 +16,63 @@ pub const SECTION_BLOCKS: usize = 4096;
 pub const SECTION_BIOMES_SIZE: usize = 4;
 pub const SECTION_BIOMES: usize = 64;
 
-pub trait Chunk {
-    fn get_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<Block>;
-
-    fn get_block_id(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<i32> {
-        self.get_block(block_x, block_y, block_z)
-            .and_then(|b| b.id())
-    }
-
-    fn get_section_blocks(&self, section_y: i8) -> Option<[Block; SECTION_BLOCKS]>;
-
-    fn get_section_blocks_ids(&self, section_y: i8) -> Option<[i32; SECTION_BLOCKS]> {
-        self.get_section_blocks(section_y).and_then(|blocks| {
-            blocks
-                .iter()
-                .map(|block| block.id_with_default_fallback())
-                .collect::<Option<Vec<_>>>()
-                .map(|inner| inner.try_into().unwrap())
-        })
-    }
-
-    fn get_biome(&self, biome_x: u8, biome_y: i16, biome_z: u8) -> Option<Biome>;
-
-    /// Biomes take up x4 blocks on xyz, So there's only 4x4x4 biomes in each section.
-    fn get_biome_id(
-        &self,
-        biome_x: u8,
-        biome_y: i16,
-        biome_z: u8,
-        mapper: &IdTable<Biome>,
-    ) -> Option<i32> {
-        self.get_biome(biome_x, biome_y, biome_z)
-            .and_then(|b| b.id(&mapper))
-    }
-
-    fn get_section_biomes(&self, section_y: i8) -> Option<[Biome; SECTION_BIOMES]>;
-
-    fn get_section_biomes_ids(
-        &self,
-        section_y: i8,
-        mapper: &IdTable<Biome>,
-    ) -> Option<[i32; SECTION_BIOMES]> {
-        self.get_section_biomes(section_y).and_then(|biomes| {
-            biomes
-                .iter()
-                .map(|biome| biome.id(&mapper))
-                .collect::<Option<Vec<_>>>()
-                .map(|inner| inner.try_into().unwrap())
-        })
-    }
-
-    fn get_section_biomes_ids_with_fallback(
-        &self,
-        section_y: i8,
-        mapper: &IdTable<Biome>,
-        fallback: i32,
-    ) -> Option<[i32; SECTION_BIOMES]> {
-        self.get_section_biomes(section_y).map(|biomes| {
-            biomes
-                .iter()
-                .map(|biome| biome.id(&mapper).unwrap_or(fallback))
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap()
-        })
-    }
-
-    fn block_entities(&self) -> &[BlockEntity];
+#[derive(Debug)]
+pub struct WorldViewer {
+    id: usize,
+    connection: ConnectionSender,
+    pub loader: ChunkLoader,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
 }
 
-pub trait World<C: Chunk> {
-    type Error: std::error::Error + From<std::io::Error>;
-
-    fn get_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Result<Option<&C>, Self::Error>;
-
-    fn section_y_range(&self) -> std::ops::RangeInclusive<i8>;
-
-    fn get_chunk_as_packet(
-        &mut self,
-        chunk_x: i32,
-        chunk_z: i32,
-        biome_mapper: &IdTable<Biome>,
-    ) -> Result<Option<packet::play::LevelChunkWithLight>, Self::Error> {
-        let section_y_range = self.section_y_range();
-        let Some(chunk) = self.get_chunk(chunk_x, chunk_z)? else {
-            return Ok(None);
-        };
-        Ok(Some(packet::play::LevelChunkWithLight {
-            chunk_x,
-            chunk_z,
-            chunk_data: packet::play::LevelChunkData {
-                heightmaps: nbt_compound!(),
-                data: {
-                    let mut writer = Vec::new();
-
-                    section_y_range.clone().try_for_each(|section_y| {
-                        let block_ids = chunk
-                            .get_section_blocks_ids(section_y)
-                            .unwrap_or_else(|| [Block::air().id().unwrap(); SECTION_BLOCKS]);
-                        // Num non-air blocks
-                        let block_count = block_ids
-                            .iter()
-                            .filter(|b| !generated::block::is_air(**b))
-                            .count();
-                        writer.write_all(&(block_count as u16).to_be_bytes())?;
-                        // Blocks
-                        writer.write_all(&to_paletted_data(
-                            &block_ids,
-                            PALETTED_DATA_BLOCKS_INDIRECT,
-                            PALETTED_DATA_BLOCKS_DIRECT,
-                        )?)?;
-                        // Biome
-                        writer.write_all(&to_paletted_data(
-                            &chunk
-                                .get_section_biomes_ids_with_fallback(
-                                    section_y,
-                                    biome_mapper,
-                                    Biome::default().id(biome_mapper).unwrap(),
-                                )
-                                .unwrap_or_else(|| {
-                                    [Biome::default().id(biome_mapper).unwrap(); SECTION_BIOMES]
-                                }),
-                            PALETTED_DATA_BIOMES_INDIRECT,
-                            PALETTED_DATA_BIOMES_DIRECT,
-                        )?)?;
-                        Ok(())
-                    })?;
-
-                    writer.into_boxed_slice()
-                },
-                block_entities: chunk
-                    .block_entities()
-                    .iter()
-                    .map(|b| packet::play::BlockEntity {
-                        x: b.x.rem_euclid(CHUNK_SIZE as i32) as u8,
-                        z: b.z.rem_euclid(CHUNK_SIZE as i32) as u8,
-                        y: b.y as i16,
-                        r#type: b.block_entity_id().unwrap(),
-                        data: b.data.clone(),
-                    })
-                    .collect(),
-            },
-            // TODO: Light data
-            light_data: packet::play::LevelLightData::full_bright(self.section_y_range().count()),
-        }))
+impl WorldViewer {
+    pub fn id(&self) -> usize {
+        self.id
     }
 
-    fn get_block(
-        &mut self,
-        block_x: i32,
-        block_y: i16,
-        block_z: i32,
-    ) -> Result<Option<Block>, Self::Error> {
-        let Some(chunk) = self.get_chunk(
-            block_x.div_euclid(CHUNK_SIZE as i32),
-            block_z.div_euclid(CHUNK_SIZE as i32),
-        )?
-        else {
-            return Ok(None);
-        };
-        Ok(chunk.get_block(
-            (block_x % (CHUNK_SIZE as i32)) as u8,
-            block_y,
-            (block_z % (CHUNK_SIZE as i32)) as u8,
-        ))
+    pub fn connection(&self) -> &ConnectionSender {
+        &self.connection
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WorldBlock {
+    Block(Block),
+    BlockEntity(BlockEntity),
+}
+
+impl WorldBlock {
+    pub fn as_block(&self) -> &Block {
+        match self {
+            WorldBlock::Block(ref block) => block,
+            WorldBlock::BlockEntity(ref block_entity) => &block_entity.block,
+        }
+    }
+
+    pub fn into_block(self) -> Block {
+        match self {
+            WorldBlock::Block(block) => block,
+            WorldBlock::BlockEntity(block_entity) => block_entity.block,
+        }
+    }
+
+    pub fn as_block_entity(&self) -> Option<&BlockEntity> {
+        match self {
+            WorldBlock::Block(..) => None,
+            WorldBlock::BlockEntity(ref block_entity) => Some(block_entity),
+        }
+    }
+}
+
+pub trait World: Debug {
+    type Error: std::error::Error;
+
+    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<WorldViewer>>;
+    /// Viewer should automatically be removed when connection is closed.
+    fn remove_viewer(&mut self, viewer: Arc<Mutex<WorldViewer>>);
+    fn update_viewers(&mut self) -> Result<(), Self::Error>;
+
+    fn get_block(&mut self, x: i32, y: i16, z: i32) -> Result<Option<WorldBlock>, Self::Error>;
+    fn set_block(&mut self, x: i32, y: i16, z: i32, block: WorldBlock) -> Result<(), Self::Error>;
 }

@@ -1,20 +1,35 @@
-use std::{collections::HashMap, fs::File, io::Seek, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{Seek, Write as _},
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use pkmc_defs::{
     biome::Biome,
     block::{Block, BlockEntity},
-    generated::{PALETTED_DATA_BIOMES_INDIRECT, PALETTED_DATA_BLOCKS_INDIRECT},
+    generated::{
+        generated, PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT,
+        PALETTED_DATA_BLOCKS_DIRECT, PALETTED_DATA_BLOCKS_INDIRECT,
+    },
+    packet,
 };
 use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
+    nbt_compound,
+    packet::{to_paletted_data, ConnectionError, ConnectionSender},
     IdTable, PackedArray, ReadExt, Transmutable,
 };
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::world::{SECTION_BIOMES_SIZE, SECTION_SIZE};
+use crate::world::{chunk_loader::ChunkPosition, SECTION_SIZE};
 
-use super::{Chunk, World, CHUNK_SIZE, SECTION_BIOMES, SECTION_BLOCKS};
+use super::{
+    chunk_loader::ChunkLoader, World, WorldBlock, WorldViewer, CHUNK_SIZE, SECTION_BIOMES,
+    SECTION_BLOCKS,
+};
 
 pub const REGION_SIZE: usize = 32;
 pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
@@ -23,6 +38,8 @@ pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
 pub enum AnvilError {
     #[error(transparent)]
     IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    ConnectionError(#[from] ConnectionError),
     #[error("Region chunk unknown compression \"{0}\"")]
     RegionUnknownCompression(u8),
     #[error("Region chunk unsupported compression \"{0}\"")]
@@ -103,14 +120,6 @@ impl ChunkSectionBlockStates {
         )
     }
 
-    fn blocks(&self) -> [Block; SECTION_BLOCKS] {
-        (0..SECTION_BLOCKS)
-            .map(|index| self.get_block_by_index(index))
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap()
-    }
-
     /// Returns none if any of the IDs are not found.
     fn blocks_ids(&self) -> [i32; SECTION_BLOCKS] {
         (0..SECTION_BLOCKS)
@@ -161,32 +170,6 @@ impl ChunkSectionBiomes {
                 packed_indices.get_unchecked(index) as usize
             }
         }
-    }
-
-    fn get_biome_by_index(&self, index: usize) -> Biome {
-        self.palette
-            .get(self.get_biome_palette_index_by_index(index))
-            .cloned()
-            .unwrap()
-    }
-
-    fn get_biome(&self, x: u8, y: u8, z: u8) -> Biome {
-        debug_assert!((x as usize) < SECTION_BIOMES_SIZE);
-        debug_assert!((y as usize) < SECTION_BIOMES_SIZE);
-        debug_assert!((z as usize) < SECTION_BIOMES_SIZE);
-        self.get_biome_by_index(
-            (y as usize) * SECTION_BIOMES_SIZE * SECTION_BIOMES_SIZE
-                + (z as usize) * SECTION_BIOMES_SIZE
-                + (x as usize),
-        )
-    }
-
-    fn biomes(&self) -> [Biome; SECTION_BIOMES] {
-        (0..SECTION_BIOMES)
-            .map(|index| self.get_biome_by_index(index))
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap()
     }
 
     /// Returns none if any of the IDs are not found.
@@ -298,9 +281,7 @@ impl AnvilChunk {
     fn get_section(&self, section_y: i8) -> Option<&ChunkSection> {
         self.sections.iter().find(|section| section.y == section_y)
     }
-}
 
-impl Chunk for AnvilChunk {
     fn get_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<Block> {
         debug_assert!((block_x as usize) < SECTION_SIZE);
         debug_assert!((block_z as usize) < SECTION_SIZE);
@@ -316,48 +297,12 @@ impl Chunk for AnvilChunk {
         )
     }
 
-    fn get_section_blocks(&self, section_y: i8) -> Option<[Block; SECTION_BLOCKS]> {
-        Some(self.get_section(section_y)?.block_states.as_ref()?.blocks())
-    }
-
     fn get_section_blocks_ids(&self, section_y: i8) -> Option<[i32; SECTION_BLOCKS]> {
         Some(
             self.get_section(section_y)?
                 .block_states
                 .as_ref()?
                 .blocks_ids(),
-        )
-    }
-
-    fn get_biome(&self, biome_x: u8, biome_y: i16, biome_z: u8) -> Option<Biome> {
-        debug_assert!((biome_x as usize) < SECTION_BIOMES_SIZE);
-        debug_assert!((biome_z as usize) < SECTION_BIOMES_SIZE);
-        Some(
-            self.get_section((biome_y / SECTION_BIOMES_SIZE as i16) as i8)?
-                .biomes
-                .as_ref()?
-                .get_biome(
-                    biome_x,
-                    biome_y.rem_euclid(SECTION_BIOMES_SIZE as i16) as u8,
-                    biome_z,
-                ),
-        )
-    }
-
-    fn get_section_biomes(&self, section_y: i8) -> Option<[Biome; SECTION_BIOMES]> {
-        Some(self.get_section(section_y)?.biomes.as_ref()?.biomes())
-    }
-
-    fn get_section_biomes_ids(
-        &self,
-        section_y: i8,
-        mapper: &IdTable<Biome>,
-    ) -> Option<[i32; SECTION_BIOMES]> {
-        Some(
-            self.get_section(section_y)?
-                .biomes
-                .as_ref()?
-                .biomes_ids(mapper, None),
         )
     }
 
@@ -449,38 +394,32 @@ impl Region {
             .transpose()?)
     }
 
-    fn load_chunk(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<AnvilChunk>, AnvilError> {
+    fn prepare_chunk(&mut self, chunk_x: u8, chunk_z: u8) -> Result<(), AnvilError> {
+        if self.loaded_chunks.contains_key(&(chunk_x, chunk_z)) {
+            return Ok(());
+        }
+
         match self
             .read_nbt(chunk_x, chunk_z)?
             .map(|nbt| from_nbt::<AnvilChunk>(nbt.1))
             .transpose()?
         {
-            //Some(chunk) if chunk.status == "minecraft:full" => Ok(Some(chunk)),
             Some(mut chunk) => {
                 chunk.initialize();
-                Ok(Some(chunk))
+                self.loaded_chunks.insert((chunk_x, chunk_z), Some(chunk));
             }
-            _ => Ok(None),
+            None => {
+                self.loaded_chunks.insert((chunk_x, chunk_z), None);
+            }
         }
+
+        Ok(())
     }
 
-    fn get_or_load_chunk(
-        &mut self,
-        chunk_x: u8,
-        chunk_z: u8,
-    ) -> Result<Option<&AnvilChunk>, AnvilError> {
-        // Why does clippy complain? doing its suggestion breaks the code.
-        #[allow(clippy::all)]
-        if !self.loaded_chunks.contains_key(&(chunk_x, chunk_z)) {
-            let region = self.load_chunk(chunk_x, chunk_z)?;
-            self.loaded_chunks.insert((chunk_x, chunk_z), region);
-        }
-
-        Ok(self
-            .loaded_chunks
-            .get_mut(&(chunk_x, chunk_z))
-            .unwrap()
-            .as_ref())
+    fn get_chunk(&self, chunk_x: u8, chunk_z: u8) -> Option<&AnvilChunk> {
+        self.loaded_chunks
+            .get(&(chunk_x, chunk_z))
+            .and_then(|i| i.as_ref())
     }
 }
 
@@ -490,6 +429,9 @@ pub struct AnvilWorld {
     identifier: String,
     loaded_regions: HashMap<(i32, i32), Option<Region>>,
     section_y_range: std::ops::RangeInclusive<i8>,
+    biome_mapper: IdTable<Biome>,
+    viewers: Vec<Arc<Mutex<WorldViewer>>>,
+    viewers_id: usize,
 }
 
 impl AnvilWorld {
@@ -497,12 +439,16 @@ impl AnvilWorld {
         root: P,
         identifier: &str,
         section_y_range: std::ops::RangeInclusive<i8>,
+        biome_mapper: IdTable<Biome>,
     ) -> Self {
         Self {
             root: root.into(),
             identifier: identifier.to_owned(),
             loaded_regions: HashMap::new(),
             section_y_range,
+            biome_mapper,
+            viewers: Vec::new(),
+            viewers_id: 0,
         }
     }
 
@@ -510,76 +456,227 @@ impl AnvilWorld {
         &self.identifier
     }
 
-    fn load_region(&self, region_x: i32, region_z: i32) -> Result<Option<Region>, AnvilError> {
+    fn prepare_region(&mut self, region_x: i32, region_z: i32) -> Result<(), AnvilError> {
+        if self.loaded_regions.contains_key(&(region_x, region_z)) {
+            return Ok(());
+        }
+
         let mut path = self.root.clone();
         path.push("region");
         path.push(format!("r.{}.{}.mca", region_x, region_z));
 
         let file = match std::fs::File::open(path) {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(None);
+                self.loaded_regions.insert((region_x, region_z), None);
+                return Ok(());
             }
             result => result,
         }?;
 
-        Ok(Some(Region::load(file, region_x, region_z)?))
+        self.loaded_regions.insert(
+            (region_x, region_z),
+            Some(Region::load(file, region_x, region_z)?),
+        );
+
+        Ok(())
     }
 
-    fn get_or_load_region(
-        &mut self,
-        region_x: i32,
-        region_z: i32,
-    ) -> Result<Option<&mut Region>, AnvilError> {
-        // Why does clippy complain? doing its suggestion breaks the code.
-        #[allow(clippy::all)]
-        if !self.loaded_regions.contains_key(&(region_x, region_z)) {
-            let region = self.load_region(region_x, region_z)?;
-            self.loaded_regions.insert((region_x, region_z), region);
+    fn get_region(&self, region_x: i32, region_z: i32) -> Option<&Region> {
+        self.loaded_regions
+            .get(&(region_x, region_z))
+            .and_then(|i| i.as_ref())
+    }
+
+    fn get_region_mut(&mut self, region_x: i32, region_z: i32) -> Option<&mut Region> {
+        self.loaded_regions
+            .get_mut(&(region_x, region_z))
+            .and_then(|i| i.as_mut())
+    }
+
+    fn prepare_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Result<(), AnvilError> {
+        let region_x = chunk_x.div_euclid(REGION_SIZE as i32);
+        let region_z = chunk_z.div_euclid(REGION_SIZE as i32);
+
+        self.prepare_region(region_x, region_z)?;
+
+        if let Some(region) = self.get_region_mut(region_x, region_z) {
+            region.prepare_chunk(
+                chunk_x.wrapping_rem_euclid(REGION_SIZE as i32) as u8,
+                chunk_z.wrapping_rem_euclid(REGION_SIZE as i32) as u8,
+            )?;
         }
 
-        Ok(self
-            .loaded_regions
-            .get_mut(&(region_x, region_z))
-            .unwrap()
-            .as_mut())
+        Ok(())
     }
 
-    fn get_chunk_inner(
-        &mut self,
-        chunk_x: i32,
-        chunk_z: i32,
-    ) -> Result<Option<&AnvilChunk>, AnvilError> {
-        let Some(region) = self.get_or_load_region(
+    fn get_chunk(&self, chunk_x: i32, chunk_z: i32) -> Option<&AnvilChunk> {
+        let region = self.get_region(
             chunk_x.div_euclid(REGION_SIZE as i32),
             chunk_z.div_euclid(REGION_SIZE as i32),
-        )?
-        else {
-            return Ok(None);
-        };
-        let Some(chunk) = region.get_or_load_chunk(
+        )?;
+        let chunk = region.get_chunk(
             (chunk_x.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
             (chunk_z.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
-        )?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(chunk))
+        )?;
+        Some(chunk)
     }
-}
-
-impl World<AnvilChunk> for AnvilWorld {
-    type Error = AnvilError;
 
     fn section_y_range(&self) -> std::ops::RangeInclusive<i8> {
         self.section_y_range.clone()
     }
+}
 
-    fn get_chunk(
-        &mut self,
-        chunk_x: i32,
-        chunk_z: i32,
-    ) -> Result<Option<&AnvilChunk>, Self::Error> {
-        self.get_chunk_inner(chunk_x, chunk_z)
+impl World for AnvilWorld {
+    type Error = AnvilError;
+
+    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<WorldViewer>> {
+        let viewer = Arc::new(Mutex::new(WorldViewer {
+            id: self.viewers_id,
+            connection,
+            loader: ChunkLoader::new(6),
+            x: 0.0,
+            y: 100.0,
+            z: 0.0,
+        }));
+        self.viewers_id += 1;
+        self.viewers.push(viewer.clone());
+        viewer
+    }
+
+    fn remove_viewer(&mut self, viewer: Arc<Mutex<WorldViewer>>) {
+        let id = viewer.lock().unwrap().id;
+        self.viewers.retain(|v| v.lock().unwrap().id != id);
+    }
+
+    fn update_viewers(&mut self) -> Result<(), Self::Error> {
+        self.viewers
+            .retain(|v| !v.lock().unwrap().connection.is_closed());
+
+        self.viewers
+            // TODO: Don't clone this wtf
+            .clone()
+            .iter()
+            .map(|viewer| viewer.lock().unwrap())
+            .try_for_each(|mut viewer| {
+                let center = ChunkPosition::new((viewer.x / 16.0) as i32, (viewer.z / 16.0) as i32);
+                if viewer.loader.update_center(Some(center)) {
+                    viewer
+                        .connection()
+                        .send(packet::play::SetChunkCacheCenter {
+                            chunk_x: center.chunk_x,
+                            chunk_z: center.chunk_z,
+                        })?;
+                }
+
+                while let Some(to_unload) = viewer.loader.next_to_unload() {
+                    viewer.connection().send(packet::play::ForgetLevelChunk {
+                        chunk_x: to_unload.chunk_x,
+                        chunk_z: to_unload.chunk_z,
+                    })?;
+                }
+
+                if let Some(to_load) = viewer.loader.next_to_load() {
+                    self.prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
+                    if let Some(chunk) = self.get_chunk(to_load.chunk_x, to_load.chunk_z) {
+                        viewer.connection().send(
+                            packet::play::LevelChunkWithLight {
+                                chunk_x: to_load.chunk_x,
+                                chunk_z: to_load.chunk_z,
+                                chunk_data: packet::play::LevelChunkData {
+                                    heightmaps: nbt_compound!(),
+                                    data: {
+                                        let mut writer = Vec::new();
+
+                                        self.section_y_range().try_for_each(|section_y| {
+                                            let block_ids = chunk
+                                                .get_section_blocks_ids(section_y)
+                                                .unwrap_or_else(|| [Block::air().id().unwrap(); SECTION_BLOCKS]);
+                                            // Num non-air blocks
+                                            let block_count = block_ids
+                                                .iter()
+                                                .filter(|b| !generated::block::is_air(**b))
+                                                .count();
+                                            writer.write_all(&(block_count as u16).to_be_bytes())?;
+                                            // Blocks
+                                            writer.write_all(&to_paletted_data(
+                                                &block_ids,
+                                                PALETTED_DATA_BLOCKS_INDIRECT,
+                                                PALETTED_DATA_BLOCKS_DIRECT,
+                                            )?)?;
+                                            // Biome
+                                            writer.write_all(&to_paletted_data(
+                                                &chunk
+                                                    .get_section_biomes_ids_with_fallback(
+                                                        section_y,
+                                                        &self.biome_mapper,
+                                                        Biome::default().id(&self.biome_mapper).unwrap(),
+                                                    )
+                                                    .unwrap_or_else(|| {
+                                                        [Biome::default().id(&self.biome_mapper).unwrap(); SECTION_BIOMES]
+                                                    }),
+                                                PALETTED_DATA_BIOMES_INDIRECT,
+                                                PALETTED_DATA_BIOMES_DIRECT,
+                                            )?)?;
+                                            Ok::<_, AnvilError>(())
+                                        })?;
+
+                                        writer.into_boxed_slice()
+                                    },
+                                    block_entities: chunk
+                                        .block_entities()
+                                        .iter()
+                                        .map(|b| packet::play::BlockEntity {
+                                            x: b.x.rem_euclid(CHUNK_SIZE as i32) as u8,
+                                            z: b.z.rem_euclid(CHUNK_SIZE as i32) as u8,
+                                            y: b.y as i16,
+                                            r#type: b.block_entity_id().unwrap(),
+                                            data: b.data.clone(),
+                                        })
+                                        .collect(),
+                                },
+                                // TODO: Light data
+                                light_data: packet::play::LevelLightData::full_bright(self.section_y_range().count()),
+                            }
+                        )?;
+                    } else {
+                        viewer.connection().send(
+                            packet::play::LevelChunkWithLight::generate_test(
+                                to_load.chunk_x,
+                                to_load.chunk_z,
+                                self.section_y_range().count(),
+                            )?,
+                        )?;
+                    }
+                }
+
+                Ok::<(), Self::Error>(())
+            })?;
+
+        Ok(())
+    }
+
+    fn get_block(&mut self, x: i32, y: i16, z: i32) -> Result<Option<WorldBlock>, Self::Error> {
+        let chunk_x = x.div_euclid(CHUNK_SIZE as i32);
+        let chunk_z = z.div_euclid(CHUNK_SIZE as i32);
+        self.prepare_chunk(chunk_x, chunk_z)?;
+        let Some(chunk) = self.get_chunk(
+            x.div_euclid(CHUNK_SIZE as i32),
+            z.div_euclid(CHUNK_SIZE as i32),
+        ) else {
+            return Ok(None);
+        };
+        Ok(chunk
+            .get_block(
+                (x % (CHUNK_SIZE as i32)) as u8,
+                y,
+                (z % (CHUNK_SIZE as i32)) as u8,
+            )
+            .map(WorldBlock::Block))
+    }
+
+    #[allow(unused)]
+    fn set_block(&mut self, x: i32, y: i16, z: i32, block: WorldBlock) -> Result<(), Self::Error> {
+        todo!()
     }
 }
 
@@ -601,7 +698,12 @@ mod test {
             std::fs::canonicalize(WORLD_PATH)?
         );
 
-        let mut world = AnvilWorld::new(WORLD_PATH, "minecraft:overworld", -4..=20);
+        let mut world = AnvilWorld::new(
+            WORLD_PATH,
+            "minecraft:overworld",
+            -4..=20,
+            Default::default(),
+        );
 
         let max_block_id = *BLOCKS_TO_IDS.values().max().unwrap();
 
@@ -623,7 +725,7 @@ mod test {
             let y = 70;
             let z = 1 + grid_x * 2;
 
-            let Some(block) = world.get_block(x, y, z)? else {
+            let Some(block) = world.get_block(x, y, z)?.map(|b| b.into_block()) else {
                 panic!("Expected loaded block at {} {} {}", x, y, z);
             };
 

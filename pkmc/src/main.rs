@@ -12,7 +12,10 @@ use std::{
 use base64::Engine as _;
 use config::Config;
 use pkmc_defs::{biome::Biome, registry::Registries};
-use pkmc_server::{world::anvil::AnvilWorld, ClientHandler};
+use pkmc_server::{
+    world::{anvil::AnvilWorld, World},
+    ClientHandler,
+};
 use pkmc_util::{normalize_identifier, packet::Connection, IdTable, IterRetain};
 use player::Player;
 
@@ -44,7 +47,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         None
     };
 
-    let world = AnvilWorld::new(config.world, "minecraft:overworld", -4..=20);
+    let biome_mapper: IdTable<Biome> = REGISTRIES
+        .get("minecraft:worldgen/biome")
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(i, (k, _v))| (normalize_identifier(k, "minecraft").into(), i as i32))
+        .collect();
+    let world = AnvilWorld::new(config.world, "minecraft:overworld", -4..=20, biome_mapper);
     let state = ServerState {
         world: Arc::new(Mutex::new(world)),
     };
@@ -56,14 +66,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut clients: Vec<ClientHandler> = Vec::new();
     let mut players: Vec<Player> = Vec::new();
-
-    let biome_mapper: IdTable<Biome> = REGISTRIES
-        .get("minecraft:worldgen/biome")
-        .unwrap()
-        .iter()
-        .enumerate()
-        .map(|(i, (k, _v))| (normalize_identifier(k, "minecraft").into(), i as i32))
-        .collect();
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(1));
@@ -96,7 +98,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     player.player_id,
                     player.player_name,
                     config.view_distance,
-                    biome_mapper.clone(),
                 )?;
                 println!("{} Connected", player.name());
                 players.push(player);
@@ -111,5 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             });
 
         players.iter_mut().try_for_each(|player| player.update())?;
+
+        state.world.lock().unwrap().update_viewers()?;
     }
 }

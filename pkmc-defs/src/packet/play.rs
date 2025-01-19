@@ -4,8 +4,8 @@ use pkmc_util::{
     nbt::NBT,
     nbt_compound,
     packet::{
-        to_paletted_data, BitSet, ClientboundPacket, ConnectionError, Position, ReadExtPacket as _,
-        ServerboundPacket, WriteExtPacket as _,
+        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, Position,
+        ReadExtPacket as _, ServerboundPacket, WriteExtPacket,
     },
     serverbound_packet_enum, ReadExt as _,
 };
@@ -478,10 +478,11 @@ impl LevelChunkWithLight {
                             }
                             .to_be_bytes(),
                         )?;
+
                         // Blocks
-                        writer.write_all(&to_paletted_data(&[block_id; 4096], 4..=8, 15)?)?;
+                        writer.write_all(&to_paletted_data_singular(block_id)?)?;
                         // Biome
-                        writer.write_all(&to_paletted_data(&[0; 64], 1..=3, 6)?)?;
+                        writer.write_all(&to_paletted_data_singular(0)?)?;
                     }
 
                     writer.into_boxed_slice()

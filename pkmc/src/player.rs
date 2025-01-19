@@ -1,8 +1,10 @@
+use std::sync::{Arc, Mutex};
+
 use pkmc_defs::{biome::Biome, packet, text_component::TextComponent};
 use pkmc_server::world::{
     anvil::AnvilError,
     chunk_loader::{ChunkLoader, ChunkPosition},
-    World,
+    World, WorldViewer,
 };
 use pkmc_util::{
     packet::{ClientboundPacket, Connection, ConnectionError},
@@ -33,6 +35,7 @@ pub enum PlayerError {
 pub struct Player {
     connection: Connection,
     server_state: ServerState,
+    viewer: Arc<Mutex<WorldViewer>>,
     name: String,
     uuid: UUID,
     keepalive_time: std::time::Instant,
@@ -43,8 +46,6 @@ pub struct Player {
     is_flying: bool,
     fly_speed: f32,
     slot: u16,
-    chunk_loader: ChunkLoader,
-    biome_mapper: IdTable<Biome>,
 }
 
 impl Player {
@@ -54,11 +55,23 @@ impl Player {
         uuid: UUID,
         name: String,
         view_distance: u8,
-        biome_mapper: IdTable<Biome>,
     ) -> Result<Self, PlayerError> {
+        let viewer = server_state
+            .world
+            .lock()
+            .unwrap()
+            .add_viewer(connection.sender());
+
+        viewer
+            .lock()
+            .unwrap()
+            .loader
+            .update_radius(view_distance.into());
+
         let mut player = Self {
             connection,
             server_state,
+            viewer,
             name,
             uuid,
             keepalive_time: std::time::Instant::now(),
@@ -69,8 +82,6 @@ impl Player {
             is_flying: true,
             fly_speed: 0.1,
             slot: 0,
-            chunk_loader: ChunkLoader::new(view_distance as i32),
-            biome_mapper,
         };
 
         let dimension = player
@@ -163,7 +174,11 @@ impl Player {
     }
 
     pub fn set_view_distance(&mut self, view_distance: u8) -> Result<(), PlayerError> {
-        self.chunk_loader.update_radius(view_distance as i32);
+        self.viewer
+            .lock()
+            .unwrap()
+            .loader
+            .update_radius(view_distance.into());
         self.connection
             .send(packet::play::SetChunkChacheRadius(view_distance as i32))?;
         Ok(())
@@ -258,40 +273,10 @@ impl Player {
             }
         }
 
-        let chunk_position = ChunkPosition::new((self.x as i32) / 16, (self.z as i32) / 16);
-        if self.chunk_loader.update_center(Some(chunk_position)) {
-            self.connection.send(packet::play::SetChunkCacheCenter {
-                chunk_x: chunk_position.chunk_x,
-                chunk_z: chunk_position.chunk_z,
-            })?;
-        }
-
-        while let Some(to_unload) = self.chunk_loader.next_to_unload() {
-            self.connection.send(packet::play::ForgetLevelChunk {
-                chunk_x: to_unload.chunk_x,
-                chunk_z: to_unload.chunk_z,
-            })?;
-        }
-
-        let mut world = self.server_state.world.lock().unwrap();
-        if let Some(to_load) = self.chunk_loader.next_to_load() {
-            //if to_load.chunk_x == 0 && to_load.chunk_z == 0 {
-            //    let chunk = world.get_chunk(to_load.chunk_x, to_load.chunk_z)?.unwrap();
-            //    println!("{:#?}", chunk);
-            //}
-            if let Some(packet) =
-                world.get_chunk_as_packet(to_load.chunk_x, to_load.chunk_z, &self.biome_mapper)?
-            {
-                self.connection.send(packet)?;
-            } else {
-                self.connection
-                    .send(packet::play::LevelChunkWithLight::generate_test(
-                        to_load.chunk_x,
-                        to_load.chunk_z,
-                        world.section_y_range().count(),
-                    )?)?;
-            }
-        }
+        let mut viewer = self.viewer.lock().unwrap();
+        viewer.x = self.x;
+        viewer.y = self.y;
+        viewer.z = self.z;
 
         Ok(())
     }

@@ -141,6 +141,12 @@ pub fn to_paletted_data(
     Ok(writer.into_boxed_slice())
 }
 
+pub fn to_paletted_data_singular(value: i32) -> std::io::Result<Box<[u8]>> {
+    let mut writer = Vec::new();
+    SinglePalettedContainer { value }.write(&mut writer)?;
+    Ok(writer.into_boxed_slice())
+}
+
 #[cfg(test)]
 mod test {
     use crate::packet::to_paletted_data;

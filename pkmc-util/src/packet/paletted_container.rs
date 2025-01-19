@@ -7,7 +7,6 @@ fn calculate_bpe(num_unique_values: usize) -> u32 {
     match num_unique_values {
         0 => panic!("calculate_bpe cannot calculate bpe with 0 unique values."),
         1 => 0,
-        2 => 1,
         _ => u64::BITS - num_unique_values.leading_zeros(),
     }
 }
@@ -52,7 +51,7 @@ impl IndirectPalettedContainer<'_> {
                 .iter()
                 .map(|value| self.palette.get(value).cloned().unwrap() as u64),
         );
-        assert!(remaining.count() == 0);
+        debug_assert!(remaining.count() == 0);
         let packed = packed.into_inner();
 
         writer.write_varint(packed.len() as i32)?;
@@ -86,8 +85,8 @@ impl<'a> PalettedContainerEnum<'a> {
         indirect_size_range: std::ops::RangeInclusive<u32>,
         direct_size: u32,
     ) -> Self {
-        assert!(*indirect_size_range.start() > 0);
-        assert!(*indirect_size_range.end() < direct_size);
+        debug_assert!(*indirect_size_range.start() > 0);
+        debug_assert!(*indirect_size_range.end() < direct_size);
 
         let mut palette = HashMap::new();
         values.iter().for_each(|v| {
@@ -145,6 +144,42 @@ pub fn to_paletted_data_singular(value: i32) -> std::io::Result<Box<[u8]>> {
     let mut writer = Vec::new();
     SinglePalettedContainer { value }.write(&mut writer)?;
     Ok(writer.into_boxed_slice())
+}
+
+pub fn to_paletted_data_precomputed(
+    palette: &[i32],
+    packed_indices: &[i64],
+    indirect_size_range: std::ops::RangeInclusive<u32>,
+    direct_size: u32,
+) -> std::io::Result<Box<[u8]>> {
+    debug_assert!(*indirect_size_range.start() > 0);
+    debug_assert!(*indirect_size_range.end() < direct_size);
+
+    match calculate_bpe(palette.len()) {
+        0 => to_paletted_data_singular(palette[0]),
+        bpe if bpe <= *indirect_size_range.end() => {
+            let mut writer = Vec::new();
+
+            writer.write_all(
+                &(bpe.clamp(*indirect_size_range.start(), *indirect_size_range.end()) as u8)
+                    .to_be_bytes(),
+            )?;
+
+            writer.write_varint(palette.len() as i32)?;
+            palette.iter().try_for_each(|v| writer.write_varint(*v))?;
+
+            writer.write_varint(packed_indices.len() as i32)?;
+            packed_indices
+                .iter()
+                .try_for_each(|v| writer.write_all(&v.to_be_bytes()))?;
+
+            Ok(writer.into_boxed_slice())
+        }
+        bpe if bpe <= direct_size => {
+            unimplemented!("Direct paletted container not yet implemented")
+        }
+        _ => panic!("Paletted container palette size is bigger than direct size."),
+    }
 }
 
 #[cfg(test)]

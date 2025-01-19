@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
+    fmt::Debug,
     fs::File,
-    io::{Seek, Write as _},
+    io::{Seek, Write},
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -18,7 +19,7 @@ use pkmc_defs::{
 use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
     nbt_compound,
-    packet::{to_paletted_data, ConnectionError, ConnectionSender},
+    packet::{to_paletted_data, to_paletted_data_singular, ConnectionError, ConnectionSender},
     IdTable, PackedArray, ReadExt, Transmutable,
 };
 use serde::Deserialize;
@@ -48,171 +49,145 @@ pub enum AnvilError {
     NBTError(#[from] NBTError),
 }
 
-fn default_blocks_palette() -> Box<[Block]> {
-    vec![Block::air()].into_boxed_slice()
+fn default_paletted_data<T: Default>() -> Box<[T]> {
+    vec![T::default()].into_boxed_slice()
 }
 
-#[derive(Debug, Deserialize, Clone)]
-struct ChunkSectionBlockStates {
-    #[serde(default = "default_blocks_palette")]
-    palette: Box<[Block]>,
+#[derive(Debug, Deserialize)]
+struct PalettedData<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8> {
+    #[serde(default = "default_paletted_data")]
+    palette: Box<[T]>,
     #[serde(default)]
-    data: Option<Box<[i64]>>,
-    #[serde(skip, default)]
-    palette_ids: Box<[i32]>,
-    #[serde(skip, default)]
-    palette_bits_size: u8,
+    data: Box<[i64]>,
 }
 
-impl ChunkSectionBlockStates {
-    fn initialize(&mut self) {
-        self.palette_ids = self
-            .palette
-            .iter()
-            .map(|b| {
-                b.id().unwrap_or_else(|| {
-                    b.without_properties()
-                        .id()
-                        .unwrap_or(Block::air().id().unwrap())
-                })
-            })
-            .collect();
-        self.palette_bits_size = match self.palette.len() {
-            0 => unreachable!(),
-            1 => 0,
-            palette_count => PackedArray::bits_per_entry(palette_count as u64 - 1).clamp(
-                *PALETTED_DATA_BLOCKS_INDIRECT.start() as u8,
-                *PALETTED_DATA_BLOCKS_INDIRECT.end() as u8,
-            ),
-        };
-    }
-
-    #[inline(always)]
-    fn get_block_palette_index_by_index(&self, index: usize) -> usize {
-        // FIXME: get_block_palette_index_by_index sometimes returns out of bounds index :(
+impl<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8>
+    PalettedData<T, N, I_S, I_E>
+{
+    fn bpe(&self) -> u8 {
         match self.palette.len() {
-            0 => unreachable!(),
+            0 => panic!(),
             1 => 0,
-            _ => {
-                let packed_indices = PackedArray::from_inner(
-                    self.data.as_ref().unwrap().as_ref().transmute(),
-                    self.palette_bits_size,
-                    SECTION_BLOCKS,
-                );
-                packed_indices.get_unchecked(index) as usize
-            }
+            palette_count => PackedArray::bits_per_entry(palette_count as u64 - 1).clamp(I_S, I_E),
         }
     }
 
-    fn get_block_by_index(&self, index: usize) -> Block {
-        self.palette
-            .get(self.get_block_palette_index_by_index(index))
-            .cloned()
-            .unwrap()
+    fn palette_index(&self, index: usize) -> usize {
+        debug_assert!(index < N);
+        match self.bpe() {
+            0 => 0,
+            bpe => PackedArray::from_inner(self.data.as_ref().transmute(), bpe, N)
+                .get(index)
+                .unwrap() as usize,
+        }
     }
 
-    fn get_block(&self, x: u8, y: u8, z: u8) -> Block {
+    fn get(&self, index: usize) -> Option<&T> {
+        self.palette.get(self.palette_index(index))
+    }
+
+    #[allow(unused)]
+    fn set(&mut self, index: usize) -> Option<&T> {
+        // TODO:
+        unimplemented!()
+    }
+}
+
+const PALETTED_DATA_BLOCKS_INDIRECT_START: u8 = *PALETTED_DATA_BLOCKS_INDIRECT.start() as u8;
+const PALETTED_DATA_BLOCKS_INDIRECT_END: u8 = *PALETTED_DATA_BLOCKS_INDIRECT.end() as u8;
+type ChunkSectionBlockStates = PalettedData<
+    Block,
+    SECTION_BLOCKS,
+    PALETTED_DATA_BLOCKS_INDIRECT_START,
+    PALETTED_DATA_BLOCKS_INDIRECT_END,
+>;
+
+impl ChunkSectionBlockStates {
+    fn get_block(&self, x: u8, y: u8, z: u8) -> Option<&Block> {
         debug_assert!((x as usize) < SECTION_SIZE);
         debug_assert!((y as usize) < SECTION_SIZE);
         debug_assert!((z as usize) < SECTION_SIZE);
-        self.get_block_by_index(
+        self.get(
             (y as usize) * SECTION_SIZE * SECTION_SIZE + (z as usize) * SECTION_SIZE + (x as usize),
         )
     }
 
-    /// Returns none if any of the IDs are not found.
-    fn blocks_ids(&self) -> [i32; SECTION_BLOCKS] {
-        (0..SECTION_BLOCKS)
-            .map(|index| {
-                *self
-                    .palette_ids
-                    .get(self.get_block_palette_index_by_index(index))
-                    .unwrap()
+    fn write(&self, mut writer: impl Write) -> Result<(), AnvilError> {
+        let block_ids = self
+            .palette
+            .iter()
+            .map(|b| {
+                b.id_with_default_fallback()
+                    .unwrap_or_else(|| Block::air().id().unwrap())
             })
-            .collect::<Vec<i32>>()
-            .try_into()
-            .unwrap()
+            .collect::<Box<[_]>>();
+
+        let block_count = (0..SECTION_BLOCKS)
+            .filter(|i| !generated::block::is_air(block_ids[self.palette_index(*i)]))
+            .count();
+
+        writer.write_all(&(block_count as u16).to_be_bytes())?;
+        // FIXME: Why does this work only most of the time?
+        // Some sections are just outright missing.
+        // My best guess is that there's 2 palette values that are the exact same, so when
+        // minecraft decodes the data it doesn't know what to do.
+        //writer.write_all(&to_paletted_data_precomputed(
+        //    &block_ids,
+        //    &self.data,
+        //    PALETTED_DATA_BLOCKS_INDIRECT,
+        //    PALETTED_DATA_BLOCKS_DIRECT,
+        //)?)?;
+        // For now we'll just do it the slow way.
+        writer.write_all(&to_paletted_data(
+            &(0..SECTION_BLOCKS)
+                .map(|i| block_ids[self.palette_index(i)])
+                .collect::<Box<[_]>>(),
+            PALETTED_DATA_BLOCKS_INDIRECT,
+            PALETTED_DATA_BLOCKS_DIRECT,
+        )?)?;
+
+        Ok(())
     }
-
-    // NOTE: Data from this is already paletted correctly, All that's needed to do is convert to
-    // IDs then send that into a packet, would be dramatically faster if we included an option to
-    // just directly convert to packet data.
 }
 
-fn default_biomes_palette() -> Box<[Biome]> {
-    vec![Biome::default()].into_boxed_slice()
-}
-
-#[derive(Debug, Deserialize, Clone)]
-struct ChunkSectionBiomes {
-    #[serde(default = "default_biomes_palette")]
-    palette: Box<[Biome]>,
-    #[serde(default)]
-    data: Option<Box<[i64]>>,
-}
+const PALETTED_DATA_BIOMES_INDIRECT_START: u8 = *PALETTED_DATA_BIOMES_INDIRECT.start() as u8;
+const PALETTED_DATA_BIOMES_INDIRECT_END: u8 = *PALETTED_DATA_BIOMES_INDIRECT.end() as u8;
+type ChunkSectionBiomes = PalettedData<
+    Biome,
+    SECTION_BIOMES,
+    PALETTED_DATA_BIOMES_INDIRECT_START,
+    PALETTED_DATA_BIOMES_INDIRECT_END,
+>;
 
 impl ChunkSectionBiomes {
-    #[inline(always)]
-    fn get_biome_palette_index_by_index(&self, index: usize) -> usize {
-        // FIXME: get_block_palette_index_by_index sometimes returns out of bounds index :(
-        match self.palette.len() {
-            0 => unreachable!(),
-            1 => 0,
-            palette_count => {
-                let packed_indices = PackedArray::from_inner(
-                    self.data.as_ref().unwrap().as_ref().transmute(),
-                    PackedArray::bits_per_entry(palette_count as u64 - 1).clamp(
-                        *PALETTED_DATA_BIOMES_INDIRECT.start() as u8,
-                        *PALETTED_DATA_BIOMES_INDIRECT.end() as u8,
-                    ),
-                    SECTION_BIOMES,
-                );
-                packed_indices.get_unchecked(index) as usize
-            }
-        }
-    }
-
-    /// Returns none if any of the IDs are not found.
-    fn biomes_ids(&self, mapper: &IdTable<Biome>, fallback: Option<i32>) -> [i32; SECTION_BIOMES] {
-        let palette_ids: Box<[i32]> = self
+    fn write(&self, mut writer: impl Write, mapper: &IdTable<Biome>) -> Result<(), AnvilError> {
+        let biome_ids = self
             .palette
             .iter()
             .map(|b| {
                 b.id(mapper)
-                    .or(fallback)
                     .unwrap_or_else(|| Biome::default().id(mapper).unwrap())
             })
-            .collect();
-        (0..SECTION_BIOMES)
-            .map(|index| {
-                *palette_ids
-                    .get(self.get_biome_palette_index_by_index(index))
-                    .unwrap()
-            })
-            .collect::<Vec<i32>>()
-            .try_into()
-            .unwrap()
-    }
+            .collect::<Box<[_]>>();
 
-    // NOTE: Data from this is already paletted correctly, All that's needed to do is convert to
-    // IDs then send that into a packet, would be dramatically faster if we included an option to
-    // just directly convert to packet data.
+        writer.write_all(&to_paletted_data(
+            &(0..SECTION_BIOMES)
+                .map(|i| biome_ids[self.palette_index(i)])
+                .collect::<Box<[_]>>(),
+            PALETTED_DATA_BIOMES_INDIRECT,
+            PALETTED_DATA_BIOMES_DIRECT,
+        )?)?;
+
+        Ok(())
+    }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 struct ChunkSection {
     #[serde(rename = "Y")]
     y: i8,
     block_states: Option<ChunkSectionBlockStates>,
     biomes: Option<ChunkSectionBiomes>,
-}
-
-impl ChunkSection {
-    fn initialize(&mut self) {
-        if let Some(ref mut block_states) = self.block_states {
-            block_states.initialize();
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -228,7 +203,7 @@ struct AnvilBlockEntity {
     data: HashMap<String, serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct AnvilChunk {
     //#[serde(rename = "DataVersion")]
     //data_version: i32,
@@ -252,10 +227,6 @@ impl AnvilChunk {
     fn initialize(&mut self) {
         // Sometimes sections are unsorted.
         self.sections.sort_by(|a, b| a.y.cmp(&b.y));
-
-        self.sections
-            .iter_mut()
-            .for_each(|section| section.initialize());
 
         self.parsed_block_entities = self
             .block_entities
@@ -285,39 +256,15 @@ impl AnvilChunk {
     fn get_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<Block> {
         debug_assert!((block_x as usize) < SECTION_SIZE);
         debug_assert!((block_z as usize) < SECTION_SIZE);
-        Some(
-            self.get_section((block_y / SECTION_SIZE as i16) as i8)?
-                .block_states
-                .as_ref()?
-                .get_block(
-                    block_x,
-                    (block_y.rem_euclid(SECTION_SIZE as i16)) as u8,
-                    block_z,
-                ),
-        )
-    }
-
-    fn get_section_blocks_ids(&self, section_y: i8) -> Option<[i32; SECTION_BLOCKS]> {
-        Some(
-            self.get_section(section_y)?
-                .block_states
-                .as_ref()?
-                .blocks_ids(),
-        )
-    }
-
-    fn get_section_biomes_ids_with_fallback(
-        &self,
-        section_y: i8,
-        mapper: &IdTable<Biome>,
-        fallback: i32,
-    ) -> Option<[i32; SECTION_BIOMES]> {
-        Some(
-            self.get_section(section_y)?
-                .biomes
-                .as_ref()?
-                .biomes_ids(mapper, Some(fallback)),
-        )
+        self.get_section((block_y / SECTION_SIZE as i16) as i8)?
+            .block_states
+            .as_ref()?
+            .get_block(
+                block_x,
+                (block_y.rem_euclid(SECTION_SIZE as i16)) as u8,
+                block_z,
+            )
+            .cloned()
     }
 
     fn block_entities(&self) -> &[pkmc_defs::block::BlockEntity] {
@@ -588,35 +535,23 @@ impl World for AnvilWorld {
                                         let mut writer = Vec::new();
 
                                         self.section_y_range().try_for_each(|section_y| {
-                                            let block_ids = chunk
-                                                .get_section_blocks_ids(section_y)
-                                                .unwrap_or_else(|| [Block::air().id().unwrap(); SECTION_BLOCKS]);
-                                            // Num non-air blocks
-                                            let block_count = block_ids
-                                                .iter()
-                                                .filter(|b| !generated::block::is_air(**b))
-                                                .count();
-                                            writer.write_all(&(block_count as u16).to_be_bytes())?;
-                                            // Blocks
-                                            writer.write_all(&to_paletted_data(
-                                                &block_ids,
-                                                PALETTED_DATA_BLOCKS_INDIRECT,
-                                                PALETTED_DATA_BLOCKS_DIRECT,
-                                            )?)?;
-                                            // Biome
-                                            writer.write_all(&to_paletted_data(
-                                                &chunk
-                                                    .get_section_biomes_ids_with_fallback(
-                                                        section_y,
-                                                        &self.biome_mapper,
-                                                        Biome::default().id(&self.biome_mapper).unwrap(),
-                                                    )
-                                                    .unwrap_or_else(|| {
-                                                        [Biome::default().id(&self.biome_mapper).unwrap(); SECTION_BIOMES]
-                                                    }),
-                                                PALETTED_DATA_BIOMES_INDIRECT,
-                                                PALETTED_DATA_BIOMES_DIRECT,
-                                            )?)?;
+                                            if let Some(section) = chunk.get_section(section_y) {
+                                                if let Some(block_states) = &section.block_states {
+                                                    block_states.write(&mut writer)?;
+                                                } else {
+                                                    writer.write_all(&0u16.to_be_bytes())?;
+                                                    writer.write_all(&to_paletted_data_singular(Block::air().id().unwrap())?)?;
+                                                }
+                                                if let Some(biomes) = &section.biomes {
+                                                    biomes.write(&mut writer, &self.biome_mapper)?;
+                                                } else {
+                                                    writer.write_all(&to_paletted_data_singular(Biome::default().id(&self.biome_mapper).unwrap())?)?;
+                                                }
+                                            } else {
+                                                writer.write_all(&0u16.to_be_bytes())?;
+                                                writer.write_all(&to_paletted_data_singular(Block::air().id().unwrap())?)?;
+                                                writer.write_all(&to_paletted_data_singular(Biome::default().id(&self.biome_mapper).unwrap())?)?;
+                                            }
                                             Ok::<_, AnvilError>(())
                                         })?;
 

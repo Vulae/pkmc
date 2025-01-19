@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .enumerate()
         .map(|(i, (k, _v))| (normalize_identifier(k, "minecraft").into(), i as i32))
         .collect();
-    let world = AnvilWorld::new(config.world, "minecraft:overworld", -4..=20, biome_mapper);
+    let world = AnvilWorld::new(config.world, "minecraft:overworld", -4..=19, biome_mapper);
     let state = ServerState {
         world: Arc::new(Mutex::new(world)),
     };

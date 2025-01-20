@@ -62,3 +62,9 @@ impl<'a, I: Transmutable<O>, O> Transmutable<&'a [O]> for &'a [I] {
         unsafe { std::mem::transmute(self) }
     }
 }
+
+impl<'a, I: Transmutable<O>, O> Transmutable<&'a mut [O]> for &'a mut [I] {
+    fn transmute(self) -> &'a mut [O] {
+        unsafe { std::mem::transmute(self) }
+    }
+}

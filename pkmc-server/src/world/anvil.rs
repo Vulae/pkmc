@@ -99,21 +99,17 @@ impl<T: Debug + Default + Eq + Clone + Hash, const N: usize, const I_S: u8, cons
             return false;
         }
 
-        // FIXME: The following code for some reason just doesn't work, IDK why.
-        //if let Some(palette_index) = self.palette.iter().position(|v| *v == value) {
-        //    match Self::bpe(self.palette.len()) {
-        //        // Previous check should have caught this.
-        //        0 => unreachable!(),
-        //        bpe => {
-        //            // TODO: Make PackedArray be able to take mutable reference or something.
-        //            let mut packed =
-        //                PackedArray::from_inner(self.data.as_ref().transmute(), bpe, N);
-        //            packed.set(index, palette_index as u64);
-        //            self.data = packed.into_inner().transmute().into();
-        //            return true;
-        //        }
-        //    }
-        //}
+        if let Some(palette_index) = self.palette.iter().position(|v| *v == value) {
+            match Self::bpe(self.palette.len()) {
+                // Previous check should have caught this.
+                0 => unreachable!(),
+                bpe => {
+                    PackedArray::from_inner(self.data.as_mut().transmute(), bpe, N)
+                        .set(index, palette_index as u64);
+                    return true;
+                }
+            }
+        }
 
         let mut parsed: [T; N] = (0..N)
             .map(|i| self.get(i))
@@ -332,7 +328,7 @@ impl AnvilChunk {
         debug_assert!((block_x as usize) < SECTION_SIZE);
         debug_assert!((block_z as usize) < SECTION_SIZE);
         Some(
-            self.get_section((block_y / SECTION_SIZE as i16) as i8)?
+            self.get_section(block_y.div_euclid(SECTION_SIZE as i16) as i8)?
                 .block_states
                 .as_ref()?
                 .get_block(
@@ -354,7 +350,8 @@ impl AnvilChunk {
         // TODO: Set block entities
         debug_assert!((block_x as usize) < SECTION_SIZE);
         debug_assert!((block_z as usize) < SECTION_SIZE);
-        let Some(section) = self.get_section_mut((block_y / SECTION_SIZE as i16) as i8) else {
+        let Some(section) = self.get_section_mut(block_y.div_euclid(SECTION_SIZE as i16) as i8)
+        else {
             return false;
         };
         let Some(block_states) = section.block_states.as_mut() else {

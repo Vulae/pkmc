@@ -1,15 +1,13 @@
-use std::borrow::Cow;
-
 #[derive(Debug, Clone)]
-pub struct PackedArray<'a> {
+pub struct PackedArray<T> {
     bits_per_entry: u8,
     num_entries: usize,
     entries_per_long: u8,
     entry_mask: u64,
-    packed: Cow<'a, [u64]>,
+    packed: T,
 }
 
-impl PackedArray<'_> {
+impl PackedArray<Vec<u64>> {
     /// If this returns 0, you should not be using PackedArray
     pub const fn bits_per_entry(max_value: u64) -> u8 {
         match max_value {
@@ -25,16 +23,21 @@ impl PackedArray<'_> {
             (u64::BITS / bits_per_entry as u32) as u64,
         ) as usize
     }
+    pub fn new(bits_per_entry: u8, num_entries: usize) -> Self {
+        Self::from_inner(
+            vec![0; PackedArray::packed_size(bits_per_entry, num_entries)],
+            bits_per_entry,
+            num_entries,
+        )
+    }
 }
 
-impl<'a> PackedArray<'a> {
-    pub fn from_inner<T>(packed: T, bits_per_entry: u8, num_entries: usize) -> Self
-    where
-        T: Into<Cow<'a, [u64]>>,
-    {
-        let packed: Cow<'a, [u64]> = packed.into();
-        // FIXME: Figure out why for some reason may be bigger than needed?
-        assert!(packed.len() >= PackedArray::packed_size(bits_per_entry, num_entries));
+impl<T> PackedArray<T>
+where
+    T: AsRef<[u64]>,
+{
+    pub fn from_inner(packed: T, bits_per_entry: u8, num_entries: usize) -> Self {
+        assert!(packed.as_ref().len() == PackedArray::packed_size(bits_per_entry, num_entries));
         Self {
             bits_per_entry,
             num_entries,
@@ -44,15 +47,7 @@ impl<'a> PackedArray<'a> {
         }
     }
 
-    pub fn new(bits_per_entry: u8, num_entries: usize) -> Self {
-        Self::from_inner(
-            vec![0; PackedArray::packed_size(bits_per_entry, num_entries)],
-            bits_per_entry,
-            num_entries,
-        )
-    }
-
-    pub fn into_inner(self) -> Cow<'a, [u64]> {
+    pub fn into_inner(self) -> T {
         self.packed
     }
 
@@ -64,27 +59,12 @@ impl<'a> PackedArray<'a> {
         )
     }
 
-    pub fn set(&mut self, index: usize, value: u64) {
-        if index >= self.num_entries || value > self.entry_mask {
-            return;
-        }
-        let (index, offset) = self.index_offset(index);
-        self.packed.to_mut()[index] |= value << offset;
-    }
-
-    /// Panics if out of bounds or if value is too large
-    pub fn set_unchecked(&mut self, index: usize, value: u64) {
-        assert!(index < self.num_entries);
-        assert!(value <= self.entry_mask);
-        self.set(index, value);
-    }
-
     pub fn get(&self, index: usize) -> Option<u64> {
         if index >= self.num_entries {
             return None;
         }
         let (index, offset) = self.index_offset(index);
-        Some((self.packed[index] >> offset) & self.entry_mask)
+        Some((self.packed.as_ref()[index] >> offset) & self.entry_mask)
     }
 
     /// Panics if out of bounds
@@ -95,6 +75,28 @@ impl<'a> PackedArray<'a> {
 
     pub fn iter(&self) -> impl Iterator<Item = u64> + '_ {
         (0..self.num_entries).map(|i| self.get_unchecked(i))
+    }
+}
+
+impl<T> PackedArray<T>
+where
+    T: AsRef<[u64]> + AsMut<[u64]>,
+{
+    pub fn set(&mut self, index: usize, value: u64) {
+        if index >= self.num_entries || value > self.entry_mask {
+            return;
+        }
+        let (index, offset) = self.index_offset(index);
+        let packed_value = self.packed.as_mut().get_mut(index).unwrap();
+        *packed_value &= !(self.entry_mask << offset);
+        *packed_value |= value << offset;
+    }
+
+    /// Panics if out of bounds or if value is too large
+    pub fn set_unchecked(&mut self, index: usize, value: u64) {
+        assert!(index < self.num_entries);
+        assert!(value <= self.entry_mask);
+        self.set(index, value);
     }
 
     /// Consumes the iterator placing values in self

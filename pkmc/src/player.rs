@@ -273,7 +273,7 @@ impl Player {
                 packet::play::PlayPacket::SwingArm(_swing_arm) => {
                     let block_position = Position::from_f64(self.x, self.y, self.z);
                     let mut world = self.server_state.world.lock().unwrap();
-                    let radius: f64 = 8.0;
+                    let radius: f64 = 32.0;
                     for dx in ((-radius as i32)..=(radius as i32)) {
                         for dy in ((-radius as i16)..=(radius as i16)) {
                             for dz in ((-radius as i32)..=(radius as i32)) {

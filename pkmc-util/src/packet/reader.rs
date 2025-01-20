@@ -2,6 +2,8 @@ use std::io::Read;
 
 use crate::{ReadExt as _, UUID};
 
+use super::Position;
+
 pub fn read_varint_ret_bytes(mut reader: impl Read) -> std::io::Result<(usize, i32)> {
     let mut bytes = 0;
     let mut value = 0;
@@ -40,11 +42,12 @@ pub trait ReadExtPacket {
     fn read_string(&mut self) -> std::io::Result<String>;
     fn read_bool(&mut self) -> std::io::Result<bool>;
     fn read_uuid(&mut self) -> std::io::Result<UUID>;
+    fn read_position(&mut self) -> std::io::Result<Position>;
 }
 
 impl<T: Read> ReadExtPacket for T {
     fn read_varint(&mut self) -> std::io::Result<i32> {
-        Ok(read_varint(self)?)
+        read_varint(self)
     }
 
     fn read_string(&mut self) -> std::io::Result<String> {
@@ -72,6 +75,15 @@ impl<T: Read> ReadExtPacket for T {
 
     fn read_uuid(&mut self) -> std::io::Result<UUID> {
         Ok(UUID(self.read_const()?))
+    }
+
+    fn read_position(&mut self) -> std::io::Result<Position> {
+        let v = i64::from_be_bytes(self.read_const()?);
+        Ok(Position {
+            x: (v >> 38) as i32,
+            y: (v << 52 >> 52) as i16,
+            z: (v << 26 >> 38) as i32,
+        })
     }
 }
 

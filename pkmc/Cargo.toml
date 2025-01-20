@@ -3,6 +3,9 @@ name = "pkmc"
 version.workspace = true
 edition.workspace = true
 
+[features]
+full-image = ["image/default"]
+
 [dependencies]
 pkmc-util = { path = "../pkmc-util" }
 pkmc-defs = { path = "../pkmc-defs" }
@@ -11,7 +14,6 @@ thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml = "0.8.19"
-# FIXME: Make this use default features for release build.
 image = { version = "0.25.5", default-features = false, features = ["png"] }
 base64 = "0.22.1"
 rand = "0.8.5"

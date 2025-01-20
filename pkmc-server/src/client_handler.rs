@@ -135,6 +135,11 @@ impl ClientHandler {
     }
 
     pub fn update(&mut self) -> Result<(), ClientHandlerError> {
+        if self.connection.is_closed() {
+            self.state = ClientHandlerState::Closed;
+            return Ok(());
+        }
+
         match self.state {
             ClientHandlerState::Closed => {}
             ClientHandlerState::Handshake => {
@@ -181,7 +186,10 @@ impl ClientHandler {
                                 enforces_secure_chat: false,
                             })?;
                         }
-                        packet::status::StatusPacket::Ping(ping) => self.connection.send(ping)?,
+                        packet::status::StatusPacket::Ping(ping) => {
+                            self.connection.send(ping)?;
+                            self.state = ClientHandlerState::Closed;
+                        }
                     }
                 }
             }

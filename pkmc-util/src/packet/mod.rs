@@ -32,6 +32,16 @@ pub struct Position {
     pub z: i32,
 }
 
+impl Position {
+    pub fn new(x: i32, y: i16, z: i32) -> Self {
+        Self { x, y, z }
+    }
+
+    pub fn from_f64(x: f64, y: f64, z: f64) -> Self {
+        Self::new(x.floor() as i32, y.floor() as i16, z.floor() as i32)
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct BitSet {
     length: usize,

@@ -1,13 +1,13 @@
 use std::sync::{Arc, Mutex};
 
-use pkmc_defs::{biome::Biome, packet, text_component::TextComponent};
+use pkmc_defs::{biome::Biome, block::Block, packet, text_component::TextComponent};
 use pkmc_server::world::{
     anvil::AnvilError,
     chunk_loader::{ChunkLoader, ChunkPosition},
-    World, WorldViewer,
+    World, WorldBlock, WorldViewer,
 };
 use pkmc_util::{
-    packet::{ClientboundPacket, Connection, ConnectionError},
+    packet::{ClientboundPacket, Connection, ConnectionError, Position},
     IdTable, UUID,
 };
 use rand::Rng as _;
@@ -269,6 +269,27 @@ impl Player {
                     }
                     self.update_flyspeed()?;
                     self.slot = new_slot;
+                }
+                packet::play::PlayPacket::SwingArm(_swing_arm) => {
+                    let block_position = Position::from_f64(self.x, self.y, self.z);
+                    let mut world = self.server_state.world.lock().unwrap();
+                    let radius: f64 = 8.0;
+                    for dx in ((-radius as i32)..=(radius as i32)) {
+                        for dy in ((-radius as i16)..=(radius as i16)) {
+                            for dz in ((-radius as i32)..=(radius as i32)) {
+                                if ((dx as f64).powi(2) + (dy as f64).powi(2) + (dz as f64).powi(2))
+                                    .sqrt()
+                                    > radius
+                                {
+                                    continue;
+                                }
+                                let x = block_position.x + dx;
+                                let y = block_position.y + dy;
+                                let z = block_position.z + dz;
+                                world.set_block(x, y, z, WorldBlock::Block(Block::air()));
+                            }
+                        }
+                    }
                 }
             }
         }

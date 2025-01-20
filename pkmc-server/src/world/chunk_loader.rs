@@ -127,4 +127,11 @@ impl ChunkLoader {
     pub fn next_to_unload(&mut self) -> Option<ChunkPosition> {
         self.to_unload.pop()
     }
+
+    pub fn force_reload(&mut self, position: ChunkPosition) {
+        self.to_unload.retain(|p| *p != position);
+        if self.loaded.remove(&position) {
+            self.to_load.insert(position);
+        }
+    }
 }

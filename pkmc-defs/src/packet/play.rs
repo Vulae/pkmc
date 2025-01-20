@@ -740,6 +740,20 @@ impl ClientboundPacket for SetChunkChacheRadius {
     }
 }
 
+#[derive(Debug)]
+pub struct SwingArm(pub i32);
+
+impl ServerboundPacket for SwingArm {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_SWING;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self(reader.read_varint()?))
+    }
+}
+
 serverbound_packet_enum!(pub PlayPacket;
     KeepAlive, KeepAlive;
     PlayerLoaded, PlayerLoaded;
@@ -753,4 +767,5 @@ serverbound_packet_enum!(pub PlayPacket;
     PlayerAbilities_Serverbound, PlayerAbilities;
     PlayerCommand, PlayerCommand;
     SetCarriedItem, SetHeldItem;
+    SwingArm, SwingArm;
 );

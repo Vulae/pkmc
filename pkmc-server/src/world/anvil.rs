@@ -1,12 +1,14 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     fs::File,
+    hash::Hash,
     io::{Seek, Write},
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 
+use itertools::Itertools;
 use pkmc_defs::{
     biome::Biome,
     block::{Block, BlockEntity},
@@ -64,8 +66,8 @@ struct PalettedData<T: Debug + Default, const N: usize, const I_S: u8, const I_E
 impl<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8>
     PalettedData<T, N, I_S, I_E>
 {
-    fn bpe(&self) -> u8 {
-        match self.palette.len() {
+    fn bpe(palette_count: usize) -> u8 {
+        match palette_count {
             0 => panic!(),
             1 => 0,
             palette_count => PackedArray::bits_per_entry(palette_count as u64 - 1).clamp(I_S, I_E),
@@ -74,7 +76,7 @@ impl<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8>
 
     fn palette_index(&self, index: usize) -> usize {
         debug_assert!(index < N);
-        match self.bpe() {
+        match Self::bpe(self.palette.len()) {
             0 => 0,
             bpe => PackedArray::from_inner(self.data.as_ref().transmute(), bpe, N)
                 .get(index)
@@ -82,14 +84,75 @@ impl<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8>
         }
     }
 
-    fn get(&self, index: usize) -> Option<&T> {
-        self.palette.get(self.palette_index(index))
+    fn get(&self, index: usize) -> &T {
+        let palette_index = self.palette_index(index);
+        debug_assert!(palette_index < self.palette.len());
+        &self.palette[palette_index]
     }
+}
 
-    #[allow(unused)]
-    fn set(&mut self, index: usize) -> Option<&T> {
-        // TODO:
-        unimplemented!()
+impl<T: Debug + Default + Eq + Clone + Hash, const N: usize, const I_S: u8, const I_E: u8>
+    PalettedData<T, N, I_S, I_E>
+{
+    fn set(&mut self, index: usize, value: T) -> bool {
+        if *self.get(index) == value {
+            return false;
+        }
+
+        // FIXME: The following code for some reason just doesn't work, IDK why.
+        //if let Some(palette_index) = self.palette.iter().position(|v| *v == value) {
+        //    match Self::bpe(self.palette.len()) {
+        //        // Previous check should have caught this.
+        //        0 => unreachable!(),
+        //        bpe => {
+        //            // TODO: Make PackedArray be able to take mutable reference or something.
+        //            let mut packed =
+        //                PackedArray::from_inner(self.data.as_ref().transmute(), bpe, N);
+        //            packed.set(index, palette_index as u64);
+        //            self.data = packed.into_inner().transmute().into();
+        //            return true;
+        //        }
+        //    }
+        //}
+
+        let mut parsed: [T; N] = (0..N)
+            .map(|i| self.get(i))
+            .cloned()
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        parsed[index] = value;
+
+        let mut palette = HashMap::new();
+        parsed.iter().for_each(|v| {
+            let count = palette.len();
+            palette.entry(v.clone()).or_insert(count);
+        });
+
+        match Self::bpe(palette.len()) {
+            0 => {
+                self.palette = palette.into_keys().collect();
+                self.data = Vec::new().into_boxed_slice();
+            }
+            bpe => {
+                let mut data = PackedArray::new(bpe, N);
+
+                let remaining = data
+                    .consume(parsed.iter().map(|v| *palette.get(v).unwrap() as u64))
+                    .count();
+                debug_assert_eq!(remaining, 0);
+
+                self.palette = palette
+                    .into_iter()
+                    .sorted_by(|(_, a), (_, b)| a.cmp(b))
+                    .map(|(k, _)| k)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
+                self.data = data.into_inner().to_vec().into_boxed_slice().transmute();
+            }
+        }
+
+        true
     }
 }
 
@@ -103,13 +166,19 @@ type ChunkSectionBlockStates = PalettedData<
 >;
 
 impl ChunkSectionBlockStates {
-    fn get_block(&self, x: u8, y: u8, z: u8) -> Option<&Block> {
+    fn get_block_index(x: u8, y: u8, z: u8) -> usize {
         debug_assert!((x as usize) < SECTION_SIZE);
         debug_assert!((y as usize) < SECTION_SIZE);
         debug_assert!((z as usize) < SECTION_SIZE);
-        self.get(
-            (y as usize) * SECTION_SIZE * SECTION_SIZE + (z as usize) * SECTION_SIZE + (x as usize),
-        )
+        (y as usize) * SECTION_SIZE * SECTION_SIZE + (z as usize) * SECTION_SIZE + (x as usize)
+    }
+
+    fn get_block(&self, x: u8, y: u8, z: u8) -> &Block {
+        self.get(Self::get_block_index(x, y, z))
+    }
+
+    fn set_block(&mut self, x: u8, y: u8, z: u8, block: Block) -> bool {
+        self.set(Self::get_block_index(x, y, z), block)
     }
 
     fn write(&self, mut writer: impl Write) -> Result<(), AnvilError> {
@@ -233,7 +302,7 @@ impl AnvilChunk {
             .iter()
             .map(|b| {
                 BlockEntity::new(
-                    self.get_block(
+                    self.get_tile_block(
                         b.x.rem_euclid(CHUNK_SIZE as i32) as u8,
                         b.y as i16,
                         b.z.rem_euclid(CHUNK_SIZE as i32) as u8,
@@ -253,21 +322,53 @@ impl AnvilChunk {
         self.sections.iter().find(|section| section.y == section_y)
     }
 
-    fn get_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<Block> {
-        debug_assert!((block_x as usize) < SECTION_SIZE);
-        debug_assert!((block_z as usize) < SECTION_SIZE);
-        self.get_section((block_y / SECTION_SIZE as i16) as i8)?
-            .block_states
-            .as_ref()?
-            .get_block(
-                block_x,
-                (block_y.rem_euclid(SECTION_SIZE as i16)) as u8,
-                block_z,
-            )
-            .cloned()
+    fn get_section_mut(&mut self, section_y: i8) -> Option<&mut ChunkSection> {
+        self.sections
+            .iter_mut()
+            .find(|section| section.y == section_y)
     }
 
-    fn block_entities(&self) -> &[pkmc_defs::block::BlockEntity] {
+    fn get_tile_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<Block> {
+        debug_assert!((block_x as usize) < SECTION_SIZE);
+        debug_assert!((block_z as usize) < SECTION_SIZE);
+        Some(
+            self.get_section((block_y / SECTION_SIZE as i16) as i8)?
+                .block_states
+                .as_ref()?
+                .get_block(
+                    block_x,
+                    (block_y.rem_euclid(SECTION_SIZE as i16)) as u8,
+                    block_z,
+                )
+                .clone(),
+        )
+    }
+
+    fn get_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<WorldBlock> {
+        // TODO: WorldBlock::BlockEntity
+        self.get_tile_block(block_x, block_y, block_z)
+            .map(WorldBlock::Block)
+    }
+
+    fn set_block(&mut self, block_x: u8, block_y: i16, block_z: u8, block: WorldBlock) -> bool {
+        // TODO: Set block entities
+        debug_assert!((block_x as usize) < SECTION_SIZE);
+        debug_assert!((block_z as usize) < SECTION_SIZE);
+        let Some(section) = self.get_section_mut((block_y / SECTION_SIZE as i16) as i8) else {
+            return false;
+        };
+        let Some(block_states) = section.block_states.as_mut() else {
+            return false;
+        };
+        block_states.set_block(
+            block_x,
+            (block_y.rem_euclid(SECTION_SIZE as i16)) as u8,
+            block_z,
+            block.as_block().clone(),
+        )
+    }
+
+    fn block_entities(&self) -> &[BlockEntity] {
         &self.parsed_block_entities
     }
 }
@@ -368,6 +469,12 @@ impl Region {
             .get(&(chunk_x, chunk_z))
             .and_then(|i| i.as_ref())
     }
+
+    fn get_chunk_mut(&mut self, chunk_x: u8, chunk_z: u8) -> Option<&mut AnvilChunk> {
+        self.loaded_chunks
+            .get_mut(&(chunk_x, chunk_z))
+            .and_then(|i| i.as_mut())
+    }
 }
 
 #[derive(Debug)]
@@ -379,6 +486,7 @@ pub struct AnvilWorld {
     biome_mapper: IdTable<Biome>,
     viewers: Vec<Arc<Mutex<WorldViewer>>>,
     viewers_id: usize,
+    force_reload_chunks: HashSet<ChunkPosition>,
 }
 
 impl AnvilWorld {
@@ -396,6 +504,7 @@ impl AnvilWorld {
             biome_mapper,
             viewers: Vec::new(),
             viewers_id: 0,
+            force_reload_chunks: HashSet::new(),
         }
     }
 
@@ -468,6 +577,18 @@ impl AnvilWorld {
         Some(chunk)
     }
 
+    fn get_chunk_mut(&mut self, chunk_x: i32, chunk_z: i32) -> Option<&mut AnvilChunk> {
+        let region = self.get_region_mut(
+            chunk_x.div_euclid(REGION_SIZE as i32),
+            chunk_z.div_euclid(REGION_SIZE as i32),
+        )?;
+        let chunk = region.get_chunk_mut(
+            (chunk_x.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
+            (chunk_z.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
+        )?;
+        Some(chunk)
+    }
+
     fn section_y_range(&self) -> std::ops::RangeInclusive<i8> {
         self.section_y_range.clone()
     }
@@ -498,6 +619,17 @@ impl World for AnvilWorld {
     fn update_viewers(&mut self) -> Result<(), Self::Error> {
         self.viewers
             .retain(|v| !v.lock().unwrap().connection.is_closed());
+
+        self.force_reload_chunks
+            .drain()
+            .for_each(|force_reload_chunk| {
+                self.viewers
+                    .iter()
+                    .map(|viewer| viewer.lock().unwrap())
+                    .for_each(|mut viewer| {
+                        viewer.loader.force_reload(force_reload_chunk);
+                    });
+            });
 
         self.viewers
             // TODO: Don't clone this wtf
@@ -600,18 +732,34 @@ impl World for AnvilWorld {
         ) else {
             return Ok(None);
         };
-        Ok(chunk
-            .get_block(
-                (x % (CHUNK_SIZE as i32)) as u8,
-                y,
-                (z % (CHUNK_SIZE as i32)) as u8,
-            )
-            .map(WorldBlock::Block))
+        Ok(chunk.get_block(
+            (x.rem_euclid(CHUNK_SIZE as i32)) as u8,
+            y,
+            (z.rem_euclid(CHUNK_SIZE as i32)) as u8,
+        ))
     }
 
     #[allow(unused)]
     fn set_block(&mut self, x: i32, y: i16, z: i32, block: WorldBlock) -> Result<(), Self::Error> {
-        todo!()
+        let chunk_x = x.div_euclid(CHUNK_SIZE as i32);
+        let chunk_z = z.div_euclid(CHUNK_SIZE as i32);
+        self.prepare_chunk(chunk_x, chunk_z)?;
+        let Some(chunk) = self.get_chunk_mut(
+            x.div_euclid(CHUNK_SIZE as i32),
+            z.div_euclid(CHUNK_SIZE as i32),
+        ) else {
+            return Ok(());
+        };
+        if chunk.set_block(
+            (x.rem_euclid(CHUNK_SIZE as i32)) as u8,
+            y,
+            (z.rem_euclid(CHUNK_SIZE as i32)) as u8,
+            block,
+        ) {
+            self.force_reload_chunks
+                .insert(ChunkPosition { chunk_x, chunk_z });
+        }
+        Ok(())
     }
 }
 

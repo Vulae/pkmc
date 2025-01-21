@@ -25,23 +25,6 @@ pub enum ConnectionError {
     InvalidRawPacketIDForParser(i32, i32),
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Position {
-    pub x: i32,
-    pub y: i16,
-    pub z: i32,
-}
-
-impl Position {
-    pub fn new(x: i32, y: i16, z: i32) -> Self {
-        Self { x, y, z }
-    }
-
-    pub fn from_f64(x: f64, y: f64, z: f64) -> Self {
-        Self::new(x.floor() as i32, y.floor() as i16, z.floor() as i32)
-    }
-}
-
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct BitSet {
     length: usize,

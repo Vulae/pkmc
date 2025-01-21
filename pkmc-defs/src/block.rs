@@ -105,20 +105,14 @@ impl Default for Block {
 pub struct BlockEntity {
     pub block: Block,
     pub r#type: String,
-    pub x: i32,
-    pub y: i32,
-    pub z: i32,
     pub data: NBT,
 }
 
 impl BlockEntity {
-    pub fn new<T: ToString>(block: Block, r#type: T, x: i32, y: i32, z: i32, data: NBT) -> Self {
+    pub fn new<T: ToString>(block: Block, r#type: T, data: NBT) -> Self {
         Self {
             block,
             r#type: r#type.to_string(),
-            x,
-            y,
-            z,
             data,
         }
     }

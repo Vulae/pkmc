@@ -262,7 +262,7 @@ struct AnvilBlockEntity {
     #[serde(rename = "keepPacked", default)]
     keep_packed: bool,
     x: i32,
-    y: i32,
+    y: i16,
     z: i32,
     #[serde(flatten)]
     data: HashMap<String, serde_json::Value>,
@@ -285,7 +285,7 @@ pub struct AnvilChunk {
     sections: Vec<ChunkSection>,
     block_entities: Vec<AnvilBlockEntity>,
     #[serde(skip, default)]
-    parsed_block_entities: Vec<BlockEntity>,
+    parsed_block_entities: HashMap<(u8, i16, u8), BlockEntity>,
 }
 
 impl AnvilChunk {
@@ -297,18 +297,15 @@ impl AnvilChunk {
             .block_entities
             .iter()
             .map(|b| {
-                BlockEntity::new(
-                    self.get_tile_block(
-                        b.x.rem_euclid(CHUNK_SIZE as i32) as u8,
-                        b.y as i16,
-                        b.z.rem_euclid(CHUNK_SIZE as i32) as u8,
-                    )
-                    .unwrap(),
-                    b.id.clone(),
-                    b.x,
-                    b.y,
-                    b.z,
-                    NBT::try_from(serde_json::Value::from_iter(b.data.clone())).unwrap(),
+                let bx = b.x.rem_euclid(CHUNK_SIZE as i32) as u8;
+                let bz = b.z.rem_euclid(CHUNK_SIZE as i32) as u8;
+                (
+                    (bx, b.y, bz),
+                    BlockEntity::new(
+                        self.get_tile_block(bx, b.y, bz).unwrap(),
+                        b.id.clone(),
+                        NBT::try_from(serde_json::Value::from_iter(b.data.clone())).unwrap(),
+                    ),
                 )
             })
             .collect();
@@ -347,9 +344,25 @@ impl AnvilChunk {
     }
 
     fn set_block(&mut self, block_x: u8, block_y: i16, block_z: u8, block: WorldBlock) -> bool {
-        // TODO: Set block entities
         debug_assert!((block_x as usize) < SECTION_SIZE);
         debug_assert!((block_z as usize) < SECTION_SIZE);
+
+        let block = match block {
+            WorldBlock::Block(block) => {
+                self.parsed_block_entities
+                    .remove(&(block_x, block_y, block_z));
+                block
+            }
+            WorldBlock::BlockEntity(block_entity) => {
+                let block = block_entity.block.clone();
+
+                self.parsed_block_entities
+                    .insert((block_x, block_y, block_z), block_entity);
+
+                block
+            }
+        };
+
         let Some(section) = self.get_section_mut(block_y.div_euclid(SECTION_SIZE as i16) as i8)
         else {
             return false;
@@ -357,15 +370,16 @@ impl AnvilChunk {
         let Some(block_states) = section.block_states.as_mut() else {
             return false;
         };
+
         block_states.set_block(
             block_x,
             (block_y.rem_euclid(SECTION_SIZE as i16)) as u8,
             block_z,
-            block.as_block().clone(),
+            block,
         )
     }
 
-    fn block_entities(&self) -> &[BlockEntity] {
+    fn block_entities(&self) -> &HashMap<(u8, i16, u8), BlockEntity> {
         &self.parsed_block_entities
     }
 }
@@ -689,10 +703,10 @@ impl World for AnvilWorld {
                                     block_entities: chunk
                                         .block_entities()
                                         .iter()
-                                        .map(|b| packet::play::BlockEntity {
-                                            x: b.x.rem_euclid(CHUNK_SIZE as i32) as u8,
-                                            z: b.z.rem_euclid(CHUNK_SIZE as i32) as u8,
-                                            y: b.y as i16,
+                                        .map(|((x, y, z), b)| packet::play::BlockEntity {
+                                            x: *x,
+                                            z: *z,
+                                            y: *y,
                                             r#type: b.block_entity_id().unwrap(),
                                             data: b.data.clone(),
                                         })
@@ -736,7 +750,6 @@ impl World for AnvilWorld {
         ))
     }
 
-    #[allow(unused)]
     fn set_block(&mut self, x: i32, y: i16, z: i32, block: WorldBlock) -> Result<(), Self::Error> {
         let chunk_x = x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = z.div_euclid(CHUNK_SIZE as i32);

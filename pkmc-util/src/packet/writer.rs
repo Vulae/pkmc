@@ -1,8 +1,8 @@
 use std::io::Write;
 
-use crate::{nbt::NBT, Transmutable, UUID};
+use crate::{nbt::NBT, Position, Transmutable, UUID};
 
-use super::{BitSet, Position};
+use super::BitSet;
 
 pub fn write_varint(mut writer: impl Write, value: i32) -> std::io::Result<()> {
     let mut value: u32 = value.transmute();

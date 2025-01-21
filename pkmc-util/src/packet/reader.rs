@@ -1,8 +1,6 @@
 use std::io::Read;
 
-use crate::{ReadExt as _, UUID};
-
-use super::Position;
+use crate::{Position, ReadExt as _, UUID};
 
 pub fn read_varint_ret_bytes(mut reader: impl Read) -> std::io::Result<(usize, i32)> {
     let mut bytes = 0;

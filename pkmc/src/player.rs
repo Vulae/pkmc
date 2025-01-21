@@ -7,8 +7,9 @@ use pkmc_server::world::{
     World, WorldBlock, WorldViewer,
 };
 use pkmc_util::{
-    packet::{ClientboundPacket, Connection, ConnectionError, Position},
-    IdTable, UUID,
+    get_vector_for_rotation,
+    packet::{ClientboundPacket, Connection, ConnectionError},
+    IdTable, Position, UUID,
 };
 use rand::Rng as _;
 use thiserror::Error;
@@ -43,6 +44,8 @@ pub struct Player {
     x: f64,
     y: f64,
     z: f64,
+    pitch: f32,
+    yaw: f32,
     is_flying: bool,
     fly_speed: f32,
     slot: u16,
@@ -79,6 +82,8 @@ impl Player {
             x: 0.0,
             y: 0.0,
             z: 0.0,
+            pitch: 0.0,
+            yaw: 0.0,
             is_flying: true,
             fly_speed: 0.1,
             slot: 0,
@@ -238,13 +243,18 @@ impl Player {
                     self.x = move_player_pos_rot.x;
                     self.y = move_player_pos_rot.y;
                     self.z = move_player_pos_rot.z;
+                    self.pitch = move_player_pos_rot.pitch;
+                    self.yaw = move_player_pos_rot.yaw;
                 }
                 packet::play::PlayPacket::MovePlayerPos(move_player_pos) => {
                     self.x = move_player_pos.x;
                     self.y = move_player_pos.y;
                     self.z = move_player_pos.z;
                 }
-                packet::play::PlayPacket::MovePlayerRot(_move_player_rot) => {}
+                packet::play::PlayPacket::MovePlayerRot(move_player_rot) => {
+                    self.pitch = move_player_rot.pitch;
+                    self.yaw = move_player_rot.yaw;
+                }
                 packet::play::PlayPacket::MovePlayerStatusOnly(_move_player_status_only) => {}
                 packet::play::PlayPacket::ClientTickEnd(_client_tick_end) => {}
                 packet::play::PlayPacket::PlayerInput(_player_input) => {}
@@ -271,24 +281,28 @@ impl Player {
                     self.slot = new_slot;
                 }
                 packet::play::PlayPacket::SwingArm(_swing_arm) => {
-                    let block_position = Position::from_f64(self.x, self.y, self.z);
                     let mut world = self.server_state.world.lock().unwrap();
-                    let radius: f64 = 32.0;
-                    for dx in ((-radius as i32)..=(radius as i32)) {
-                        for dy in ((-radius as i16)..=(radius as i16)) {
-                            for dz in ((-radius as i32)..=(radius as i32)) {
-                                if ((dx as f64).powi(2) + (dy as f64).powi(2) + (dz as f64).powi(2))
-                                    .sqrt()
-                                    > radius
-                                {
-                                    continue;
-                                }
-                                let x = block_position.x + dx;
-                                let y = block_position.y + dy;
-                                let z = block_position.z + dz;
-                                world.set_block(x, y, z, WorldBlock::Block(Block::air()));
-                            }
-                        }
+                    let (nx, ny, nz) = get_vector_for_rotation(self.pitch, self.yaw);
+                    if let Some(position) = Position::iter_ray(
+                        self.x,
+                        self.y + 1.5,
+                        self.z,
+                        nx.into(),
+                        ny.into(),
+                        nz.into(),
+                        5000.0,
+                    )
+                    .find(|p| {
+                        world
+                            .get_block(p.x, p.y, p.z)
+                            .ok()
+                            .flatten()
+                            .map(|b| !b.as_block().is_air())
+                            .unwrap_or(false)
+                    }) {
+                        Position::iter_offset(Position::iter_sphere(32.0), position).try_for_each(
+                            |p| world.set_block(p.x, p.y, p.z, WorldBlock::Block(Block::air())),
+                        )?;
                     }
                 }
             }

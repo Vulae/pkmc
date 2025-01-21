@@ -37,7 +37,8 @@ where
     T: AsRef<[u64]>,
 {
     pub fn from_inner(packed: T, bits_per_entry: u8, num_entries: usize) -> Self {
-        assert!(packed.as_ref().len() == PackedArray::packed_size(bits_per_entry, num_entries));
+        // NOTE: For some reason, in EXTREMELY rare cases, Minecraft uses more space than needed.
+        assert!(packed.as_ref().len() >= PackedArray::packed_size(bits_per_entry, num_entries));
         Self {
             bits_per_entry,
             num_entries,

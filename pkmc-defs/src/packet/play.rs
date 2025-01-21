@@ -4,10 +4,10 @@ use pkmc_util::{
     nbt::NBT,
     nbt_compound,
     packet::{
-        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, Position,
-        ReadExtPacket as _, ServerboundPacket, WriteExtPacket,
+        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, ReadExtPacket as _,
+        ServerboundPacket, WriteExtPacket,
     },
-    serverbound_packet_enum, ReadExt as _,
+    serverbound_packet_enum, Position, ReadExt as _,
 };
 
 use crate::{generated::generated, text_component::TextComponent};

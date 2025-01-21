@@ -9,7 +9,7 @@ See [pkmc](./pkmc/) for example server.
 I will **NOT** make anything use any async code (tokio/futures).
 This was originally built to be fully single-threaded, but that _may_ change in the future.
 
-## [Running](#running)
+## [Running Example Server](#running-example-server)
 
 1. Clone repo
 2. Start the server `cargo run --release`
@@ -23,7 +23,7 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 | --------------------- | ----------- | ------------------------------------------ |
 | Server List Ping      | ✅          |                                            |
 | World Loading         | ✅          | (Single-threaded[^threaded-chunk-loading]) |
-| World Editing         | ❌          |                                            |
+| World Editing         | ✅          |                                            |
 | World Lighting        | ❌          |                                            |
 | World Saving          | ❌          | (Probably never)                           |
 | Dimensions/Multiworld | ❌          |                                            |
@@ -37,6 +37,7 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 | Cookies 🍪            | ❌          |                                            |
 
 Some extra features may be implemented inside the example server.
+(pkmc will never try to implement many vanilla things, such as: vanilla world gen, redstone, world ticking)
 
 ## [Project Layout](#project-layout)
 

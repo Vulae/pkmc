@@ -92,7 +92,7 @@ impl Player {
             .identifier()
             .to_owned();
 
-        player.connection.send(packet::play::Login {
+        player.connection.send(&packet::play::Login {
             entity_id: 0,
             is_hardcore: false,
             dimensions: REGISTRIES
@@ -127,7 +127,7 @@ impl Player {
             enforces_secure_chat: false,
         })?;
 
-        player.connection.send(packet::play::ServerLinks::new([
+        player.connection.send(&packet::play::ServerLinks::new([
             (
                 packet::play::ServerLink::Website,
                 "https://github.com/Vulae/pkmc",
@@ -144,9 +144,9 @@ impl Player {
 
         player
             .connection
-            .send(packet::play::GameEvent::StartWaitingForLevelChunks)?;
+            .send(&packet::play::GameEvent::StartWaitingForLevelChunks)?;
 
-        player.connection.send(packet::play::PlayerPosition {
+        player.connection.send(&packet::play::PlayerPosition {
             x: 0.0,
             y: 128.0,
             z: 0.0,
@@ -157,7 +157,7 @@ impl Player {
 
         player
             .connection
-            .send(packet::play::SetActionBarText(TextComponent::rainbow(
+            .send(&packet::play::SetActionBarText(TextComponent::rainbow(
                 &format!("Hello, {}!", player.name()),
                 0.0,
             )))?;
@@ -180,13 +180,13 @@ impl Player {
             .loader
             .update_radius(view_distance.into());
         self.connection
-            .send(packet::play::SetChunkChacheRadius(view_distance as i32))?;
+            .send(&packet::play::SetChunkChacheRadius(view_distance as i32))?;
         Ok(())
     }
 
     pub fn kick<T: Into<TextComponent>>(&mut self, text: T) -> Result<(), PlayerError> {
         self.connection
-            .send(packet::play::Disconnect(text.into()))?;
+            .send(&packet::play::Disconnect(text.into()))?;
         self.connection.close();
         Ok(())
     }
@@ -197,7 +197,7 @@ impl Player {
 
     fn update_flyspeed(&mut self) -> Result<(), PlayerError> {
         self.connection
-            .send(packet::play::PlayerAbilities_Clientbound {
+            .send(&packet::play::PlayerAbilities_Clientbound {
                 flags: 0x01 | if self.is_flying { 0x02 } else { 0 } | 0x04,
                 flying_speed: self.fly_speed,
                 field_of_view_modifier: 0.1,
@@ -214,7 +214,7 @@ impl Player {
             }
             let id: i64 = rand::thread_rng().gen();
             self.keepalive_id = Some(id);
-            self.connection.send(packet::play::KeepAlive { id })?;
+            self.connection.send(&packet::play::KeepAlive { id })?;
         }
 
         while let Some(packet) = match self.connection.recieve_into::<packet::play::PlayPacket>() {

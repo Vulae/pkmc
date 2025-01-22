@@ -5,9 +5,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::{packet::try_read_varint_ret_bytes, ReadExt};
+
 use super::{
     handler::{PacketHandler, UncompressedPacketHandler},
-    ClientboundPacket, ConnectionError, RawPacket,
+    ClientboundPacket, ConnectionError, RawPacket, ReadExtPacket, WriteExtPacket,
 };
 
 #[derive(Debug)]
@@ -26,16 +28,23 @@ impl ConnectionSender {
         self.inner.lock().unwrap().stream.is_none()
     }
 
-    pub fn send(&self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
+    pub fn send(&self, packet: &impl ClientboundPacket) -> Result<(), ConnectionError> {
         let raw: RawPacket = packet.raw_packet()?;
+        let bytes = raw.into_bytes();
+
         let handler = self.inner.lock().unwrap().handler.clone();
-        let mut encoded = Vec::new();
-        handler.write(&raw, &mut encoded)?;
+
+        let encoded = handler.write(&bytes)?;
+
+        let mut with_size = Vec::new();
+        with_size.write_varint(encoded.len() as i32)?;
+        with_size.write_all(&encoded)?;
+
         let mut inner = self.inner.lock().unwrap();
         let Some(stream) = inner.stream.as_mut() else {
             return Ok(());
         };
-        match stream.write_all(&encoded) {
+        match stream.write_all(&with_size) {
             Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => inner.stream = None,
             v => v?,
         }
@@ -79,7 +88,7 @@ impl Connection {
         self.inner.lock().unwrap().stream = None;
     }
 
-    pub fn send(&self, packet: impl ClientboundPacket) -> Result<(), ConnectionError> {
+    pub fn send(&self, packet: &impl ClientboundPacket) -> Result<(), ConnectionError> {
         self.sender().send(packet)
     }
 
@@ -115,14 +124,27 @@ impl Connection {
 
     pub fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
         self.recieve_bytes()?;
-        let raw = self
-            .inner
-            .lock()
-            .unwrap()
-            .handler
-            .clone()
-            .read(&mut self.bytes)?;
-        Ok(raw)
+
+        let Some((size_bytes, size)) = try_read_varint_ret_bytes(self.bytes.make_contiguous())?
+        else {
+            return Ok(None);
+        };
+
+        if self.bytes.len() < size_bytes + (size as usize) {
+            return Ok(None);
+        }
+
+        self.bytes.drain(..size_bytes);
+        let encoded: Vec<u8> = self.bytes.drain(..size as usize).collect();
+
+        let handler = self.inner.lock().unwrap().handler.clone();
+        let decoded = handler.read(&encoded)?;
+
+        let mut reader = std::io::Cursor::new(&decoded);
+        Ok(Some(RawPacket {
+            id: reader.read_varint()?,
+            data: reader.read_all()?,
+        }))
     }
 
     pub fn recieve_into<T>(&mut self) -> Result<Option<T>, ConnectionError>

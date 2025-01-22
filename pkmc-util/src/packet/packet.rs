@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 
-use super::ConnectionError;
+use super::{ConnectionError, WriteExtPacket};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RawPacket {
@@ -11,6 +11,13 @@ pub struct RawPacket {
 impl RawPacket {
     pub fn new(id: i32, data: Box<[u8]>) -> Self {
         Self { id, data }
+    }
+
+    pub fn into_bytes(self) -> Box<[u8]> {
+        let mut data = Vec::new();
+        data.write_varint(self.id).unwrap();
+        data.extend(self.data);
+        data.into_boxed_slice()
     }
 }
 

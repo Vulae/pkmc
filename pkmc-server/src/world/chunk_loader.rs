@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use itertools::Itertools;
 use pkmc_util::IterRetain as _;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -133,5 +134,9 @@ impl ChunkLoader {
         if self.loaded.remove(&position) {
             self.to_load.insert(position);
         }
+    }
+
+    pub fn has_loaded(&self, position: ChunkPosition) -> bool {
+        self.loaded.contains(&position) || self.to_unload.iter().contains(&position)
     }
 }

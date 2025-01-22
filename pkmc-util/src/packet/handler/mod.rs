@@ -1,9 +1,9 @@
 pub mod uncompressed;
 pub mod zlib;
 
-use std::{collections::VecDeque, fmt::Debug, io::Write};
+use std::fmt::Debug;
 
-use super::{ConnectionError, RawPacket};
+use super::ConnectionError;
 
 pub use uncompressed::*;
 pub use zlib::*;
@@ -15,16 +15,16 @@ pub enum PacketHandler {
 }
 
 impl PacketHandler {
-    pub fn write(&self, packet: &RawPacket, stream: impl Write) -> Result<(), ConnectionError> {
+    pub fn write(&self, raw: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
         match self {
             PacketHandler::Uncompressed(uncompressed_packet_handler) => {
-                uncompressed_packet_handler.write(packet, stream)
+                uncompressed_packet_handler.write(raw)
             }
-            PacketHandler::Zlib(zlib_packet_handler) => zlib_packet_handler.write(packet, stream),
+            PacketHandler::Zlib(zlib_packet_handler) => zlib_packet_handler.write(raw),
         }
     }
 
-    pub fn read(&self, buf: &mut VecDeque<u8>) -> Result<Option<RawPacket>, ConnectionError> {
+    pub fn read(&self, buf: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
         match self {
             PacketHandler::Uncompressed(uncompressed_packet_handler) => {
                 uncompressed_packet_handler.read(buf)

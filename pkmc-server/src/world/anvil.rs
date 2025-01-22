@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Debug,
     fs::File,
     hash::Hash,
@@ -36,6 +36,11 @@ use super::{
 
 pub const REGION_SIZE: usize = 32;
 pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
+
+// Each time the world updates & sends new data to client, we either send sections or chunks.
+// NOTE: When sending sections, the client calculates lighting instead of server.
+pub const UPDATE_SECTION_CHUNK_SWITCH_NUM_SECTIONS: usize = 4;
+pub const UPDATE_SECTION_CHUNK_SWITCH_NUM_BLOCKS: usize = 1024;
 
 #[derive(Error, Debug)]
 pub enum AnvilError {
@@ -488,6 +493,32 @@ impl Region {
     }
 }
 
+#[derive(Debug, Default)]
+struct SectionDiff {
+    // TODO: Don't use hashmap for this.
+    change: HashMap<(u8, u8, u8), i32>,
+}
+
+impl SectionDiff {
+    fn set(&mut self, x: u8, y: u8, z: u8, id: i32) {
+        assert!((x as usize) < SECTION_SIZE);
+        assert!((y as usize) < SECTION_SIZE);
+        assert!((z as usize) < SECTION_SIZE);
+        self.change.insert((x, y, z), id);
+    }
+
+    fn num_blocks(&self) -> usize {
+        self.change.len()
+    }
+
+    fn to_packet_data(&self) -> Vec<(u8, u8, u8, i32)> {
+        self.change
+            .iter()
+            .map(|((x, y, z), v)| (*x, *y, *z, *v))
+            .collect()
+    }
+}
+
 #[derive(Debug)]
 pub struct AnvilWorld {
     root: PathBuf,
@@ -497,7 +528,7 @@ pub struct AnvilWorld {
     biome_mapper: IdTable<Biome>,
     viewers: Vec<Arc<Mutex<WorldViewer>>>,
     viewers_id: usize,
-    force_reload_chunks: HashSet<ChunkPosition>,
+    diffs: HashMap<(i32, i32), HashMap<i16, SectionDiff>>,
 }
 
 impl AnvilWorld {
@@ -515,7 +546,7 @@ impl AnvilWorld {
             biome_mapper,
             viewers: Vec::new(),
             viewers_id: 0,
-            force_reload_chunks: HashSet::new(),
+            diffs: HashMap::new(),
         }
     }
 
@@ -629,16 +660,35 @@ impl World for AnvilWorld {
         self.viewers
             .retain(|v| !v.lock().unwrap().connection.is_closed());
 
-        self.force_reload_chunks
+        self.diffs
             .drain()
-            .for_each(|force_reload_chunk| {
-                self.viewers
-                    .iter()
-                    .map(|viewer| viewer.lock().unwrap())
-                    .for_each(|mut viewer| {
-                        viewer.loader.force_reload(force_reload_chunk);
-                    });
-            });
+            .try_for_each(|((chunk_x, chunk_z), sections)| {
+                let chunk_position = ChunkPosition::new(chunk_x, chunk_z);
+                if sections.len() >= UPDATE_SECTION_CHUNK_SWITCH_NUM_SECTIONS
+                    || sections.values().fold(0, |t, s| t + s.num_blocks())
+                        >= UPDATE_SECTION_CHUNK_SWITCH_NUM_BLOCKS
+                {
+                    // Just resend the whole chunk
+                    self.viewers
+                        .iter()
+                        .map(|viewer| viewer.lock().unwrap())
+                        .for_each(|mut viewer| viewer.loader.force_reload(chunk_position));
+                    Ok(())
+                } else {
+                    // Resend each section
+                    sections.into_iter().try_for_each(|(section_y, diff)| {
+                        let packet = packet::play::UpdateSectionBlocks {
+                            section: Position::new(chunk_x, section_y, chunk_z),
+                            blocks: diff.to_packet_data(),
+                        };
+                        self.viewers
+                            .iter()
+                            .map(|viewer| viewer.lock().unwrap())
+                            .filter(|viewer| viewer.loader.has_loaded(chunk_position))
+                            .try_for_each(|viewer| viewer.connection().send(&packet))
+                    })
+                }
+            })?;
 
         self.viewers
             // TODO: Don't clone this wtf
@@ -650,14 +700,14 @@ impl World for AnvilWorld {
                 if viewer.loader.update_center(Some(center)) {
                     viewer
                         .connection()
-                        .send(packet::play::SetChunkCacheCenter {
+                        .send(&packet::play::SetChunkCacheCenter {
                             chunk_x: center.chunk_x,
                             chunk_z: center.chunk_z,
                         })?;
                 }
 
                 while let Some(to_unload) = viewer.loader.next_to_unload() {
-                    viewer.connection().send(packet::play::ForgetLevelChunk {
+                    viewer.connection().send(&packet::play::ForgetLevelChunk {
                         chunk_x: to_unload.chunk_x,
                         chunk_z: to_unload.chunk_z,
                     })?;
@@ -667,7 +717,7 @@ impl World for AnvilWorld {
                     self.prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
                     if let Some(chunk) = self.get_chunk(to_load.chunk_x, to_load.chunk_z) {
                         viewer.connection().send(
-                            packet::play::LevelChunkWithLight {
+                            &packet::play::LevelChunkWithLight {
                                 chunk_x: to_load.chunk_x,
                                 chunk_z: to_load.chunk_z,
                                 chunk_data: packet::play::LevelChunkData {
@@ -716,7 +766,7 @@ impl World for AnvilWorld {
                         )?;
                     } else {
                         viewer.connection().send(
-                            packet::play::LevelChunkWithLight::generate_test(
+                            &packet::play::LevelChunkWithLight::generate_test(
                                 to_load.chunk_x,
                                 to_load.chunk_z,
                                 self.section_y_range().count(),
@@ -762,10 +812,25 @@ impl World for AnvilWorld {
             (position.x.rem_euclid(CHUNK_SIZE as i32)) as u8,
             position.y,
             (position.z.rem_euclid(CHUNK_SIZE as i32)) as u8,
-            block,
+            block.clone(),
         ) {
-            self.force_reload_chunks
-                .insert(ChunkPosition { chunk_x, chunk_z });
+            self.diffs
+                .entry((
+                    position.x.div_euclid(SECTION_SIZE as i32),
+                    position.z.div_euclid(SECTION_SIZE as i32),
+                ))
+                .or_default()
+                .entry(position.y.div_euclid(SECTION_SIZE as i16))
+                .or_default()
+                .set(
+                    position.x.rem_euclid(SECTION_SIZE as i32) as u8,
+                    position.y.rem_euclid(SECTION_SIZE as i16) as u8,
+                    position.z.rem_euclid(SECTION_SIZE as i32) as u8,
+                    block
+                        .as_block()
+                        .id_with_default_fallback()
+                        .unwrap_or_else(|| Block::air().id().unwrap()),
+                );
         }
         Ok(())
     }
@@ -774,6 +839,7 @@ impl World for AnvilWorld {
 #[cfg(test)]
 mod test {
     use pkmc_defs::block::BLOCKS_TO_IDS;
+    use pkmc_util::Position;
 
     use crate::world::{anvil::AnvilWorld, World as _};
 
@@ -812,20 +878,16 @@ mod test {
             let grid_x = block_id % block_grid_width;
             let grid_z = block_id / block_grid_width;
 
-            let x = 1 + grid_z * 2;
-            let y = 70;
-            let z = 1 + grid_x * 2;
+            let position = Position::new(1 + grid_z * 2, 70, 1 + grid_x * 2);
 
-            let Some(block) = world.get_block(x, y, z)?.map(|b| b.into_block()) else {
-                panic!("Expected loaded block at {} {} {}", x, y, z);
+            let Some(block) = world.get_block(position)?.map(|b| b.into_block()) else {
+                panic!("Expected loaded block at {:?}", position);
             };
 
             if block.id() != Some(block_id) {
                 panic!(
-                    "Block at {} {} {} is {:?} with ID {:?}, but our ID is {}",
-                    x,
-                    y,
-                    z,
+                    "Block at {:?} is {:?} with ID {:?}, but our ID is {}",
+                    position,
                     block,
                     block.id(),
                     block_id

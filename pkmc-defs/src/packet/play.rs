@@ -7,7 +7,7 @@ use pkmc_util::{
         to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, ReadExtPacket as _,
         ServerboundPacket, WriteExtPacket,
     },
-    serverbound_packet_enum, Position, ReadExt as _,
+    serverbound_packet_enum, Position, ReadExt as _, Transmutable,
 };
 
 use crate::{generated::generated, text_component::TextComponent};
@@ -751,6 +751,37 @@ impl ServerboundPacket for SwingArm {
         Self: Sized,
     {
         Ok(Self(reader.read_varint()?))
+    }
+}
+
+#[derive(Debug)]
+pub struct UpdateSectionBlocks {
+    pub section: Position,
+    pub blocks: Vec<(u8, u8, u8, i32)>,
+}
+
+impl ClientboundPacket for UpdateSectionBlocks {
+    const CLIENTBOUND_ID: i32 =
+        generated::packet::play::CLIENTBOUND_MINECRAFT_SECTION_BLOCKS_UPDATE;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        //writer.write_position(&self.section)?;
+        let v: u64 = Transmutable::<u64>::transmute((self.section.x as i64) << 42)
+            | (Transmutable::<u64>::transmute((self.section.y as i64) << 44) >> 44)
+            | (Transmutable::<u64>::transmute((self.section.z as i64) << 42) >> 22);
+        writer.write_all(&v.to_be_bytes())?;
+
+        writer.write_varint(self.blocks.len() as i32)?;
+        for (bx, by, bz, id) in self.blocks.iter() {
+            debug_assert!(*bx <= 15);
+            debug_assert!(*by <= 15);
+            debug_assert!(*bz <= 15);
+            let encoded_position: u64 = ((*bx as u64) << 8) | ((*bz as u64) << 4) | (*by as u64);
+            writer.write_varlong(
+                ((*id as i64) << 12) | Transmutable::<i64>::transmute(encoded_position),
+            )?;
+        }
+        Ok(())
     }
 }
 

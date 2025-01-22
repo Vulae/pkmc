@@ -172,7 +172,7 @@ impl ClientHandler {
                 {
                     match packet {
                         packet::status::StatusPacket::Request(_request) => {
-                            self.connection.send(packet::status::Response {
+                            self.connection.send(&packet::status::Response {
                                 version: packet::status::ResponseVersion {
                                     name: "1.21.4".to_owned(),
                                     protocol: PROTOCOL_VERSION,
@@ -187,7 +187,7 @@ impl ClientHandler {
                             })?;
                         }
                         packet::status::StatusPacket::Ping(ping) => {
-                            self.connection.send(ping)?;
+                            self.connection.send(&ping)?;
                             self.state = ClientHandlerState::Closed;
                         }
                     }
@@ -204,7 +204,7 @@ impl ClientHandler {
                             *player = Some((hello.uuid, hello.name.clone()));
 
                             if let Some((threshold, level)) = self.compression {
-                                self.connection.send(packet::login::Compression {
+                                self.connection.send(&packet::login::Compression {
                                     threshold: threshold as i32,
                                 })?;
                                 self.connection.set_packet_handler(PacketHandler::Zlib(
@@ -212,7 +212,7 @@ impl ClientHandler {
                                 ));
                             }
 
-                            self.connection.send(packet::login::Finished {
+                            self.connection.send(&packet::login::Finished {
                                 uuid: hello.uuid,
                                 name: hello.name,
                                 properties: Vec::new(),
@@ -245,11 +245,11 @@ impl ClientHandler {
 
                         if let Some(brand) = self.brand.take() {
                             self.connection
-                                .send(packet::configuration::CustomPayload::Brand(brand))?;
+                                .send(&packet::configuration::CustomPayload::Brand(brand))?;
                         }
 
                         self.connection
-                            .send(packet::configuration::SelectKnownPacks {
+                            .send(&packet::configuration::SelectKnownPacks {
                                 packs: vec![packet::configuration::KnownPack {
                                     namespace: "minecraft:core".to_owned(),
                                     id: "".to_owned(),
@@ -280,7 +280,7 @@ impl ClientHandler {
                                     .into_iter()
                                     .try_for_each(|(registry_id, entries)| {
                                         self.connection
-                                            .send(packet::configuration::RegistryData {
+                                            .send(&packet::configuration::RegistryData {
                                             registry_id,
                                             entries: entries
                                                 .into_iter()
@@ -303,7 +303,7 @@ impl ClientHandler {
                                 }
 
                                 if let Some(tags) = self.tags.take() {
-                                    self.connection.send(packet::configuration::UpdateTags {
+                                    self.connection.send(&packet::configuration::UpdateTags {
                                         registries: tags
                                             .into_iter()
                                             .map(|(k, v)| {
@@ -336,7 +336,7 @@ impl ClientHandler {
                     {
                         *sent_finalize_packet = true;
                         self.connection
-                            .send(packet::configuration::FinishConfiguration)?;
+                            .send(&packet::configuration::FinishConfiguration)?;
                     }
                 } else if let Some(packet) =
                     self.connection

@@ -5,7 +5,7 @@ use std::{
 
 use chunk_loader::ChunkLoader;
 use pkmc_defs::block::{Block, BlockEntity};
-use pkmc_util::packet::ConnectionSender;
+use pkmc_util::{packet::ConnectionSender, Position, Vec3};
 
 pub mod anvil;
 pub mod chunk_loader;
@@ -21,9 +21,7 @@ pub struct WorldViewer {
     id: usize,
     connection: ConnectionSender,
     pub loader: ChunkLoader,
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
+    pub position: Vec3<f64>,
 }
 
 impl WorldViewer {
@@ -73,6 +71,6 @@ pub trait World: Debug {
     fn remove_viewer(&mut self, viewer: Arc<Mutex<WorldViewer>>);
     fn update_viewers(&mut self) -> Result<(), Self::Error>;
 
-    fn get_block(&mut self, x: i32, y: i16, z: i32) -> Result<Option<WorldBlock>, Self::Error>;
-    fn set_block(&mut self, x: i32, y: i16, z: i32, block: WorldBlock) -> Result<(), Self::Error>;
+    fn get_block(&mut self, position: Position) -> Result<Option<WorldBlock>, Self::Error>;
+    fn set_block(&mut self, position: Position, block: WorldBlock) -> Result<(), Self::Error>;
 }

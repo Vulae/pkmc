@@ -22,7 +22,7 @@ use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
     nbt_compound,
     packet::{to_paletted_data, to_paletted_data_singular, ConnectionError, ConnectionSender},
-    IdTable, PackedArray, ReadExt, Transmutable,
+    IdTable, PackedArray, Position, ReadExt, Transmutable, Vec3,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -613,9 +613,7 @@ impl World for AnvilWorld {
             id: self.viewers_id,
             connection,
             loader: ChunkLoader::new(6),
-            x: 0.0,
-            y: 100.0,
-            z: 0.0,
+            position: Vec3::new(0.0, 100.0, 0.0),
         }));
         self.viewers_id += 1;
         self.viewers.push(viewer.clone());
@@ -648,7 +646,7 @@ impl World for AnvilWorld {
             .iter()
             .map(|viewer| viewer.lock().unwrap())
             .try_for_each(|mut viewer| {
-                let center = ChunkPosition::new((viewer.x / 16.0) as i32, (viewer.z / 16.0) as i32);
+                let center = ChunkPosition::new((viewer.position.x / 16.0) as i32, (viewer.position.z / 16.0) as i32);
                 if viewer.loader.update_center(Some(center)) {
                     viewer
                         .connection()
@@ -733,37 +731,37 @@ impl World for AnvilWorld {
         Ok(())
     }
 
-    fn get_block(&mut self, x: i32, y: i16, z: i32) -> Result<Option<WorldBlock>, Self::Error> {
-        let chunk_x = x.div_euclid(CHUNK_SIZE as i32);
-        let chunk_z = z.div_euclid(CHUNK_SIZE as i32);
+    fn get_block(&mut self, position: Position) -> Result<Option<WorldBlock>, Self::Error> {
+        let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
+        let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
         self.prepare_chunk(chunk_x, chunk_z)?;
         let Some(chunk) = self.get_chunk(
-            x.div_euclid(CHUNK_SIZE as i32),
-            z.div_euclid(CHUNK_SIZE as i32),
+            position.x.div_euclid(CHUNK_SIZE as i32),
+            position.z.div_euclid(CHUNK_SIZE as i32),
         ) else {
             return Ok(None);
         };
         Ok(chunk.get_block(
-            (x.rem_euclid(CHUNK_SIZE as i32)) as u8,
-            y,
-            (z.rem_euclid(CHUNK_SIZE as i32)) as u8,
+            (position.x.rem_euclid(CHUNK_SIZE as i32)) as u8,
+            position.y,
+            (position.z.rem_euclid(CHUNK_SIZE as i32)) as u8,
         ))
     }
 
-    fn set_block(&mut self, x: i32, y: i16, z: i32, block: WorldBlock) -> Result<(), Self::Error> {
-        let chunk_x = x.div_euclid(CHUNK_SIZE as i32);
-        let chunk_z = z.div_euclid(CHUNK_SIZE as i32);
+    fn set_block(&mut self, position: Position, block: WorldBlock) -> Result<(), Self::Error> {
+        let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
+        let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
         self.prepare_chunk(chunk_x, chunk_z)?;
         let Some(chunk) = self.get_chunk_mut(
-            x.div_euclid(CHUNK_SIZE as i32),
-            z.div_euclid(CHUNK_SIZE as i32),
+            position.x.div_euclid(CHUNK_SIZE as i32),
+            position.z.div_euclid(CHUNK_SIZE as i32),
         ) else {
             return Ok(());
         };
         if chunk.set_block(
-            (x.rem_euclid(CHUNK_SIZE as i32)) as u8,
-            y,
-            (z.rem_euclid(CHUNK_SIZE as i32)) as u8,
+            (position.x.rem_euclid(CHUNK_SIZE as i32)) as u8,
+            position.y,
+            (position.z.rem_euclid(CHUNK_SIZE as i32)) as u8,
             block,
         ) {
             self.force_reload_chunks

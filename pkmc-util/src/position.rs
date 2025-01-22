@@ -1,4 +1,7 @@
+use crate::Vec3;
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+/// An in-world block position
 pub struct Position {
     pub x: i32,
     pub y: i16,
@@ -24,6 +27,10 @@ impl Position {
             return None;
         }
         Some(Self::new(x as i32, y as i16, z as i32))
+    }
+
+    pub fn from_vec3(vec3: Vec3<f64>) -> Option<Self> {
+        Self::from_f64(vec3.x, vec3.y, vec3.z)
     }
 
     pub fn checked_add(self, rhs: Position) -> Option<Position> {
@@ -99,23 +106,21 @@ impl Position {
     }
 
     pub fn iter_ray(
-        mut x: f64,
-        mut y: f64,
-        mut z: f64,
-        nx: f64,
-        ny: f64,
-        nz: f64,
+        origin: Vec3<f64>,
+        direction: Vec3<f64>,
         max_distance: f64,
     ) -> impl Iterator<Item = Position> {
         // This is pretty ugly, maybe like https://www.shadertoy.com/view/4dX3zl would be better?
-
-        let (nx, ny, nz) = {
-            let len = (nx * nx + ny * ny + nz * nz).sqrt();
-            (nx / len, ny / len, nz / len)
-        };
+        let normal = direction.normalized();
+        let nx = normal.x;
+        let ny = normal.y;
+        let nz = normal.z;
 
         // Tracking 2 different positions, to fix floating point imprecision
-        let mut pos = Position::from_f64(x, y, z).unwrap();
+        let mut pos = Position::from_vec3(origin).unwrap();
+        let mut x = origin.x;
+        let mut y = origin.y;
+        let mut z = origin.z;
 
         let mut distance = 0.0;
 

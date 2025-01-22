@@ -7,9 +7,8 @@ use pkmc_server::world::{
     World, WorldBlock, WorldViewer,
 };
 use pkmc_util::{
-    get_vector_for_rotation,
     packet::{ClientboundPacket, Connection, ConnectionError},
-    IdTable, Position, UUID,
+    IdTable, Position, Vec3, UUID,
 };
 use rand::Rng as _;
 use thiserror::Error;
@@ -41,9 +40,7 @@ pub struct Player {
     uuid: UUID,
     keepalive_time: std::time::Instant,
     keepalive_id: Option<i64>,
-    x: f64,
-    y: f64,
-    z: f64,
+    position: Vec3<f64>,
     pitch: f32,
     yaw: f32,
     is_flying: bool,
@@ -79,9 +76,7 @@ impl Player {
             uuid,
             keepalive_time: std::time::Instant::now(),
             keepalive_id: None,
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
+            position: Vec3::zero(),
             pitch: 0.0,
             yaw: 0.0,
             is_flying: true,
@@ -240,16 +235,17 @@ impl Player {
                 packet::play::PlayPacket::PlayerLoaded(_player_loaded) => {}
                 packet::play::PlayPacket::AcceptTeleportation(_accept_teleportation) => {}
                 packet::play::PlayPacket::MovePlayerPosRot(move_player_pos_rot) => {
-                    self.x = move_player_pos_rot.x;
-                    self.y = move_player_pos_rot.y;
-                    self.z = move_player_pos_rot.z;
+                    self.position.set(
+                        move_player_pos_rot.x,
+                        move_player_pos_rot.y,
+                        move_player_pos_rot.z,
+                    );
                     self.pitch = move_player_pos_rot.pitch;
                     self.yaw = move_player_pos_rot.yaw;
                 }
                 packet::play::PlayPacket::MovePlayerPos(move_player_pos) => {
-                    self.x = move_player_pos.x;
-                    self.y = move_player_pos.y;
-                    self.z = move_player_pos.z;
+                    self.position
+                        .set(move_player_pos.x, move_player_pos.y, move_player_pos.z);
                 }
                 packet::play::PlayPacket::MovePlayerRot(move_player_rot) => {
                     self.pitch = move_player_rot.pitch;
@@ -282,26 +278,21 @@ impl Player {
                 }
                 packet::play::PlayPacket::SwingArm(_swing_arm) => {
                     let mut world = self.server_state.world.lock().unwrap();
-                    let (nx, ny, nz) = get_vector_for_rotation(self.pitch, self.yaw);
                     if let Some(position) = Position::iter_ray(
-                        self.x,
-                        self.y + 1.5,
-                        self.z,
-                        nx.into(),
-                        ny.into(),
-                        nz.into(),
+                        self.position + Vec3::new(0.0, 1.5, 0.0),
+                        Vec3::get_vector_for_rotation(self.pitch.into(), self.yaw.into()),
                         5000.0,
                     )
                     .find(|p| {
                         world
-                            .get_block(p.x, p.y, p.z)
+                            .get_block(*p)
                             .ok()
                             .flatten()
                             .map(|b| !b.as_block().is_air())
                             .unwrap_or(false)
                     }) {
                         Position::iter_offset(Position::iter_sphere(32.0), position).try_for_each(
-                            |p| world.set_block(p.x, p.y, p.z, WorldBlock::Block(Block::air())),
+                            |p| world.set_block(p, WorldBlock::Block(Block::air())),
                         )?;
                     }
                 }
@@ -309,9 +300,7 @@ impl Player {
         }
 
         let mut viewer = self.viewer.lock().unwrap();
-        viewer.x = self.x;
-        viewer.y = self.y;
-        viewer.z = self.z;
+        viewer.position = self.position;
 
         Ok(())
     }

@@ -7,7 +7,7 @@ use pkmc_util::{
         to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, ReadExtPacket as _,
         ServerboundPacket, WriteExtPacket,
     },
-    serverbound_packet_enum, Position, ReadExt as _, Transmutable,
+    serverbound_packet_enum, Position, ReadExt as _, Transmutable, UUID,
 };
 
 use crate::{generated::generated, text_component::TextComponent};
@@ -781,6 +781,44 @@ impl ClientboundPacket for UpdateSectionBlocks {
                 ((*id as i64) << 12) | Transmutable::<i64>::transmute(encoded_position),
             )?;
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct AddEntity {
+    pub id: i32,
+    pub uuid: UUID,
+    pub r#type: i32,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub pitch: u8,
+    pub yaw: u8,
+    pub head_yaw: u8,
+    pub data: i32,
+    pub velocity_x: i16,
+    pub velocity_y: i16,
+    pub velocity_z: i16,
+}
+
+impl ClientboundPacket for AddEntity {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_ADD_ENTITY;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.id)?;
+        writer.write_uuid(&self.uuid)?;
+        writer.write_varint(self.r#type)?;
+        writer.write_all(&self.x.to_be_bytes())?;
+        writer.write_all(&self.y.to_be_bytes())?;
+        writer.write_all(&self.z.to_be_bytes())?;
+        writer.write_all(&self.pitch.to_be_bytes())?;
+        writer.write_all(&self.yaw.to_be_bytes())?;
+        writer.write_all(&self.head_yaw.to_be_bytes())?;
+        writer.write_varint(self.data)?;
+        writer.write_all(&self.velocity_x.to_be_bytes())?;
+        writer.write_all(&self.velocity_y.to_be_bytes())?;
+        writer.write_all(&self.velocity_z.to_be_bytes())?;
         Ok(())
     }
 }

@@ -67,8 +67,6 @@ pub trait World: Debug {
     type Error: std::error::Error;
 
     fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<WorldViewer>>;
-    /// Viewer should automatically be removed when connection is closed.
-    fn remove_viewer(&mut self, viewer: Arc<Mutex<WorldViewer>>);
     fn update_viewers(&mut self) -> Result<(), Self::Error>;
 
     fn get_block(&mut self, position: Position) -> Result<Option<WorldBlock>, Self::Error>;

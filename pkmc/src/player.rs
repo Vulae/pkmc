@@ -1,10 +1,13 @@
 use std::sync::{Arc, Mutex};
 
 use pkmc_defs::{biome::Biome, block::Block, packet, text_component::TextComponent};
-use pkmc_server::world::{
-    anvil::AnvilError,
-    chunk_loader::{ChunkLoader, ChunkPosition},
-    World, WorldBlock, WorldViewer,
+use pkmc_server::{
+    entity_manager::{new_entity_id, EntityViewer},
+    world::{
+        anvil::AnvilError,
+        chunk_loader::{ChunkLoader, ChunkPosition},
+        World, WorldBlock, WorldViewer,
+    },
 };
 use pkmc_util::{
     packet::{ClientboundPacket, Connection, ConnectionError},
@@ -35,7 +38,8 @@ pub enum PlayerError {
 pub struct Player {
     connection: Connection,
     server_state: ServerState,
-    viewer: Arc<Mutex<WorldViewer>>,
+    world_viewer: Arc<Mutex<WorldViewer>>,
+    entity_viewer: Arc<Mutex<EntityViewer>>,
     name: String,
     uuid: UUID,
     keepalive_time: std::time::Instant,
@@ -56,22 +60,28 @@ impl Player {
         name: String,
         view_distance: u8,
     ) -> Result<Self, PlayerError> {
-        let viewer = server_state
+        let world_viewer = server_state
             .world
             .lock()
             .unwrap()
             .add_viewer(connection.sender());
-
-        viewer
+        world_viewer
             .lock()
             .unwrap()
             .loader
             .update_radius(view_distance.into());
 
+        let entity_viewer = server_state
+            .entities
+            .lock()
+            .unwrap()
+            .add_viewer(connection.sender());
+
         let mut player = Self {
             connection,
             server_state,
-            viewer,
+            world_viewer,
+            entity_viewer,
             name,
             uuid,
             keepalive_time: std::time::Instant::now(),
@@ -93,7 +103,7 @@ impl Player {
             .to_owned();
 
         player.connection.send(&packet::play::Login {
-            entity_id: 0,
+            entity_id: new_entity_id(),
             is_hardcore: false,
             dimensions: REGISTRIES
                 .get("minecraft:dimension_type")
@@ -174,7 +184,7 @@ impl Player {
     }
 
     pub fn set_view_distance(&mut self, view_distance: u8) -> Result<(), PlayerError> {
-        self.viewer
+        self.world_viewer
             .lock()
             .unwrap()
             .loader
@@ -299,8 +309,8 @@ impl Player {
             }
         }
 
-        let mut viewer = self.viewer.lock().unwrap();
-        viewer.position = self.position;
+        let mut world_viewer = self.world_viewer.lock().unwrap();
+        world_viewer.position = self.position;
 
         Ok(())
     }

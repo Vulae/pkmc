@@ -1300,6 +1300,7 @@ dependencies = [
  "flate2",
  "itertools 0.14.0",
  "num-traits",
+ "rand",
  "serde",
  "serde_json",
  "thiserror 2.0.11",

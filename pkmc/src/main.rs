@@ -13,10 +13,11 @@ use base64::Engine as _;
 use config::Config;
 use pkmc_defs::{biome::Biome, registry::Registries};
 use pkmc_server::{
+    entity_manager::{Entity, EntityManager},
     world::{anvil::AnvilWorld, World},
     ClientHandler,
 };
-use pkmc_util::{normalize_identifier, packet::Connection, IdTable, IterRetain};
+use pkmc_util::{normalize_identifier, packet::Connection, IdTable, IterRetain, UUID};
 use player::Player;
 
 pub static REGISTRIES: LazyLock<Registries> =
@@ -25,6 +26,7 @@ pub static REGISTRIES: LazyLock<Registries> =
 #[derive(Debug, Clone)]
 pub struct ServerState {
     pub world: Arc<Mutex<AnvilWorld>>,
+    pub entities: Arc<Mutex<EntityManager>>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -57,6 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let world = AnvilWorld::new(config.world, "minecraft:overworld", -4..=19, biome_mapper);
     let state = ServerState {
         world: Arc::new(Mutex::new(world)),
+        entities: Arc::new(Mutex::new(EntityManager::default())),
     };
 
     let listener = TcpListener::bind(config.address)?;
@@ -66,6 +69,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut clients: Vec<ClientHandler> = Vec::new();
     let mut players: Vec<Player> = Vec::new();
+
+    // NOTE: Testing entity
+    #[derive(Debug)]
+    struct TestEntity;
+    impl Entity for TestEntity {
+        fn r#type(&self) -> i32 {
+            0
+        }
+    }
+    let entity = state
+        .entities
+        .lock()
+        .unwrap()
+        .add_entity(TestEntity, UUID::new_v7());
+    std::mem::forget(entity);
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(1));
@@ -114,5 +132,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         players.iter_mut().try_for_each(|player| player.update())?;
 
         state.world.lock().unwrap().update_viewers()?;
+        state.entities.lock().unwrap().update_viewers()?;
     }
 }

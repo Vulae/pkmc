@@ -5,7 +5,7 @@ use std::{
     hash::Hash,
     io::{Seek, Write},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 use itertools::Itertools;
@@ -526,7 +526,7 @@ pub struct AnvilWorld {
     loaded_regions: HashMap<(i32, i32), Option<Region>>,
     section_y_range: std::ops::RangeInclusive<i8>,
     biome_mapper: IdTable<Biome>,
-    viewers: Vec<Arc<Mutex<WorldViewer>>>,
+    viewers: Vec<Weak<Mutex<WorldViewer>>>,
     viewers_id: usize,
     diffs: HashMap<(i32, i32), HashMap<i16, SectionDiff>>,
 }
@@ -647,18 +647,18 @@ impl World for AnvilWorld {
             position: Vec3::new(0.0, 100.0, 0.0),
         }));
         self.viewers_id += 1;
-        self.viewers.push(viewer.clone());
+        self.viewers.push(Arc::downgrade(&viewer));
         viewer
     }
 
-    fn remove_viewer(&mut self, viewer: Arc<Mutex<WorldViewer>>) {
-        let id = viewer.lock().unwrap().id;
-        self.viewers.retain(|v| v.lock().unwrap().id != id);
-    }
-
     fn update_viewers(&mut self) -> Result<(), Self::Error> {
-        self.viewers
-            .retain(|v| !v.lock().unwrap().connection.is_closed());
+        self.viewers.retain(|v| v.strong_count() > 0);
+
+        let viewers = self
+            .viewers
+            .iter()
+            .flat_map(|v| v.upgrade())
+            .collect::<Vec<_>>();
 
         self.diffs
             .drain()
@@ -669,7 +669,7 @@ impl World for AnvilWorld {
                         >= UPDATE_SECTION_CHUNK_SWITCH_NUM_BLOCKS
                 {
                     // Just resend the whole chunk
-                    self.viewers
+                    viewers
                         .iter()
                         .map(|viewer| viewer.lock().unwrap())
                         .for_each(|mut viewer| viewer.loader.force_reload(chunk_position));
@@ -681,7 +681,7 @@ impl World for AnvilWorld {
                             section: Position::new(chunk_x, section_y, chunk_z),
                             blocks: diff.to_packet_data(),
                         };
-                        self.viewers
+                        viewers
                             .iter()
                             .map(|viewer| viewer.lock().unwrap())
                             .filter(|viewer| viewer.loader.has_loaded(chunk_position))
@@ -690,13 +690,14 @@ impl World for AnvilWorld {
                 }
             })?;
 
-        self.viewers
-            // TODO: Don't clone this wtf
-            .clone()
+        viewers
             .iter()
             .map(|viewer| viewer.lock().unwrap())
             .try_for_each(|mut viewer| {
-                let center = ChunkPosition::new((viewer.position.x / 16.0) as i32, (viewer.position.z / 16.0) as i32);
+                let center = ChunkPosition::new(
+                    (viewer.position.x / 16.0) as i32,
+                    (viewer.position.z / 16.0) as i32,
+                );
                 if viewer.loader.update_center(Some(center)) {
                     viewer
                         .connection()
@@ -716,8 +717,9 @@ impl World for AnvilWorld {
                 if let Some(to_load) = viewer.loader.next_to_load() {
                     self.prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
                     if let Some(chunk) = self.get_chunk(to_load.chunk_x, to_load.chunk_z) {
-                        viewer.connection().send(
-                            &packet::play::LevelChunkWithLight {
+                        viewer
+                            .connection()
+                            .send(&packet::play::LevelChunkWithLight {
                                 chunk_x: to_load.chunk_x,
                                 chunk_z: to_load.chunk_z,
                                 chunk_data: packet::play::LevelChunkData {
@@ -731,17 +733,34 @@ impl World for AnvilWorld {
                                                     block_states.write(&mut writer)?;
                                                 } else {
                                                     writer.write_all(&0u16.to_be_bytes())?;
-                                                    writer.write_all(&to_paletted_data_singular(Block::air().id().unwrap())?)?;
+                                                    writer.write_all(
+                                                        &to_paletted_data_singular(
+                                                            Block::air().id().unwrap(),
+                                                        )?,
+                                                    )?;
                                                 }
                                                 if let Some(biomes) = &section.biomes {
-                                                    biomes.write(&mut writer, &self.biome_mapper)?;
+                                                    biomes
+                                                        .write(&mut writer, &self.biome_mapper)?;
                                                 } else {
-                                                    writer.write_all(&to_paletted_data_singular(Biome::default().id(&self.biome_mapper).unwrap())?)?;
+                                                    writer.write_all(
+                                                        &to_paletted_data_singular(
+                                                            Biome::default()
+                                                                .id(&self.biome_mapper)
+                                                                .unwrap(),
+                                                        )?,
+                                                    )?;
                                                 }
                                             } else {
                                                 writer.write_all(&0u16.to_be_bytes())?;
-                                                writer.write_all(&to_paletted_data_singular(Block::air().id().unwrap())?)?;
-                                                writer.write_all(&to_paletted_data_singular(Biome::default().id(&self.biome_mapper).unwrap())?)?;
+                                                writer.write_all(&to_paletted_data_singular(
+                                                    Block::air().id().unwrap(),
+                                                )?)?;
+                                                writer.write_all(&to_paletted_data_singular(
+                                                    Biome::default()
+                                                        .id(&self.biome_mapper)
+                                                        .unwrap(),
+                                                )?)?;
                                             }
                                             Ok::<_, AnvilError>(())
                                         })?;
@@ -761,9 +780,10 @@ impl World for AnvilWorld {
                                         .collect(),
                                 },
                                 // TODO: Light data
-                                light_data: packet::play::LevelLightData::full_bright(self.section_y_range().count()),
-                            }
-                        )?;
+                                light_data: packet::play::LevelLightData::full_bright(
+                                    self.section_y_range().count(),
+                                ),
+                            })?;
                     } else {
                         viewer.connection().send(
                             &packet::play::LevelChunkWithLight::generate_test(

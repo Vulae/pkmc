@@ -1,0 +1,2 @@
+# This is expected to only run on the machine it's built on.
+rustflags = ["-C", "target-cpu=native"]

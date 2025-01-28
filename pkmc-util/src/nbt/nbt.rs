@@ -151,6 +151,11 @@ macro_rules! nbt_compound {
 }
 
 impl NBT {
+    /// Empty NBT compound.
+    pub fn empty() -> Self {
+        Self::Compound(HashMap::new())
+    }
+
     fn tag(&self) -> NBTTag {
         match self {
             NBT::Byte(..) => NBTTag::Byte,

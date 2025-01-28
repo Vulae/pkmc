@@ -1,8 +1,14 @@
 use std::sync::{Arc, Mutex};
 
-use pkmc_defs::{biome::Biome, block::Block, packet, text_component::TextComponent};
+use pkmc_defs::{
+    biome::Biome,
+    block::Block,
+    entity::entity_type_id,
+    packet::{self, play::EntityMetadataBundle},
+    text_component::TextComponent,
+};
 use pkmc_server::{
-    entity_manager::{new_entity_id, EntityViewer},
+    entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
     world::{
         anvil::AnvilError,
         chunk_loader::{ChunkLoader, ChunkPosition},
@@ -35,12 +41,27 @@ pub enum PlayerError {
 }
 
 #[derive(Debug)]
+struct PlayerEntity {}
+
+impl Entity for PlayerEntity {
+    fn r#type(&self) -> i32 {
+        // TEMP: Implementing players takes alot of extra stuff.
+        // https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Protocol#Player_Info_Update
+        // . . . So players are just zombies for now.
+        //entity_type_id("minecraft:player").unwrap()
+        entity_type_id("minecraft:zombie").unwrap()
+    }
+}
+
+#[derive(Debug)]
 pub struct Player {
     connection: Connection,
     server_state: ServerState,
     world_viewer: Arc<Mutex<WorldViewer>>,
-    entity_viewer: Arc<Mutex<EntityViewer>>,
-    name: String,
+    entity_viewer: Option<Arc<Mutex<EntityViewer>>>,
+    player_entity: Option<EntityBase<PlayerEntity>>,
+    player_name: String,
+    player_uuid: UUID,
     uuid: UUID,
     keepalive_time: std::time::Instant,
     keepalive_id: Option<i64>,
@@ -56,8 +77,9 @@ impl Player {
     pub fn new(
         connection: Connection,
         server_state: ServerState,
+        player_name: String,
+        player_uuid: UUID,
         uuid: UUID,
-        name: String,
         view_distance: u8,
     ) -> Result<Self, PlayerError> {
         let world_viewer = server_state
@@ -71,18 +93,14 @@ impl Player {
             .loader
             .update_radius(view_distance.into());
 
-        let entity_viewer = server_state
-            .entities
-            .lock()
-            .unwrap()
-            .add_viewer(connection.sender());
-
         let mut player = Self {
             connection,
             server_state,
             world_viewer,
-            entity_viewer,
-            name,
+            entity_viewer: None,
+            player_entity: None,
+            player_name,
+            player_uuid,
             uuid,
             keepalive_time: std::time::Instant::now(),
             keepalive_id: None,
@@ -168,15 +186,19 @@ impl Player {
         player
             .connection
             .send(&packet::play::SetActionBarText(TextComponent::rainbow(
-                &format!("Hello, {}!", player.name()),
+                &format!("Hello, {}!", player.player_name()),
                 0.0,
             )))?;
 
         Ok(player)
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn player_name(&self) -> &str {
+        &self.player_name
+    }
+
+    pub fn player_uuid(&self) -> &UUID {
+        &self.player_uuid
     }
 
     pub fn uuid(&self) -> &UUID {
@@ -230,7 +252,7 @@ impl Player {
         while let Some(packet) = match self.connection.recieve_into::<packet::play::PlayPacket>() {
             Ok(packet) => packet,
             Err(err @ ConnectionError::UnsupportedPacket(..)) => {
-                println!("{} {}", self.name(), err);
+                println!("{} {}", self.player_name(), err);
                 None
             }
             Err(err) => Err(err)?,
@@ -242,7 +264,24 @@ impl Player {
                     // Either responded to invalid keepalive, or keepalive id is wrong.
                     _ => return Err(PlayerError::BadKeepAliveResponse),
                 },
-                packet::play::PlayPacket::PlayerLoaded(_player_loaded) => {}
+                packet::play::PlayPacket::PlayerLoaded(player_loaded) => {
+                    let entity_viewer = self
+                        .server_state
+                        .entities
+                        .lock()
+                        .unwrap()
+                        .add_viewer(self.connection.sender(), self.uuid);
+                    let player_entity = self
+                        .server_state
+                        .entities
+                        .lock()
+                        .unwrap()
+                        .add_entity(PlayerEntity {}, self.uuid);
+                    //player_entity.handler().lock().unwrap().metadata =
+                    //    EntityMetadataBundle::player_default();
+                    self.entity_viewer = Some(entity_viewer);
+                    self.player_entity = Some(player_entity);
+                }
                 packet::play::PlayPacket::AcceptTeleportation(_accept_teleportation) => {}
                 packet::play::PlayPacket::MovePlayerPosRot(move_player_pos_rot) => {
                     self.position.set(
@@ -311,6 +350,13 @@ impl Player {
 
         let mut world_viewer = self.world_viewer.lock().unwrap();
         world_viewer.position = self.position;
+
+        if let Some(player_entity) = &self.player_entity {
+            let mut player_entity_handler = player_entity.handler().lock().unwrap();
+            player_entity_handler.position = self.position;
+            player_entity_handler.yaw = self.yaw;
+            player_entity_handler.pitch = self.pitch;
+        }
 
         Ok(())
     }

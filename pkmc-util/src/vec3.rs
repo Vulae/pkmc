@@ -101,6 +101,10 @@ impl<T: Float> Vec3<T> {
             self.x * other.y - self.y * other.x,
         )
     }
+
+    pub fn is_zero(&self) -> bool {
+        self.x.is_zero() && self.y.is_zero() && self.z.is_zero()
+    }
 }
 
 impl<T: Float + FloatConst> Vec3<T> {

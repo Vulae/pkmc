@@ -5,7 +5,7 @@ use std::{
 
 use rand::Rng;
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub struct UUID(pub [u8; 16]);
 
 impl UUID {

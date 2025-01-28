@@ -1,4 +1,7 @@
-use std::io::{Read, Write};
+use std::{
+    collections::BTreeMap,
+    io::{Read, Write},
+};
 
 use pkmc_util::{
     nbt::NBT,
@@ -7,7 +10,7 @@ use pkmc_util::{
         to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, ReadExtPacket as _,
         ServerboundPacket, WriteExtPacket,
     },
-    serverbound_packet_enum, Position, ReadExt as _, Transmutable, UUID,
+    serverbound_packet_enum, Position, ReadExt as _, Transmutable, Vec3, UUID,
 };
 
 use crate::{generated::generated, text_component::TextComponent};
@@ -790,9 +793,7 @@ pub struct AddEntity {
     pub id: i32,
     pub uuid: UUID,
     pub r#type: i32,
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
+    pub position: Vec3<f64>,
     pub pitch: u8,
     pub yaw: u8,
     pub head_yaw: u8,
@@ -809,9 +810,9 @@ impl ClientboundPacket for AddEntity {
         writer.write_varint(self.id)?;
         writer.write_uuid(&self.uuid)?;
         writer.write_varint(self.r#type)?;
-        writer.write_all(&self.x.to_be_bytes())?;
-        writer.write_all(&self.y.to_be_bytes())?;
-        writer.write_all(&self.z.to_be_bytes())?;
+        writer.write_all(&self.position.x.to_be_bytes())?;
+        writer.write_all(&self.position.y.to_be_bytes())?;
+        writer.write_all(&self.position.z.to_be_bytes())?;
         writer.write_all(&self.pitch.to_be_bytes())?;
         writer.write_all(&self.yaw.to_be_bytes())?;
         writer.write_all(&self.head_yaw.to_be_bytes())?;
@@ -819,6 +820,497 @@ impl ClientboundPacket for AddEntity {
         writer.write_all(&self.velocity_x.to_be_bytes())?;
         writer.write_all(&self.velocity_y.to_be_bytes())?;
         writer.write_all(&self.velocity_z.to_be_bytes())?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EntityMetadata {
+    Byte(u8),
+    VarInt(i32),
+    VarLong(i64),
+    Float(f32),
+    String(String),
+    TextComponent(TextComponent),
+    OptionalTextComponent(Option<TextComponent>),
+    /// UNIMPLEMENTED
+    Slot,
+    Boolean(bool),
+    Rotations(f32, f32, f32),
+    Position(Position),
+    OptionalPosition(Option<Position>),
+    // TODO: Implement enum
+    Direction(i32),
+    OptionalUUID(Option<UUID>),
+    BlockState(i32),
+    OptionalBlockState(Option<i32>),
+    NBT(NBT),
+    Particle(i32),
+    Particles(Vec<i32>),
+    VillagerData(i32, i32, i32),
+    OptionalVarInt(Option<i32>),
+    // TODO: Implement enum
+    Pose(i32),
+    CatVariant(i32),
+    /// UNIMPLEMENTED
+    WolfVariant(i32),
+    FrogVariant(i32),
+    OptionalGlobalPosition(Option<(String, Position)>),
+    /// UNIMPLEMENTED
+    PaintingVariant,
+    /// UNIMPLEMENTED
+    SnifferState(i32),
+    /// UNIMPLEMENTED
+    ArmadilloState(i32),
+    Vector3(Vec3<f32>),
+    // TEMP: Implement quaternions
+    Quaternion(f32, f32, f32, f32),
+}
+
+impl EntityMetadata {
+    pub fn write(&self, mut writer: impl Write) -> std::io::Result<()> {
+        match self {
+            EntityMetadata::Byte(byte) => {
+                writer.write_varint(0)?;
+                writer.write_all(&byte.to_be_bytes())?;
+            }
+            EntityMetadata::VarInt(varint) => {
+                writer.write_varint(1)?;
+                writer.write_varint(*varint)?;
+            }
+            EntityMetadata::VarLong(varlong) => {
+                writer.write_varint(2)?;
+                writer.write_varlong(*varlong)?;
+            }
+            EntityMetadata::Float(float) => {
+                writer.write_varint(3)?;
+                writer.write_all(&float.to_be_bytes())?;
+            }
+            EntityMetadata::String(string) => {
+                writer.write_varint(4)?;
+                writer.write_string(string)?;
+            }
+            EntityMetadata::TextComponent(text_component) => {
+                writer.write_varint(5)?;
+                writer.write_nbt(&text_component.to_nbt())?;
+            }
+            EntityMetadata::OptionalTextComponent(text_component) => {
+                writer.write_varint(6)?;
+                if let Some(text_component) = text_component {
+                    writer.write_bool(true)?;
+                    writer.write_nbt(&text_component.to_nbt())?;
+                } else {
+                    writer.write_bool(false)?;
+                }
+            }
+            EntityMetadata::Slot => todo!(),
+            EntityMetadata::Boolean(bool) => {
+                writer.write_varint(8)?;
+                writer.write_bool(*bool)?;
+            }
+            EntityMetadata::Rotations(rx, ry, rz) => {
+                writer.write_varint(9)?;
+                writer.write_all(&rx.to_be_bytes())?;
+                writer.write_all(&ry.to_be_bytes())?;
+                writer.write_all(&rz.to_be_bytes())?;
+            }
+            EntityMetadata::Position(position) => {
+                writer.write_varint(10)?;
+                writer.write_position(position)?;
+            }
+            EntityMetadata::OptionalPosition(position) => {
+                writer.write_varint(11)?;
+                if let Some(position) = position {
+                    writer.write_bool(true)?;
+                    writer.write_position(position)?;
+                } else {
+                    writer.write_bool(false)?;
+                }
+            }
+            EntityMetadata::Direction(direction) => {
+                writer.write_varint(12)?;
+                writer.write_varint(*direction)?;
+            }
+            EntityMetadata::OptionalUUID(uuid) => {
+                writer.write_varint(13)?;
+                if let Some(uuid) = uuid {
+                    writer.write_bool(true)?;
+                    writer.write_uuid(uuid)?;
+                } else {
+                    writer.write_bool(false)?;
+                }
+            }
+            EntityMetadata::BlockState(block_state) => {
+                writer.write_varint(14)?;
+                writer.write_varint(*block_state)?;
+            }
+            EntityMetadata::OptionalBlockState(block_state) => {
+                writer.write_varint(15)?;
+                if let Some(block_state) = block_state {
+                    assert_ne!(*block_state, 0);
+                    writer.write_varint(*block_state)?;
+                } else {
+                    writer.write_varint(0)?;
+                }
+            }
+            EntityMetadata::NBT(nbt) => {
+                writer.write_varint(16)?;
+                writer.write_nbt(nbt)?;
+            }
+            EntityMetadata::Particle(particle) => {
+                writer.write_varint(17)?;
+                writer.write_varint(*particle)?;
+            }
+            EntityMetadata::Particles(particles) => {
+                writer.write_varint(18)?;
+                writer.write_varint(particles.len() as i32)?;
+                for particle in particles {
+                    writer.write_varint(*particle)?;
+                }
+            }
+            EntityMetadata::VillagerData(r#type, profession, level) => {
+                writer.write_varint(19)?;
+                writer.write_varint(*r#type)?;
+                writer.write_varint(*profession)?;
+                writer.write_varint(*level)?;
+            }
+            EntityMetadata::OptionalVarInt(var_int) => {
+                writer.write_varint(20)?;
+                if let Some(var_int) = var_int {
+                    writer.write_varint(*var_int + 1)?;
+                } else {
+                    writer.write_varint(0)?;
+                }
+            }
+            EntityMetadata::Pose(pose) => {
+                writer.write_varint(21)?;
+                writer.write_varint(*pose)?;
+            }
+            EntityMetadata::CatVariant(cat_variant) => {
+                writer.write_varint(22)?;
+                writer.write_varint(*cat_variant)?;
+            }
+            EntityMetadata::WolfVariant(_wolf_variant) => todo!(),
+            EntityMetadata::FrogVariant(frog_variant) => {
+                writer.write_varint(24)?;
+                writer.write_varint(*frog_variant)?;
+            }
+            EntityMetadata::OptionalGlobalPosition(global_position) => {
+                writer.write_varint(25)?;
+                if let Some((dimension, position)) = global_position {
+                    writer.write_bool(true)?;
+                    writer.write_string(dimension)?;
+                    writer.write_position(position)?;
+                } else {
+                    writer.write_bool(false)?;
+                }
+            }
+            EntityMetadata::PaintingVariant => todo!(),
+            EntityMetadata::SnifferState(sniffer_state) => {
+                writer.write_varint(27)?;
+                writer.write_varint(*sniffer_state)?;
+            }
+            EntityMetadata::ArmadilloState(armadillo_state) => {
+                writer.write_varint(28)?;
+                writer.write_varint(*armadillo_state)?;
+            }
+            EntityMetadata::Vector3(vec3) => {
+                writer.write_varint(29)?;
+                writer.write_all(&vec3.x.to_be_bytes())?;
+                writer.write_all(&vec3.y.to_be_bytes())?;
+                writer.write_all(&vec3.z.to_be_bytes())?;
+            }
+            EntityMetadata::Quaternion(x, y, z, w) => {
+                writer.write_varint(30)?;
+                writer.write_all(&x.to_be_bytes())?;
+                writer.write_all(&y.to_be_bytes())?;
+                writer.write_all(&z.to_be_bytes())?;
+                writer.write_all(&w.to_be_bytes())?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityMetadataBundle(pub BTreeMap<u8, EntityMetadata>);
+
+impl EntityMetadataBundle {
+    pub fn empty() -> Self {
+        Self(BTreeMap::new())
+    }
+}
+
+impl EntityMetadataBundle {
+    /// Entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Entity
+    pub fn entity_flags(&mut self, flags: u8) {
+        self.0.insert(0, EntityMetadata::Byte(flags));
+    }
+
+    /// Entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Entity
+    pub fn entity_air_ticks(&mut self, air_ticks: i32) {
+        self.0.insert(1, EntityMetadata::VarInt(air_ticks));
+    }
+
+    /// Entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Entity
+    pub fn entity_custom_name(&mut self, custom_name: Option<TextComponent>) {
+        self.0
+            .insert(2, EntityMetadata::OptionalTextComponent(custom_name));
+    }
+
+    /// Entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Entity
+    pub fn entity_is_custom_name_visible(&mut self, is_custom_name_visible: bool) {
+        self.0
+            .insert(3, EntityMetadata::Boolean(is_custom_name_visible));
+    }
+
+    /// Entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Entity
+    pub fn entity_is_silent(&mut self, is_silent: bool) {
+        self.0.insert(4, EntityMetadata::Boolean(is_silent));
+    }
+
+    /// Entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Entity
+    pub fn entity_has_no_gravity(&mut self, has_no_gravity: bool) {
+        self.0.insert(5, EntityMetadata::Boolean(has_no_gravity));
+    }
+
+    /// Entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Entity
+    pub fn entity_pose(&mut self, pose: i32) {
+        self.0.insert(6, EntityMetadata::Pose(pose));
+    }
+
+    /// Entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Entity
+    pub fn entity_ticks_frozen_in_powdered_snow(&mut self, ticks_frozen_in_powdered_snow: i32) {
+        self.0
+            .insert(7, EntityMetadata::VarInt(ticks_frozen_in_powdered_snow));
+    }
+
+    /// Entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Entity
+    pub fn entity_default() -> Self {
+        let mut bundle = Self::empty();
+        bundle.entity_flags(0);
+        bundle.entity_air_ticks(300);
+        bundle.entity_custom_name(None);
+        bundle.entity_is_custom_name_visible(false);
+        bundle.entity_is_silent(false);
+        bundle.entity_has_no_gravity(false);
+        bundle.entity_pose(0);
+        bundle.entity_ticks_frozen_in_powdered_snow(0);
+        bundle
+    }
+}
+
+impl EntityMetadataBundle {
+    /// Living entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Living_Entity
+    pub fn living_entity_flags(&mut self, flags: u8) {
+        self.0.insert(8, EntityMetadata::Byte(flags));
+    }
+
+    /// Living entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Living_Entity
+    pub fn living_entity_health(&mut self, health: f32) {
+        self.0.insert(9, EntityMetadata::Float(health));
+    }
+
+    /// Living entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Living_Entity
+    pub fn living_entity_potion_effect_color(&mut self, potion_effect_color: Vec<i32>) {
+        self.0
+            .insert(10, EntityMetadata::Particles(potion_effect_color));
+    }
+
+    /// Living entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Living_Entity
+    pub fn living_entity_potion_effect_is_ambient(&mut self, potion_effect_is_ambient: bool) {
+        self.0
+            .insert(11, EntityMetadata::Boolean(potion_effect_is_ambient));
+    }
+
+    /// Living entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Living_Entity
+    pub fn living_entity_num_arrows_in_entity(&mut self, num_arrows_in_entity: i32) {
+        self.0
+            .insert(12, EntityMetadata::VarInt(num_arrows_in_entity));
+    }
+
+    /// Living entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Living_Entity
+    pub fn living_entity_num_bee_stingers_in_entity(&mut self, num_bee_stingers_in_entity: i32) {
+        self.0
+            .insert(13, EntityMetadata::VarInt(num_bee_stingers_in_entity));
+    }
+
+    /// Living entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Living_Entity
+    pub fn living_entity_sleeping_bed_position(&mut self, sleeping_bed_position: Option<Position>) {
+        self.0
+            .insert(14, EntityMetadata::OptionalPosition(sleeping_bed_position));
+    }
+
+    /// Living entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Living_Entity
+    pub fn living_entity_default() -> Self {
+        let mut bundle = Self::entity_default();
+        bundle.living_entity_flags(0);
+        bundle.living_entity_health(1.0);
+        bundle.living_entity_potion_effect_color(Vec::new());
+        bundle.living_entity_potion_effect_is_ambient(false);
+        bundle.living_entity_num_arrows_in_entity(0);
+        bundle.living_entity_num_bee_stingers_in_entity(0);
+        bundle.living_entity_sleeping_bed_position(None);
+        bundle
+    }
+}
+
+impl EntityMetadataBundle {
+    /// Player entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Player
+    pub fn player_additional_hearts(&mut self, additional_hearts: f32) {
+        self.0.insert(15, EntityMetadata::Float(additional_hearts));
+    }
+
+    /// Player entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Player
+    pub fn player_score(&mut self, score: i32) {
+        self.0.insert(16, EntityMetadata::VarInt(score));
+    }
+
+    /// Player entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Player
+    pub fn player_skin_parts(&mut self, skin_parts: u8) {
+        self.0.insert(17, EntityMetadata::Byte(skin_parts));
+    }
+
+    /// Player entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Player
+    pub fn player_main_hand(&mut self, main_hand: u8) {
+        self.0.insert(18, EntityMetadata::Byte(main_hand));
+    }
+
+    /// Player entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Player
+    pub fn player_left_parrot(&mut self, left_parrot: NBT) {
+        self.0.insert(19, EntityMetadata::NBT(left_parrot));
+    }
+
+    /// Player entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Player
+    pub fn player_right_parrot(&mut self, right_parrot: NBT) {
+        self.0.insert(20, EntityMetadata::NBT(right_parrot));
+    }
+
+    /// Player entity metadata, SEE: https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Entity_metadata#Player
+    pub fn player_default() -> Self {
+        let mut bundle = Self::living_entity_default();
+        bundle.player_additional_hearts(0.0);
+        bundle.player_score(0);
+        bundle.player_skin_parts(0);
+        bundle.player_main_hand(0);
+        bundle.player_left_parrot(NBT::empty());
+        bundle.player_right_parrot(NBT::empty());
+        bundle
+    }
+}
+
+#[derive(Debug)]
+pub struct SetEntityMetadata {
+    pub entity_id: i32,
+    pub metadata: EntityMetadataBundle,
+}
+
+impl ClientboundPacket for SetEntityMetadata {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_SET_ENTITY_DATA;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.entity_id)?;
+        for (index, data) in &self.metadata.0 {
+            writer.write_all(&index.to_be_bytes())?;
+            data.write(&mut writer)?;
+        }
+        writer.write_all(&0xFFu8.to_be_bytes())?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct EntityPositionSync {
+    pub entity_id: i32,
+    pub position: Vec3<f64>,
+    pub velocity: Vec3<f64>,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub on_ground: bool,
+}
+
+impl ClientboundPacket for EntityPositionSync {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_ENTITY_POSITION_SYNC;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.entity_id)?;
+        writer.write_all(&self.position.x.to_be_bytes())?;
+        writer.write_all(&self.position.y.to_be_bytes())?;
+        writer.write_all(&self.position.z.to_be_bytes())?;
+        writer.write_all(&self.velocity.x.to_be_bytes())?;
+        writer.write_all(&self.velocity.y.to_be_bytes())?;
+        writer.write_all(&self.velocity.z.to_be_bytes())?;
+        writer.write_all(&self.yaw.to_be_bytes())?;
+        writer.write_all(&self.pitch.to_be_bytes())?;
+        writer.write_bool(self.on_ground)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct MoveEntityPos {
+    pub entity_id: i32,
+    pub delta_x: i16,
+    pub delta_y: i16,
+    pub delta_z: i16,
+    pub on_ground: bool,
+}
+
+impl ClientboundPacket for MoveEntityPos {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_MOVE_ENTITY_POS;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.entity_id)?;
+        writer.write_all(&self.delta_x.to_be_bytes())?;
+        writer.write_all(&self.delta_y.to_be_bytes())?;
+        writer.write_all(&self.delta_z.to_be_bytes())?;
+        writer.write_bool(self.on_ground)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct MoveEntityPosRot {
+    pub entity_id: i32,
+    pub delta_x: i16,
+    pub delta_y: i16,
+    pub delta_z: i16,
+    pub yaw: u8,
+    pub pitch: u8,
+    pub on_ground: bool,
+}
+
+impl ClientboundPacket for MoveEntityPosRot {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_MOVE_ENTITY_POS_ROT;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.entity_id)?;
+        writer.write_all(&self.delta_x.to_be_bytes())?;
+        writer.write_all(&self.delta_y.to_be_bytes())?;
+        writer.write_all(&self.delta_z.to_be_bytes())?;
+        writer.write_all(&self.yaw.to_be_bytes())?;
+        writer.write_all(&self.pitch.to_be_bytes())?;
+        writer.write_bool(self.on_ground)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct MoveEntityRot {
+    pub entity_id: i32,
+    pub yaw: u8,
+    pub pitch: u8,
+    pub on_ground: bool,
+}
+
+impl ClientboundPacket for MoveEntityRot {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_MOVE_ENTITY_ROT;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.entity_id)?;
+        writer.write_all(&self.yaw.to_be_bytes())?;
+        writer.write_all(&self.pitch.to_be_bytes())?;
+        writer.write_bool(self.on_ground)?;
         Ok(())
     }
 }

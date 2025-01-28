@@ -17,7 +17,7 @@ use pkmc_server::{
     world::{anvil::AnvilWorld, World},
     ClientHandler,
 };
-use pkmc_util::{normalize_identifier, packet::Connection, IdTable, IterRetain, UUID};
+use pkmc_util::{normalize_identifier, packet::Connection, IdTable, IterRetain, Vec3, UUID};
 use player::Player;
 
 pub static REGISTRIES: LazyLock<Registries> =
@@ -28,6 +28,8 @@ pub struct ServerState {
     pub world: Arc<Mutex<AnvilWorld>>,
     pub entities: Arc<Mutex<EntityManager>>,
 }
+
+const TICK_DURATION: std::time::Duration = std::time::Duration::from_millis(1000 / 20);
 
 fn main() -> Result<(), Box<dyn Error>> {
     let config = Config::load(&["pkmc.toml", "pkmc/pkmc.toml"])?;
@@ -70,20 +72,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut clients: Vec<ClientHandler> = Vec::new();
     let mut players: Vec<Player> = Vec::new();
 
-    // NOTE: Testing entity
+    // NOTE: Testing entities
     #[derive(Debug)]
     struct TestEntity;
     impl Entity for TestEntity {
         fn r#type(&self) -> i32 {
-            0
+            110
         }
     }
-    let entity = state
+    let entity_1 = state
         .entities
         .lock()
         .unwrap()
         .add_entity(TestEntity, UUID::new_v7());
-    std::mem::forget(entity);
+    let entity_2 = state
+        .entities
+        .lock()
+        .unwrap()
+        .add_entity(TestEntity, UUID::new_v7());
+
+    let start = std::time::Instant::now();
+    let mut last_tick = std::time::Instant::now();
+    let mut num_ticks: u64 = 0;
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(1));
@@ -113,11 +123,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let mut player = Player::new(
                     player.connection,
                     state.clone(),
-                    player.player_id,
                     player.player_name,
+                    player.player_id,
+                    UUID::new_v7(),
                     config.view_distance,
                 )?;
-                println!("{} Connected", player.name());
+                println!("{} Connected", player.player_name());
                 players.push(player);
                 Ok::<_, Box<dyn Error>>(())
             })?;
@@ -126,12 +137,30 @@ fn main() -> Result<(), Box<dyn Error>> {
             .retain_returned(|player| !player.is_closed())
             .into_iter()
             .for_each(|player| {
-                println!("{} Disconnected", player.name());
+                println!("{} Disconnected", player.player_name());
             });
 
         players.iter_mut().try_for_each(|player| player.update())?;
 
         state.world.lock().unwrap().update_viewers()?;
-        state.entities.lock().unwrap().update_viewers()?;
+
+        let curtime = std::time::Instant::now()
+            .duration_since(start)
+            .as_secs_f64();
+        let pos1 =
+            Vec3::new(0.0, 100.0, 0.0) + Vec3::get_vector_for_rotation(0.0, curtime * 25.0) * 5.0;
+        let pos2 = pos1 + Vec3::get_vector_for_rotation(0.0, curtime * 65.0) * 3.0;
+        entity_1.handler().lock().unwrap().position = pos1;
+        entity_2.handler().lock().unwrap().position = pos2;
+
+        if std::time::Instant::now().duration_since(last_tick) >= TICK_DURATION {
+            last_tick = std::time::Instant::now();
+            state
+                .entities
+                .lock()
+                .unwrap()
+                .update_viewers((num_ticks % 60) == 0)?;
+            num_ticks += 1;
+        }
     }
 }

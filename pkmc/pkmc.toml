@@ -7,12 +7,12 @@ compression-threshold = 64
 # Packet compression level 0..=9 (0 is no compression)
 compression-level = 3
 
-world = "/home/vulae/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/Fabulously Optimized 1.21.4/.minecraft/saves/pkmc/"
+# world = "/home/vulae/.local/share/PrismLauncher/instances/Fabulously Optimized 1.21.4/.minecraft/saves/pkmc/"
 # NOTE: If you are loading an old world (<=1.19), you will want to optimize it first, or it will not load.
 # Worlds > Edit World > Optimize World > Confirm (And wait (-.-)...Zzz)
 # If it is a massive world you're optimizing, it's very likely you'll want to create a tmpfs directory for that folder.
 # As Minecraft is extremely slow at doing this, and probably will be IO-limited (For some stupid reason, IDK)
-# world = "/home/vulae/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/Fabulously Optimized 1.21.4/.minecraft/saves/Greenfield v0.5.4/"
+world = "/home/vulae/.local/share/PrismLauncher/instances/Fabulously Optimized 1.21.4/.minecraft/saves/Greenfield v0.5.4/"
 
 view-distance = 32
 

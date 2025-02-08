@@ -7,7 +7,7 @@ use std::{
 use pkmc_defs::packet::{self, play::EntityMetadataBundle};
 use pkmc_util::{
     packet::{ConnectionError, ConnectionSender},
-    Vec3, UUID,
+    retain_returned_hashmap, Vec3, UUID,
 };
 
 pub trait Entity: Debug {
@@ -105,6 +105,7 @@ impl EntityViewer {
 #[derive(Debug, Default)]
 pub struct EntityManager {
     entities: HashMap<UUID, Weak<Mutex<EntityHandler>>>,
+    id_map: HashMap<UUID, i32>,
     viewers: Vec<Weak<Mutex<EntityViewer>>>,
 }
 
@@ -128,7 +129,11 @@ impl EntityManager {
             .flat_map(|v| v.upgrade())
             .collect::<Vec<_>>();
 
-        self.entities.retain(|_, e| e.strong_count() > 0);
+        let removed_entities =
+            retain_returned_hashmap(&mut self.entities, |_, e| e.strong_count() > 0)
+                .into_iter()
+                .map(|(uuid, _)| self.id_map.remove(&uuid).unwrap())
+                .collect::<HashSet<_>>();
 
         let entities = self
             .entities
@@ -140,6 +145,12 @@ impl EntityManager {
             .iter()
             .map(|v| v.lock().unwrap())
             .try_for_each(|mut viewer| {
+                if !removed_entities.is_empty() {
+                    viewer
+                        .connection
+                        .send(&packet::play::RemoveEntities(removed_entities.clone()))?;
+                }
+
                 entities
                     .iter()
                     .map(|e| e.lock().unwrap())
@@ -295,6 +306,7 @@ impl EntityManager {
 
     pub fn add_entity<T: Entity>(&mut self, entity: T, uuid: UUID) -> EntityBase<T> {
         let entity = EntityBase::new(entity, uuid);
+        self.id_map.insert(*entity.uuid(), entity.id());
         self.entities.insert(uuid, Arc::downgrade(&entity.handler));
         entity
     }

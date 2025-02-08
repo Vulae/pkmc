@@ -45,7 +45,12 @@ impl ConnectionSender {
             return Ok(());
         };
         match stream.write_all(&with_size) {
-            Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => inner.stream = None,
+            Err(err)
+                if err.kind() == std::io::ErrorKind::BrokenPipe
+                    || err.kind() == std::io::ErrorKind::ConnectionReset =>
+            {
+                inner.stream = None
+            }
             v => v?,
         }
         Ok(())
@@ -111,7 +116,8 @@ impl Connection {
                 }
                 Err(err)
                     if err.kind() == std::io::ErrorKind::BrokenPipe
-                        || err.kind() == std::io::ErrorKind::UnexpectedEof =>
+                        || err.kind() == std::io::ErrorKind::UnexpectedEof
+                        || err.kind() == std::io::ErrorKind::ConnectionReset =>
                 {
                     inner.stream = None;
                     break;

@@ -1,41 +1,82 @@
+// NOTE: This will all be unneeded soon: https://github.com/rust-lang/rust/issues/43244
+
 use std::{
-    collections::HashSet,
-    hash::{BuildHasher, Hash},
+    collections::{HashMap, HashSet},
+    hash::Hash,
 };
 
-pub trait IterRetain<T> {
-    fn retain_returned<F>(&mut self, predicate: F) -> Vec<T>
-    where
-        F: Fn(&T) -> bool;
-}
+// NOTE: I gave up this for now, I'm too dumb for rust magic like this (If it is even is possible)
+//pub trait IterRetain<'a, T> {
+//    type I<'b: 'a>;
+//    fn retain_returned<F>(&'a mut self, predicate: F) -> Vec<T>
+//    where
+//        for<'b> F: Fn(Self::I<'b>) -> bool + 'b;
+//}
+//
+//impl<'a, T> IterRetain<'a, T> for Vec<T> {
+//    type I<'b: 'a> = &'b T;
+//    fn retain_returned<F>(&'a mut self, predicate: F) -> Vec<T>
+//    where
+//        for<'b> F: Fn(Self::I<'b>) -> bool + 'b,
+//    {
+//        let mut removed = Vec::new();
+//        for i in (0..self.len()).rev() {
+//            if !predicate(&self[i]) {
+//                removed.push(self.remove(i));
+//            }
+//        }
+//        removed.into_iter().rev().collect()
+//    }
+//}
 
-impl<T> IterRetain<T> for Vec<T> {
-    fn retain_returned<F>(&mut self, predicate: F) -> Vec<T>
-    where
-        F: Fn(&T) -> bool,
-    {
-        let mut removed = Vec::new();
-        for i in (0..self.len()).rev() {
-            if !predicate(&self[i]) {
-                removed.push(self.remove(i));
-            }
+pub fn retain_returned_vec<T, F>(vec: &mut Vec<T>, predicate: F) -> Vec<T>
+where
+    F: Fn(&T) -> bool,
+{
+    let mut removed = Vec::new();
+    for i in (0..vec.len()).rev() {
+        if !predicate(&vec[i]) {
+            removed.push(vec.remove(i));
         }
-        removed.into_iter().rev().collect()
     }
+    removed.into_iter().rev().collect()
 }
 
-// TODO: Possible without clone? I'm not enough of a rust pro to know.
-impl<T: Eq + Hash + Clone, S: BuildHasher> IterRetain<T> for HashSet<T, S> {
-    fn retain_returned<F>(&mut self, predicate: F) -> Vec<T>
-    where
-        F: Fn(&T) -> bool,
-    {
-        self.iter()
-            .filter(|item| !predicate(item))
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .map(|item| self.take(&item).unwrap())
-            .collect::<Vec<_>>()
-    }
+pub fn retain_returned_hashset<T: Eq + Hash, F>(hashset: &mut HashSet<T>, predicate: F) -> Vec<T>
+where
+    F: Fn(&T) -> bool,
+{
+    hashset
+        .drain()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .fold(Vec::new(), |mut removed, value| {
+            if !predicate(&value) {
+                removed.push(value);
+            } else {
+                hashset.insert(value);
+            }
+            removed
+        })
+}
+
+pub fn retain_returned_hashmap<K: Eq + Hash, V, F>(
+    hashmap: &mut HashMap<K, V>,
+    predicate: F,
+) -> Vec<(K, V)>
+where
+    F: Fn(&K, &V) -> bool,
+{
+    hashmap
+        .drain()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .fold(Vec::new(), |mut removed, (key, value)| {
+            if !predicate(&key, &value) {
+                removed.push((key, value));
+            } else {
+                hashmap.insert(key, value);
+            }
+            removed
+        })
 }

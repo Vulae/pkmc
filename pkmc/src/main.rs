@@ -14,10 +14,13 @@ use config::Config;
 use pkmc_defs::{biome::Biome, registry::Registries};
 use pkmc_server::{
     entity_manager::{Entity, EntityManager},
+    tab_list::TabList,
     world::{anvil::AnvilWorld, World},
     ClientHandler,
 };
-use pkmc_util::{normalize_identifier, packet::Connection, IdTable, IterRetain, Vec3, UUID};
+use pkmc_util::{
+    normalize_identifier, packet::Connection, retain_returned_vec, IdTable, Vec3, UUID,
+};
 use player::Player;
 
 pub static REGISTRIES: LazyLock<Registries> =
@@ -27,6 +30,7 @@ pub static REGISTRIES: LazyLock<Registries> =
 pub struct ServerState {
     pub world: Arc<Mutex<AnvilWorld>>,
     pub entities: Arc<Mutex<EntityManager>>,
+    pub tab_list: Arc<Mutex<TabList>>,
 }
 
 const TICK_DURATION: std::time::Duration = std::time::Duration::from_millis(1000 / 20);
@@ -62,6 +66,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let state = ServerState {
         world: Arc::new(Mutex::new(world)),
         entities: Arc::new(Mutex::new(EntityManager::default())),
+        tab_list: Arc::new(Mutex::new(TabList::default())),
     };
 
     let listener = TcpListener::bind(config.address)?;
@@ -115,8 +120,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         clients.iter_mut().try_for_each(|client| client.update())?;
 
-        clients
-            .retain_returned(|client| !client.is_finalized())
+        retain_returned_vec(&mut clients, |client| !client.is_finalized())
             .into_iter()
             .flat_map(|player| player.finalized_play_state())
             .try_for_each(|player| {
@@ -133,8 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok::<_, Box<dyn Error>>(())
             })?;
 
-        players
-            .retain_returned(|player| !player.is_closed())
+        retain_returned_vec(&mut players, |player| !player.is_closed())
             .into_iter()
             .for_each(|player| {
                 println!("{} Disconnected", player.player_name());
@@ -161,6 +164,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .update_viewers((num_ticks % 60) == 0)?;
             num_ticks += 1;
+
+            state.tab_list.lock().unwrap().update_viewers()?;
         }
     }
 }

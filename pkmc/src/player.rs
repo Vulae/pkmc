@@ -9,6 +9,7 @@ use pkmc_defs::{
 };
 use pkmc_server::{
     entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
+    tab_list::{TabListPlayer, TabListViewer},
     world::{
         anvil::AnvilError,
         chunk_loader::{ChunkLoader, ChunkPosition},
@@ -60,6 +61,8 @@ pub struct Player {
     world_viewer: Arc<Mutex<WorldViewer>>,
     entity_viewer: Option<Arc<Mutex<EntityViewer>>>,
     player_entity: Option<EntityBase<PlayerEntity>>,
+    tab_list_viewer: Arc<Mutex<TabListViewer>>,
+    tab_list_player: Arc<Mutex<TabListPlayer>>,
     player_name: String,
     player_uuid: UUID,
     uuid: UUID,
@@ -93,12 +96,26 @@ impl Player {
             .loader
             .update_radius(view_distance.into());
 
+        let tab_list_viewer = server_state
+            .tab_list
+            .lock()
+            .unwrap()
+            .add_viewer(connection.sender(), uuid)?;
+
+        let tab_list_player = server_state
+            .tab_list
+            .lock()
+            .unwrap()
+            .insert(uuid, player_name.clone());
+
         let mut player = Self {
             connection,
             server_state,
             world_viewer,
             entity_viewer: None,
             player_entity: None,
+            tab_list_viewer,
+            tab_list_player,
             player_name,
             player_uuid,
             uuid,

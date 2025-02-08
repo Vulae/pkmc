@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap, HashSet},
     io::{Read, Write},
 };
 
@@ -1311,6 +1311,155 @@ impl ClientboundPacket for MoveEntityRot {
         writer.write_all(&self.yaw.to_be_bytes())?;
         writer.write_all(&self.pitch.to_be_bytes())?;
         writer.write_bool(self.on_ground)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct RemoveEntities(pub HashSet<i32>);
+
+impl ClientboundPacket for RemoveEntities {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_REMOVE_ENTITIES;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.0.len() as i32)?;
+        for id in &self.0 {
+            writer.write_varint(*id)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub enum PlayerInfoUpdateAction {
+    AddPlayer {
+        name: String,
+        properties: HashMap<String, (String, Option<String>)>,
+    },
+    // TODO:
+    InitializeChat,
+    UpdateGamemode(i32),
+    UpdateListed(bool),
+    UpdateLatency(i32),
+    UpdateDisplayName(Option<TextComponent>),
+    UpdateListPriority(i32),
+    UpdateHat(bool),
+}
+
+impl PlayerInfoUpdateAction {
+    fn flag(&self) -> u8 {
+        match self {
+            PlayerInfoUpdateAction::AddPlayer { .. } => 0x01,
+            PlayerInfoUpdateAction::InitializeChat => 0x02,
+            PlayerInfoUpdateAction::UpdateGamemode(_) => 0x04,
+            PlayerInfoUpdateAction::UpdateListed(_) => 0x08,
+            PlayerInfoUpdateAction::UpdateLatency(_) => 0x10,
+            PlayerInfoUpdateAction::UpdateDisplayName(_) => 0x20,
+            PlayerInfoUpdateAction::UpdateListPriority(_) => 0x40,
+            PlayerInfoUpdateAction::UpdateHat(_) => 0x80,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PlayerInfoUpdate(pub HashMap<UUID, Vec<PlayerInfoUpdateAction>>);
+
+impl ClientboundPacket for PlayerInfoUpdate {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_INFO_UPDATE;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        // https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Protocol#Player_Info_Update
+        let Some(first) = self.0.values().next() else {
+            //return Err(ConnectionError::Other(
+            //    "PlayerInfoUpdate cannot be empty.".into(),
+            //));
+            writer.write_all(&0u8.to_be_bytes())?;
+            writer.write_varint(0)?;
+            return Ok(());
+        };
+        let actions_flags = first.iter().fold(0, |f, a| f | a.flag());
+        writer.write_all(&actions_flags.to_be_bytes())?;
+
+        writer.write_varint(self.0.len() as i32)?;
+
+        for (uuid, actions) in &self.0 {
+            writer.write_uuid(uuid)?;
+
+            // Validate flags
+            if Some(actions_flags)
+                != actions.iter().map(|a| a.flag()).fold(Some(0), |f, a| {
+                    f.and_then(|f| (f & a == 0).then_some(f | a))
+                })
+            {
+                return Err(ConnectionError::Other(
+                    "PlayerInfoUpdate all player action types do not match.".into(),
+                ));
+            }
+
+            let mut sorted_actions = actions.iter().collect::<Vec<_>>();
+            sorted_actions.sort_by(|a, b| a.flag().cmp(&b.flag()));
+
+            for action in sorted_actions {
+                match action {
+                    PlayerInfoUpdateAction::AddPlayer { name, properties } => {
+                        writer.write_string(name)?;
+                        writer.write_varint(properties.len() as i32)?;
+                        for (key, (value, signature)) in properties {
+                            writer.write_string(key)?;
+                            writer.write_string(value)?;
+                            if let Some(signature) = &signature {
+                                writer.write_bool(true)?;
+                                writer.write_string(signature)?;
+                            } else {
+                                writer.write_bool(false)?;
+                            }
+                        }
+                    }
+                    PlayerInfoUpdateAction::InitializeChat => {
+                        writer.write_bool(false)?;
+                    }
+                    PlayerInfoUpdateAction::UpdateGamemode(gamemode) => {
+                        writer.write_varint(*gamemode)?;
+                    }
+                    PlayerInfoUpdateAction::UpdateListed(listed) => {
+                        writer.write_bool(*listed)?;
+                    }
+                    PlayerInfoUpdateAction::UpdateLatency(latency) => {
+                        writer.write_varint(*latency)?;
+                    }
+                    PlayerInfoUpdateAction::UpdateDisplayName(display_name) => {
+                        if let Some(display_name) = display_name.as_ref() {
+                            writer.write_bool(true)?;
+                            writer.write_nbt(&display_name.to_nbt())?;
+                        } else {
+                            writer.write_bool(false)?;
+                        }
+                    }
+                    PlayerInfoUpdateAction::UpdateListPriority(list_priority) => {
+                        writer.write_varint(*list_priority)?;
+                    }
+                    PlayerInfoUpdateAction::UpdateHat(hat) => {
+                        writer.write_bool(*hat)?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct PlayerInfoRemove(pub HashSet<UUID>);
+
+impl ClientboundPacket for PlayerInfoRemove {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_INFO_REMOVE;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.0.len() as i32)?;
+        for uuid in &self.0 {
+            writer.write_uuid(uuid)?;
+        }
         Ok(())
     }
 }

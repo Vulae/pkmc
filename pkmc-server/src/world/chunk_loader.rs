@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use itertools::Itertools;
-use pkmc_util::IterRetain as _;
+use pkmc_util::retain_returned_hashset;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct ChunkPosition {
@@ -65,11 +65,10 @@ impl ChunkLoader {
 
         self.to_load
             .retain(|chunk| center.distance(chunk) < (self.radius + EXTRA_RADIUS) as f32);
-        self.to_unload.append(
-            &mut self.loaded.retain_returned(|chunk| {
+        self.to_unload
+            .append(&mut retain_returned_hashset(&mut self.loaded, |chunk| {
                 center.distance(chunk) < (self.radius + EXTRA_RADIUS) as f32
-            }),
-        );
+            }));
         self.iter_radius().for_each(|chunk| {
             if self.to_load.contains(&chunk) || self.loaded.contains(&chunk) {
                 return;

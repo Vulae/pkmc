@@ -9,6 +9,7 @@ mod read_ext;
 mod transmutable;
 mod uuid;
 mod vec3;
+mod weak_collections;
 
 pub use iter_retain::*;
 pub use packed_array::*;
@@ -17,6 +18,7 @@ pub use read_ext::*;
 pub use transmutable::*;
 pub use uuid::*;
 pub use vec3::*;
+pub use weak_collections::*;
 
 pub type IdTable<T> = HashMap<T, i32>;
 

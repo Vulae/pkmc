@@ -18,17 +18,12 @@ pub const SECTION_BIOMES: usize = 64;
 
 #[derive(Debug)]
 pub struct WorldViewer {
-    id: usize,
     connection: ConnectionSender,
     pub loader: ChunkLoader,
     pub position: Vec3<f64>,
 }
 
 impl WorldViewer {
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
     pub fn connection(&self) -> &ConnectionSender {
         &self.connection
     }

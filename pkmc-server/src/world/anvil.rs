@@ -5,7 +5,7 @@ use std::{
     hash::Hash,
     io::{Seek, Write},
     path::PathBuf,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex},
 };
 
 use itertools::Itertools;
@@ -22,7 +22,7 @@ use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
     nbt_compound,
     packet::{to_paletted_data, to_paletted_data_singular, ConnectionError, ConnectionSender},
-    IdTable, PackedArray, Position, ReadExt, Transmutable, Vec3,
+    IdTable, PackedArray, Position, ReadExt, Transmutable, Vec3, WeakList,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -526,8 +526,7 @@ pub struct AnvilWorld {
     loaded_regions: HashMap<(i32, i32), Option<Region>>,
     section_y_range: std::ops::RangeInclusive<i8>,
     biome_mapper: IdTable<Biome>,
-    viewers: Vec<Weak<Mutex<WorldViewer>>>,
-    viewers_id: usize,
+    viewers: WeakList<WorldViewer>,
     diffs: HashMap<(i32, i32), HashMap<i16, SectionDiff>>,
 }
 
@@ -544,8 +543,7 @@ impl AnvilWorld {
             loaded_regions: HashMap::new(),
             section_y_range,
             biome_mapper,
-            viewers: Vec::new(),
-            viewers_id: 0,
+            viewers: WeakList::new(),
             diffs: HashMap::new(),
         }
     }
@@ -640,25 +638,16 @@ impl World for AnvilWorld {
     type Error = AnvilError;
 
     fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<WorldViewer>> {
-        let viewer = Arc::new(Mutex::new(WorldViewer {
-            id: self.viewers_id,
+        let viewer = WorldViewer {
             connection,
             loader: ChunkLoader::new(6),
             position: Vec3::new(0.0, 100.0, 0.0),
-        }));
-        self.viewers_id += 1;
-        self.viewers.push(Arc::downgrade(&viewer));
-        viewer
+        };
+        self.viewers.push(viewer)
     }
 
     fn update_viewers(&mut self) -> Result<(), Self::Error> {
-        self.viewers.retain(|v| v.strong_count() > 0);
-
-        let viewers = self
-            .viewers
-            .iter()
-            .flat_map(|v| v.upgrade())
-            .collect::<Vec<_>>();
+        self.viewers.cleanup();
 
         self.diffs
             .drain()
@@ -669,9 +658,8 @@ impl World for AnvilWorld {
                         >= UPDATE_SECTION_CHUNK_SWITCH_NUM_BLOCKS
                 {
                     // Just resend the whole chunk
-                    viewers
+                    self.viewers
                         .iter()
-                        .map(|viewer| viewer.lock().unwrap())
                         .for_each(|mut viewer| viewer.loader.force_reload(chunk_position));
                     Ok(())
                 } else {
@@ -681,122 +669,111 @@ impl World for AnvilWorld {
                             section: Position::new(chunk_x, section_y, chunk_z),
                             blocks: diff.to_packet_data(),
                         };
-                        viewers
+                        self.viewers
                             .iter()
-                            .map(|viewer| viewer.lock().unwrap())
                             .filter(|viewer| viewer.loader.has_loaded(chunk_position))
                             .try_for_each(|viewer| viewer.connection().send(&packet))
                     })
                 }
             })?;
 
-        viewers
-            .iter()
-            .map(|viewer| viewer.lock().unwrap())
-            .try_for_each(|mut viewer| {
-                let center = ChunkPosition::new(
-                    (viewer.position.x / 16.0) as i32,
-                    (viewer.position.z / 16.0) as i32,
-                );
-                if viewer.loader.update_center(Some(center)) {
+        self.viewers.iter().try_for_each(|mut viewer| {
+            let center = ChunkPosition::new(
+                (viewer.position.x / 16.0) as i32,
+                (viewer.position.z / 16.0) as i32,
+            );
+            if viewer.loader.update_center(Some(center)) {
+                viewer
+                    .connection()
+                    .send(&packet::play::SetChunkCacheCenter {
+                        chunk_x: center.chunk_x,
+                        chunk_z: center.chunk_z,
+                    })?;
+            }
+
+            while let Some(to_unload) = viewer.loader.next_to_unload() {
+                viewer.connection().send(&packet::play::ForgetLevelChunk {
+                    chunk_x: to_unload.chunk_x,
+                    chunk_z: to_unload.chunk_z,
+                })?;
+            }
+
+            if let Some(to_load) = viewer.loader.next_to_load() {
+                self.prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
+                if let Some(chunk) = self.get_chunk(to_load.chunk_x, to_load.chunk_z) {
                     viewer
                         .connection()
-                        .send(&packet::play::SetChunkCacheCenter {
-                            chunk_x: center.chunk_x,
-                            chunk_z: center.chunk_z,
-                        })?;
-                }
+                        .send(&packet::play::LevelChunkWithLight {
+                            chunk_x: to_load.chunk_x,
+                            chunk_z: to_load.chunk_z,
+                            chunk_data: packet::play::LevelChunkData {
+                                heightmaps: nbt_compound!(),
+                                data: {
+                                    let mut writer = Vec::new();
 
-                while let Some(to_unload) = viewer.loader.next_to_unload() {
-                    viewer.connection().send(&packet::play::ForgetLevelChunk {
-                        chunk_x: to_unload.chunk_x,
-                        chunk_z: to_unload.chunk_z,
-                    })?;
-                }
-
-                if let Some(to_load) = viewer.loader.next_to_load() {
-                    self.prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
-                    if let Some(chunk) = self.get_chunk(to_load.chunk_x, to_load.chunk_z) {
-                        viewer
-                            .connection()
-                            .send(&packet::play::LevelChunkWithLight {
-                                chunk_x: to_load.chunk_x,
-                                chunk_z: to_load.chunk_z,
-                                chunk_data: packet::play::LevelChunkData {
-                                    heightmaps: nbt_compound!(),
-                                    data: {
-                                        let mut writer = Vec::new();
-
-                                        self.section_y_range().try_for_each(|section_y| {
-                                            if let Some(section) = chunk.get_section(section_y) {
-                                                if let Some(block_states) = &section.block_states {
-                                                    block_states.write(&mut writer)?;
-                                                } else {
-                                                    writer.write_all(&0u16.to_be_bytes())?;
-                                                    writer.write_all(
-                                                        &to_paletted_data_singular(
-                                                            Block::air().id().unwrap(),
-                                                        )?,
-                                                    )?;
-                                                }
-                                                if let Some(biomes) = &section.biomes {
-                                                    biomes
-                                                        .write(&mut writer, &self.biome_mapper)?;
-                                                } else {
-                                                    writer.write_all(
-                                                        &to_paletted_data_singular(
-                                                            Biome::default()
-                                                                .id(&self.biome_mapper)
-                                                                .unwrap(),
-                                                        )?,
-                                                    )?;
-                                                }
+                                    self.section_y_range().try_for_each(|section_y| {
+                                        if let Some(section) = chunk.get_section(section_y) {
+                                            if let Some(block_states) = &section.block_states {
+                                                block_states.write(&mut writer)?;
                                             } else {
                                                 writer.write_all(&0u16.to_be_bytes())?;
                                                 writer.write_all(&to_paletted_data_singular(
                                                     Block::air().id().unwrap(),
                                                 )?)?;
+                                            }
+                                            if let Some(biomes) = &section.biomes {
+                                                biomes.write(&mut writer, &self.biome_mapper)?;
+                                            } else {
                                                 writer.write_all(&to_paletted_data_singular(
                                                     Biome::default()
                                                         .id(&self.biome_mapper)
                                                         .unwrap(),
                                                 )?)?;
                                             }
-                                            Ok::<_, AnvilError>(())
-                                        })?;
+                                        } else {
+                                            writer.write_all(&0u16.to_be_bytes())?;
+                                            writer.write_all(&to_paletted_data_singular(
+                                                Block::air().id().unwrap(),
+                                            )?)?;
+                                            writer.write_all(&to_paletted_data_singular(
+                                                Biome::default().id(&self.biome_mapper).unwrap(),
+                                            )?)?;
+                                        }
+                                        Ok::<_, AnvilError>(())
+                                    })?;
 
-                                        writer.into_boxed_slice()
-                                    },
-                                    block_entities: chunk
-                                        .block_entities()
-                                        .iter()
-                                        .map(|((x, y, z), b)| packet::play::BlockEntity {
-                                            x: *x,
-                                            z: *z,
-                                            y: *y,
-                                            r#type: b.block_entity_id().unwrap(),
-                                            data: b.data.clone(),
-                                        })
-                                        .collect(),
+                                    writer.into_boxed_slice()
                                 },
-                                // TODO: Light data
-                                light_data: packet::play::LevelLightData::full_bright(
-                                    self.section_y_range().count(),
-                                ),
-                            })?;
-                    } else {
-                        viewer.connection().send(
-                            &packet::play::LevelChunkWithLight::generate_test(
-                                to_load.chunk_x,
-                                to_load.chunk_z,
+                                block_entities: chunk
+                                    .block_entities()
+                                    .iter()
+                                    .map(|((x, y, z), b)| packet::play::BlockEntity {
+                                        x: *x,
+                                        z: *z,
+                                        y: *y,
+                                        r#type: b.block_entity_id().unwrap(),
+                                        data: b.data.clone(),
+                                    })
+                                    .collect(),
+                            },
+                            // TODO: Light data
+                            light_data: packet::play::LevelLightData::full_bright(
                                 self.section_y_range().count(),
-                            )?,
-                        )?;
-                    }
+                            ),
+                        })?;
+                } else {
+                    viewer
+                        .connection()
+                        .send(&packet::play::LevelChunkWithLight::generate_test(
+                            to_load.chunk_x,
+                            to_load.chunk_z,
+                            self.section_y_range().count(),
+                        )?)?;
                 }
+            }
 
-                Ok::<(), Self::Error>(())
-            })?;
+            Ok::<(), Self::Error>(())
+        })?;
 
         Ok(())
     }

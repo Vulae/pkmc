@@ -157,6 +157,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         entity_2.handler().lock().unwrap().position = pos2;
 
         if std::time::Instant::now().duration_since(last_tick) >= TICK_DURATION {
+            state.tab_list.lock().unwrap().update_viewers()?;
+
             last_tick = std::time::Instant::now();
             state
                 .entities
@@ -164,8 +166,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .unwrap()
                 .update_viewers((num_ticks % 60) == 0)?;
             num_ticks += 1;
-
-            state.tab_list.lock().unwrap().update_viewers()?;
         }
     }
 }

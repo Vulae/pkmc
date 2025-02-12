@@ -46,11 +46,7 @@ struct PlayerEntity {}
 
 impl Entity for PlayerEntity {
     fn r#type(&self) -> i32 {
-        // TEMP: Implementing players takes alot of extra stuff.
-        // https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Protocol#Player_Info_Update
-        // . . . So players are just zombies for now.
-        //entity_type_id("minecraft:player").unwrap()
-        entity_type_id("minecraft:zombie").unwrap()
+        entity_type_id("minecraft:player").unwrap()
     }
 }
 

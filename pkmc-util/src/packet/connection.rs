@@ -18,16 +18,19 @@ struct ConnectionInner {
     handler: PacketHandler,
 }
 
+/// Handling sending packets from a [`TcpStream`].
 #[derive(Debug, Clone)]
 pub struct ConnectionSender {
     inner: Arc<Mutex<ConnectionInner>>,
 }
 
 impl ConnectionSender {
+    /// If the connection is closed.
     pub fn is_closed(&self) -> bool {
         self.inner.lock().unwrap().stream.is_none()
     }
 
+    /// Encode & send a packet.
     pub fn send(&self, packet: &impl ClientboundPacket) -> Result<(), ConnectionError> {
         let raw: RawPacket = packet.raw_packet()?;
         let bytes = raw.into_bytes();
@@ -57,6 +60,11 @@ impl ConnectionSender {
     }
 }
 
+/// Handling recieving & sending packets from a [`TcpStream`].
+/// [`Connection`] is non-blocking.
+///
+/// [`Connection`] may be used to create any number of [`ConnectionSenders`], of which can only send
+/// packets.
 #[derive(Debug)]
 pub struct Connection {
     inner: Arc<Mutex<ConnectionInner>>,
@@ -64,6 +72,7 @@ pub struct Connection {
 }
 
 impl Connection {
+    /// Create a new connection from TcpStream.
     pub fn new(stream: TcpStream) -> Result<Self, ConnectionError> {
         stream.set_nonblocking(true)?;
         Ok(Self {
@@ -75,24 +84,29 @@ impl Connection {
         })
     }
 
+    /// Create a new [`ConnectionSender`] from [`Connection`]
     pub fn sender(&self) -> ConnectionSender {
         ConnectionSender {
             inner: self.inner.clone(),
         }
     }
 
+    /// Set packet handler to use, see [`PacketHandler`]
     pub fn set_packet_handler(&self, handler: PacketHandler) {
         self.inner.lock().unwrap().handler = handler;
     }
 
+    /// If the connection is closed.
     pub fn is_closed(&self) -> bool {
         self.inner.lock().unwrap().stream.is_none()
     }
 
+    /// Close the connection.
     pub fn close(&self) {
         self.inner.lock().unwrap().stream = None;
     }
 
+    /// Encode & send a packet.
     pub fn send(&self, packet: &impl ClientboundPacket) -> Result<(), ConnectionError> {
         self.sender().send(packet)
     }
@@ -128,6 +142,7 @@ impl Connection {
         Ok(())
     }
 
+    /// Recieve a raw packet if available.
     pub fn recieve(&mut self) -> Result<Option<RawPacket>, ConnectionError> {
         self.recieve_bytes()?;
 
@@ -153,6 +168,7 @@ impl Connection {
         }))
     }
 
+    /// Recieve & decode a packet if available.
     pub fn recieve_into<T>(&mut self) -> Result<Option<T>, ConnectionError>
     where
         T: TryFrom<RawPacket, Error = ConnectionError>,

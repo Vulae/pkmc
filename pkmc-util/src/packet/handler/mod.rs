@@ -8,6 +8,7 @@ use super::ConnectionError;
 pub use uncompressed::*;
 pub use zlib::*;
 
+/// Handler for reading & writing packets for [`super::Connection`] & [`super::ConnectionSender`].
 #[derive(Debug, Clone)]
 pub enum PacketHandler {
     Uncompressed(UncompressedPacketHandler),
@@ -15,7 +16,7 @@ pub enum PacketHandler {
 }
 
 impl PacketHandler {
-    pub fn write(&self, raw: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
+    pub(crate) fn write(&self, raw: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
         match self {
             PacketHandler::Uncompressed(uncompressed_packet_handler) => {
                 uncompressed_packet_handler.write(raw)
@@ -24,7 +25,7 @@ impl PacketHandler {
         }
     }
 
-    pub fn read(&self, buf: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
+    pub(crate) fn read(&self, buf: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
         match self {
             PacketHandler::Uncompressed(uncompressed_packet_handler) => {
                 uncompressed_packet_handler.read(buf)

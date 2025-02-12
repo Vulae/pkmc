@@ -29,6 +29,7 @@ use std::{
 //    }
 //}
 
+/// Like Vec::retain, but returns removed elements.
 pub fn retain_returned_vec<T, F>(vec: &mut Vec<T>, predicate: F) -> Vec<T>
 where
     F: Fn(&T) -> bool,
@@ -42,6 +43,7 @@ where
     removed.into_iter().rev().collect()
 }
 
+/// Like HashSet::retain, but returns removed elements.
 pub fn retain_returned_hashset<T: Eq + Hash, F>(hashset: &mut HashSet<T>, predicate: F) -> Vec<T>
 where
     F: Fn(&T) -> bool,
@@ -60,6 +62,7 @@ where
         })
 }
 
+/// Like HashMap::retain, but returns removed entries.
 pub fn retain_returned_hashmap<K: Eq + Hash, V, F>(
     hashmap: &mut HashMap<K, V>,
     predicate: F,

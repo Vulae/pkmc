@@ -5,6 +5,7 @@ use crate::{
     ReadExt,
 };
 
+/// Compresses packets beyond the specified threshold.
 #[derive(Debug, Clone)]
 pub struct ZlibPacketHandler {
     threshold: usize,
@@ -12,6 +13,7 @@ pub struct ZlibPacketHandler {
 }
 
 impl ZlibPacketHandler {
+    /// compression_level panics if outside of 0..=9
     pub fn new(threshold: usize, compression_level: u32) -> Self {
         assert!(compression_level <= 9);
         Self {
@@ -20,7 +22,7 @@ impl ZlibPacketHandler {
         }
     }
 
-    pub fn write(&self, raw: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
+    pub(super) fn write(&self, raw: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
         if raw.len() < self.threshold {
             let mut writer = Vec::new();
             writer.write_varint(0)?;
@@ -42,7 +44,7 @@ impl ZlibPacketHandler {
         }
     }
 
-    pub fn read(&self, buf: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
+    pub(super) fn read(&self, buf: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
         let mut reader = std::io::Cursor::new(buf);
         match reader.read_varint()? {
             0 => Ok(reader.read_all()?),

@@ -1,12 +1,15 @@
 # [pkmc](https://github.com/Vulae/pkmc)
 
-A bunch of stuff to build a Minecraft server.
+Simple modular building blocks for Minecraft minigame-like servers.
 See [pkmc](./pkmc/) for example server.
+
+> [!WARNING]
+> This project is in early development, expect ALOT of code to change.
 
 > [!IMPORTANT]
 > This will only ever support the latest Minecraft version (currently 1.21.4)
 
-I will **NOT** make anything use any async code (tokio/futures).
+This will **NOT** make anything use any async code (tokio/futures).
 This was originally built to be fully single-threaded, but that _may_ change in the future.
 
 ## [Running Example Server](#running-example-server)
@@ -47,10 +50,16 @@ Some extra features may be implemented inside the example server.
 - `pkmc-server` General building blocks for a server.
 - `pkmc` Example/testing server, that may be used as reference.
 
+## [Goals](#goals)
+
+Make a simple framework for Minecraft minigame servers.
+
+Published as a crate once more features are implemented and things are more fleshed out.
+
 ## [License](#license)
 
 [`MIT License`](./LICENSE)
-License is very likely change to MIT-0 or 0BSD in the future, if I feel like it.
+License is very likely change to MIT-0 or 0BSD in the future.
 
 ## [Notes](#notes)
 

@@ -138,4 +138,10 @@ impl ChunkLoader {
     pub fn has_loaded(&self, position: ChunkPosition) -> bool {
         self.loaded.contains(&position) || self.to_unload.iter().contains(&position)
     }
+
+    pub fn unload_all(&mut self) -> HashSet<ChunkPosition> {
+        let unloaded = HashSet::from_iter(self.to_unload.drain(..).chain(self.loaded.drain()));
+        self.to_load.drain();
+        unloaded
+    }
 }

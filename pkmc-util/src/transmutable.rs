@@ -1,9 +1,8 @@
+/// Usually a wrapper around std::mem::transmute for cleaner code.
 pub trait Transmutable<T> {
     fn transmute(self) -> T;
 }
 
-// TODO: Why is there 2 for primitive number transmutation?
-// Why didn't I document why there needs to be 2 different ones?
 #[macro_export]
 macro_rules! primitive_int_int_transmutable {
     ($a:ty, $b:ty) => {

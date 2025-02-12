@@ -4,8 +4,14 @@ use std::{
 };
 
 use chunk_loader::ChunkLoader;
-use pkmc_defs::block::{Block, BlockEntity};
-use pkmc_util::{packet::ConnectionSender, Position, Vec3};
+use pkmc_defs::{
+    block::{Block, BlockEntity},
+    packet,
+};
+use pkmc_util::{
+    packet::{ConnectionError, ConnectionSender},
+    Position, Vec3,
+};
 
 pub mod anvil;
 pub mod chunk_loader;
@@ -26,6 +32,16 @@ pub struct WorldViewer {
 impl WorldViewer {
     pub fn connection(&self) -> &ConnectionSender {
         &self.connection
+    }
+
+    pub fn unload_all_chunks(&mut self) -> Result<(), ConnectionError> {
+        for chunk in self.loader.unload_all() {
+            self.connection().send(&packet::play::ForgetLevelChunk {
+                chunk_x: chunk.chunk_x,
+                chunk_z: chunk.chunk_z,
+            })?;
+        }
+        Ok(())
     }
 }
 

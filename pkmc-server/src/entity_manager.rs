@@ -4,7 +4,10 @@ use std::{
     sync::{atomic::AtomicI32, Arc, Mutex},
 };
 
-use pkmc_defs::packet::{self, play::EntityMetadataBundle};
+use pkmc_defs::packet::{
+    self,
+    play::{EntityAnimationType, EntityMetadataBundle},
+};
 use pkmc_util::{
     packet::{ConnectionError, ConnectionSender},
     Vec3, WeakList, WeakMap, UUID,
@@ -67,6 +70,7 @@ pub struct EntityHandler {
     pub metadata: EntityMetadataBundle,
     pub head_yaw: f32,
     last_head_yaw: f32,
+    animations: Vec<EntityAnimationType>,
 }
 
 impl EntityHandler {
@@ -85,7 +89,15 @@ impl EntityHandler {
             metadata: EntityMetadataBundle::empty(),
             head_yaw: 0.0,
             last_head_yaw: 0.0,
+            animations: Vec::new(),
         }
+    }
+
+    pub fn animate(&mut self, animation: EntityAnimationType) {
+        if !animation.can_stack() && self.animations.contains(&animation) {
+            return;
+        }
+        self.animations.push(animation);
     }
 }
 
@@ -126,6 +138,7 @@ impl EntityManager {
 
         let removed_entities: HashSet<i32> = self.entities.cleanup();
 
+        // Delete entities & create entities
         self.viewers.iter().try_for_each(|mut viewer| {
             if !removed_entities.is_empty() {
                 viewer
@@ -168,6 +181,7 @@ impl EntityManager {
             })
         })?;
 
+        // Entity movement
         self.viewers.iter().try_for_each(|viewer| {
             self.entities
                 .iter()
@@ -259,10 +273,28 @@ impl EntityManager {
                 })
         })?;
 
+        // Entity animation
+        self.viewers.iter().try_for_each(|viewer| {
+            self.entities.iter().try_for_each(|(entity_id, entity)| {
+                if !viewer.viewing.contains(entity_id) {
+                    return Ok(());
+                }
+                for animation in entity.animations.iter() {
+                    viewer.connection.send(&packet::play::EntityAnimation {
+                        entity_id: *entity_id,
+                        r#type: *animation,
+                    })?;
+                }
+                Ok::<_, ConnectionError>(())
+            })
+        })?;
+
+        // End of processing cleanup.
         self.entities.iter().for_each(|(_, mut entity)| {
             entity.last_position = entity.position;
             entity.last_yaw_pitch = (entity.yaw, entity.pitch);
             entity.last_head_yaw = entity.head_yaw;
+            entity.animations.drain(..);
         });
 
         Ok(())

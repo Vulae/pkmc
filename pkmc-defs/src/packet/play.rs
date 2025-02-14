@@ -756,7 +756,7 @@ impl ClientboundPacket for SetChunkChacheRadius {
 }
 
 #[derive(Debug)]
-pub struct SwingArm(pub i32);
+pub struct SwingArm(pub bool);
 
 impl ServerboundPacket for SwingArm {
     const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_SWING;
@@ -765,7 +765,11 @@ impl ServerboundPacket for SwingArm {
     where
         Self: Sized,
     {
-        Ok(Self(reader.read_varint()?))
+        Ok(Self(match reader.read_varint()? {
+            0 => false,
+            1 => true,
+            _ => return Err(ConnectionError::Other("Invalid swing arm.".into())),
+        }))
     }
 }
 
@@ -1343,6 +1347,49 @@ impl ClientboundPacket for SetHeadRotation {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityAnimationType {
+    SwingMainArm,
+    LeaveBed,
+    SwingOffhand,
+    CriticalEffect,
+    MagicCriticalEffect,
+}
+
+impl EntityAnimationType {
+    fn value(&self) -> u8 {
+        match self {
+            EntityAnimationType::SwingMainArm => 0,
+            EntityAnimationType::LeaveBed => 1,
+            EntityAnimationType::SwingOffhand => 2,
+            EntityAnimationType::CriticalEffect => 3,
+            EntityAnimationType::MagicCriticalEffect => 4,
+        }
+    }
+
+    pub fn can_stack(&self) -> bool {
+        matches!(
+            self,
+            EntityAnimationType::CriticalEffect | EntityAnimationType::MagicCriticalEffect
+        )
+    }
+}
+
+pub struct EntityAnimation {
+    pub entity_id: i32,
+    pub r#type: EntityAnimationType,
+}
+
+impl ClientboundPacket for EntityAnimation {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_ANIMATE;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.entity_id)?;
+        writer.write_all(&self.r#type.value().to_be_bytes())?;
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct RemoveEntities(pub HashSet<i32>);
 
@@ -1415,9 +1462,10 @@ impl ClientboundPacket for PlayerInfoUpdate {
 
             // Validate flags
             if Some(actions_flags)
-                != actions.iter().map(|a| a.flag()).fold(Some(0), |f, a| {
-                    f.and_then(|f| (f & a == 0).then_some(f | a))
-                })
+                != actions
+                    .iter()
+                    .map(|a| a.flag())
+                    .try_fold(0, |f, a| (f & a == 0).then_some(f | a))
             {
                 return Err(ConnectionError::Other(
                     "PlayerInfoUpdate all player action types do not match.".into(),
@@ -1425,7 +1473,7 @@ impl ClientboundPacket for PlayerInfoUpdate {
             }
 
             let mut sorted_actions = actions.iter().collect::<Vec<_>>();
-            sorted_actions.sort_by(|a, b| a.flag().cmp(&b.flag()));
+            sorted_actions.sort_by_key(|a| a.flag());
 
             for action in sorted_actions {
                 match action {

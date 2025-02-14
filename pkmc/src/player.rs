@@ -4,7 +4,10 @@ use pkmc_defs::{
     biome::Biome,
     block::Block,
     entity::entity_type_id,
-    packet::{self, play::EntityMetadataBundle},
+    packet::{
+        self,
+        play::{EntityAnimationType, EntityMetadataBundle},
+    },
     text_component::TextComponent,
 };
 use pkmc_server::{
@@ -338,7 +341,19 @@ impl Player {
                     self.update_flyspeed()?;
                     self.slot = new_slot;
                 }
-                packet::play::PlayPacket::SwingArm(_swing_arm) => {
+                packet::play::PlayPacket::SwingArm(packet::play::SwingArm(is_offhand)) => {
+                    if let Some(player_entity) = self.player_entity.as_ref() {
+                        player_entity
+                            .handler()
+                            .lock()
+                            .unwrap()
+                            .animate(if !is_offhand {
+                                EntityAnimationType::SwingMainArm
+                            } else {
+                                EntityAnimationType::SwingOffhand
+                            })
+                    }
+
                     let mut world = self.server_state.world.lock().unwrap();
                     if let Some(position) = Position::iter_ray(
                         self.position + Vec3::new(0.0, 1.5, 0.0),

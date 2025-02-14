@@ -7,14 +7,26 @@ use pkmc_util::{
     nbt::NBT,
     nbt_compound,
     packet::{
-        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, ReadExtPacket as _,
-        ServerboundPacket, WriteExtPacket,
+        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, ConnectionSender,
+        ReadExtPacket as _, ServerboundPacket, WriteExtPacket,
     },
     serverbound_packet_enum, Position, ReadExt as _, Transmutable, Vec3, UUID,
 };
 
 use crate::{generated::generated, text_component::TextComponent};
 
+#[derive(Debug)]
+pub struct BundleDelimiter;
+
+impl ClientboundPacket for BundleDelimiter {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_BUNDLE_DELIMITER;
+
+    fn packet_write(&self, _writer: impl Write) -> Result<(), ConnectionError> {
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct Login {
     pub entity_id: i32,
     pub is_hardcore: bool,
@@ -1311,6 +1323,22 @@ impl ClientboundPacket for MoveEntityRot {
         writer.write_all(&self.yaw.to_be_bytes())?;
         writer.write_all(&self.pitch.to_be_bytes())?;
         writer.write_bool(self.on_ground)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct SetHeadRotation {
+    pub entity_id: i32,
+    pub yaw: u8,
+}
+
+impl ClientboundPacket for SetHeadRotation {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_ROTATE_HEAD;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_varint(self.entity_id)?;
+        writer.write_all(&self.yaw.to_be_bytes())?;
         Ok(())
     }
 }

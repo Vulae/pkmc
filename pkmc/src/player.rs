@@ -369,6 +369,7 @@ impl Player {
             player_entity_handler.position = self.position;
             player_entity_handler.yaw = self.yaw;
             player_entity_handler.pitch = self.pitch;
+            player_entity_handler.head_yaw = self.yaw;
         }
 
         Ok(())

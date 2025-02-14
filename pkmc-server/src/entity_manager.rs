@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fmt::Debug,
     sync::{atomic::AtomicI32, Arc, Mutex},
 };
@@ -10,6 +10,21 @@ use pkmc_util::{
     Vec3, WeakList, WeakMap, UUID,
 };
 
+fn calc_delta(v: f64) -> Option<i16> {
+    let v = v * 4096.0;
+    if v > i16::MAX.into() {
+        return None;
+    }
+    if v < i16::MIN.into() {
+        return None;
+    }
+    Some(v.round() as i16)
+}
+
+pub fn quantize_angle(angle: f32) -> u8 {
+    (angle.rem_euclid(360.0) * (256.0 / 360.0)) as u8
+}
+
 pub trait Entity: Debug {
     fn r#type(&self) -> i32;
 }
@@ -18,7 +33,6 @@ pub trait Entity: Debug {
 pub struct EntityBase<T: Entity + Sized> {
     pub inner: T,
     handler: Arc<Mutex<EntityHandler>>,
-    id: i32,
     uuid: UUID,
 }
 
@@ -29,10 +43,6 @@ pub fn new_entity_id() -> i32 {
 }
 
 impl<T: Entity + Sized> EntityBase<T> {
-    pub fn id(&self) -> i32 {
-        self.id
-    }
-
     pub fn uuid(&self) -> &UUID {
         &self.uuid
     }
@@ -55,6 +65,8 @@ pub struct EntityHandler {
     last_yaw_pitch: (f32, f32),
     pub on_ground: bool,
     pub metadata: EntityMetadataBundle,
+    pub head_yaw: f32,
+    last_head_yaw: f32,
 }
 
 impl EntityHandler {
@@ -71,6 +83,8 @@ impl EntityHandler {
             last_yaw_pitch: (0.0, 0.0),
             on_ground: false,
             metadata: EntityMetadataBundle::empty(),
+            head_yaw: 0.0,
+            last_head_yaw: 0.0,
         }
     }
 }
@@ -94,8 +108,7 @@ impl EntityViewer {
 
 #[derive(Debug, Default)]
 pub struct EntityManager {
-    entities: WeakMap<UUID, EntityHandler>,
-    id_map: HashMap<UUID, i32>,
+    entities: WeakMap<i32, EntityHandler>,
     viewers: WeakList<EntityViewer>,
 }
 
@@ -111,12 +124,7 @@ impl EntityManager {
     pub fn update_viewers(&mut self, force_sync: bool) -> Result<(), ConnectionError> {
         self.viewers.cleanup();
 
-        let removed_entities: HashSet<i32> = self
-            .entities
-            .cleanup()
-            .into_iter()
-            .map(|uuid| self.id_map.remove(&uuid).unwrap())
-            .collect();
+        let removed_entities: HashSet<i32> = self.entities.cleanup();
 
         self.viewers.iter().try_for_each(|mut viewer| {
             if !removed_entities.is_empty() {
@@ -133,6 +141,7 @@ impl EntityManager {
                     return Ok(());
                 }
                 viewer.viewing.insert(entity.id);
+                viewer.connection.send(&packet::play::BundleDelimiter)?;
                 viewer.connection.send(&packet::play::AddEntity {
                     id: entity.id,
                     uuid: entity.uuid,
@@ -146,10 +155,15 @@ impl EntityManager {
                     velocity_y: 0,
                     velocity_z: 0,
                 })?;
+                viewer.connection.send(&packet::play::SetHeadRotation {
+                    entity_id: entity.id,
+                    yaw: quantize_angle(entity.head_yaw),
+                })?;
                 viewer.connection.send(&packet::play::SetEntityMetadata {
                     entity_id: entity.id,
                     metadata: entity.metadata.clone(),
                 })?;
+                viewer.connection.send(&packet::play::BundleDelimiter)?;
                 Ok::<_, ConnectionError>(())
             })
         })?;
@@ -168,33 +182,11 @@ impl EntityManager {
                             pitch: entity.pitch,
                             on_ground: entity.on_ground,
                         })?;
+                        viewer.connection.send(&packet::play::SetHeadRotation {
+                            entity_id: entity.id,
+                            yaw: quantize_angle(entity.head_yaw),
+                        })?;
                         return Ok(());
-                    }
-
-                    fn calc_delta(v: f64) -> Option<i16> {
-                        let v = v * 4096.0;
-                        if v > i16::MAX.into() {
-                            return None;
-                        }
-                        if v < i16::MIN.into() {
-                            return None;
-                        }
-                        Some(v.round() as i16)
-                    }
-
-                    // FIXME: I for the life of me cannot get the quantized angle to work
-                    // properly. I've even gone into the decompiled Minecraft code and stole it
-                    // from there and it still doesn't work. I honestly have no clue at this point.
-                    fn wrap_degrees(v: f32) -> f32 {
-                        match v % 360.0 {
-                            v if v >= 180.0 => v - 360.0,
-                            v if v < -180.0 => v + 360.0,
-                            v => v,
-                        }
-                    }
-
-                    pub fn quantize_angle(angle: f32) -> u8 {
-                        ((wrap_degrees(angle) * 360.0) / 256.0) as u8
                     }
 
                     let position_delta = entity.position - entity.last_position;
@@ -256,6 +248,13 @@ impl EntityManager {
                         }
                     }
 
+                    if entity.head_yaw != entity.last_head_yaw {
+                        viewer.connection.send(&packet::play::SetHeadRotation {
+                            entity_id: entity.id,
+                            yaw: quantize_angle(entity.head_yaw),
+                        })?;
+                    }
+
                     Ok::<_, ConnectionError>(())
                 })
         })?;
@@ -263,6 +262,7 @@ impl EntityManager {
         self.entities.iter().for_each(|(_, mut entity)| {
             entity.last_position = entity.position;
             entity.last_yaw_pitch = (entity.yaw, entity.pitch);
+            entity.last_head_yaw = entity.head_yaw;
         });
 
         Ok(())
@@ -270,13 +270,11 @@ impl EntityManager {
 
     pub fn add_entity<T: Entity>(&mut self, entity: T, uuid: UUID) -> EntityBase<T> {
         let id = new_entity_id();
-        self.id_map.insert(uuid, id);
         EntityBase {
             handler: self
                 .entities
-                .insert_ignored(uuid, EntityHandler::new(id, uuid, entity.r#type())),
+                .insert_ignored(id, EntityHandler::new(id, uuid, entity.r#type())),
             inner: entity,
-            id,
             uuid,
         }
     }

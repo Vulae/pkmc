@@ -7,8 +7,8 @@ use pkmc_util::{
     nbt::NBT,
     nbt_compound,
     packet::{
-        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, ConnectionSender,
-        ReadExtPacket as _, ServerboundPacket, WriteExtPacket,
+        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, ReadExtPacket as _,
+        ServerboundPacket, WriteExtPacket,
     },
     serverbound_packet_enum, Position, ReadExt as _, Transmutable, Vec3, UUID,
 };

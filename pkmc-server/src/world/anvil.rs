@@ -649,6 +649,8 @@ impl World for AnvilWorld {
     fn update_viewers(&mut self) -> Result<(), Self::Error> {
         self.viewers.cleanup();
 
+        let mut viewers = self.viewers.lock();
+
         self.diffs
             .drain()
             .try_for_each(|((chunk_x, chunk_z), sections)| {
@@ -658,9 +660,9 @@ impl World for AnvilWorld {
                         >= UPDATE_SECTION_CHUNK_SWITCH_NUM_BLOCKS
                 {
                     // Just resend the whole chunk
-                    self.viewers
-                        .iter()
-                        .for_each(|mut viewer| viewer.loader.force_reload(chunk_position));
+                    viewers
+                        .iter_mut()
+                        .for_each(|viewer| viewer.loader.force_reload(chunk_position));
                     Ok(())
                 } else {
                     // Resend each section
@@ -669,7 +671,7 @@ impl World for AnvilWorld {
                             section: Position::new(chunk_x, section_y, chunk_z),
                             blocks: diff.to_packet_data(),
                         };
-                        self.viewers
+                        viewers
                             .iter()
                             .filter(|viewer| viewer.loader.has_loaded(chunk_position))
                             .try_for_each(|viewer| viewer.connection().send(&packet))
@@ -677,7 +679,7 @@ impl World for AnvilWorld {
                 }
             })?;
 
-        self.viewers.iter().try_for_each(|mut viewer| {
+        viewers.iter_mut().try_for_each(|viewer| {
             let center = ChunkPosition::new(
                 (viewer.position.x / 16.0) as i32,
                 (viewer.position.z / 16.0) as i32,

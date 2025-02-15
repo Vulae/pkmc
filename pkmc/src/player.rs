@@ -58,8 +58,8 @@ pub struct Player {
     connection: Connection,
     server_state: ServerState,
     world_viewer: Arc<Mutex<WorldViewer>>,
-    entity_viewer: Option<Arc<Mutex<EntityViewer>>>,
-    player_entity: Option<EntityBase<PlayerEntity>>,
+    entity_viewer: Arc<Mutex<EntityViewer>>,
+    player_entity: EntityBase<PlayerEntity>,
     tab_list_viewer: Arc<Mutex<TabListViewer>>,
     tab_list_player: Arc<Mutex<TabListPlayer>>,
     player_name: String,
@@ -84,59 +84,9 @@ impl Player {
         uuid: UUID,
         view_distance: u8,
     ) -> Result<Self, PlayerError> {
-        let world_viewer = server_state
-            .world
-            .lock()
-            .unwrap()
-            .add_viewer(connection.sender());
-        world_viewer
-            .lock()
-            .unwrap()
-            .loader
-            .update_radius(view_distance.into());
+        let dimension = server_state.world.lock().unwrap().identifier().to_owned();
 
-        let tab_list_viewer = server_state
-            .tab_list
-            .lock()
-            .unwrap()
-            .add_viewer(connection.sender(), uuid)?;
-
-        let tab_list_player = server_state
-            .tab_list
-            .lock()
-            .unwrap()
-            .insert(uuid, player_name.clone());
-
-        let mut player = Self {
-            connection,
-            server_state,
-            world_viewer,
-            entity_viewer: None,
-            player_entity: None,
-            tab_list_viewer,
-            tab_list_player,
-            player_name,
-            player_uuid,
-            uuid,
-            keepalive_time: std::time::Instant::now(),
-            keepalive_id: None,
-            position: Vec3::zero(),
-            pitch: 0.0,
-            yaw: 0.0,
-            is_flying: true,
-            fly_speed: 0.1,
-            slot: 0,
-        };
-
-        let dimension = player
-            .server_state
-            .world
-            .lock()
-            .unwrap()
-            .identifier()
-            .to_owned();
-
-        player.connection.send(&packet::play::Login {
+        connection.send(&packet::play::Login {
             entity_id: new_entity_id(),
             is_hardcore: false,
             dimensions: REGISTRIES
@@ -171,7 +121,7 @@ impl Player {
             enforces_secure_chat: false,
         })?;
 
-        player.connection.send(&packet::play::ServerLinks::new([
+        connection.send(&packet::play::ServerLinks::new([
             (
                 packet::play::ServerLink::Website,
                 "https://github.com/Vulae/pkmc",
@@ -186,25 +136,76 @@ impl Player {
             ),
         ]))?;
 
-        player
-            .connection
-            .send(&packet::play::GameEvent::StartWaitingForLevelChunks)?;
+        connection.send(&packet::play::GameEvent::StartWaitingForLevelChunks)?;
 
-        player.connection.send(&packet::play::PlayerPosition {
+        connection.send(&packet::play::PlayerPosition {
             x: 0.0,
             y: 128.0,
             z: 0.0,
             ..Default::default()
         })?;
 
-        player.update_flyspeed()?;
+        connection.send(&packet::play::SetActionBarText(TextComponent::rainbow(
+            &format!("Hello, {}!", player_name),
+            0.0,
+        )))?;
 
-        player
-            .connection
-            .send(&packet::play::SetActionBarText(TextComponent::rainbow(
-                &format!("Hello, {}!", player.player_name()),
-                0.0,
-            )))?;
+        let world_viewer = server_state
+            .world
+            .lock()
+            .unwrap()
+            .add_viewer(connection.sender());
+        world_viewer
+            .lock()
+            .unwrap()
+            .loader
+            .update_radius(view_distance.into());
+
+        let entity_viewer = server_state
+            .entities
+            .lock()
+            .unwrap()
+            .add_viewer(connection.sender(), uuid);
+        let player_entity = server_state
+            .entities
+            .lock()
+            .unwrap()
+            .add_entity(PlayerEntity {}, uuid);
+
+        let tab_list_viewer = server_state
+            .tab_list
+            .lock()
+            .unwrap()
+            .add_viewer(connection.sender(), uuid)?;
+
+        let tab_list_player = server_state
+            .tab_list
+            .lock()
+            .unwrap()
+            .insert(uuid, player_name.clone());
+
+        let mut player = Self {
+            connection,
+            server_state,
+            world_viewer,
+            entity_viewer,
+            player_entity,
+            tab_list_viewer,
+            tab_list_player,
+            player_name,
+            player_uuid,
+            uuid,
+            keepalive_time: std::time::Instant::now(),
+            keepalive_id: None,
+            position: Vec3::zero(),
+            pitch: 0.0,
+            yaw: 0.0,
+            is_flying: true,
+            fly_speed: 0.1,
+            slot: 0,
+        };
+
+        player.update_flyspeed()?;
 
         Ok(player)
     }
@@ -281,22 +282,7 @@ impl Player {
                     _ => return Err(PlayerError::BadKeepAliveResponse),
                 },
                 packet::play::PlayPacket::PlayerLoaded(player_loaded) => {
-                    let entity_viewer = self
-                        .server_state
-                        .entities
-                        .lock()
-                        .unwrap()
-                        .add_viewer(self.connection.sender(), self.uuid);
-                    let player_entity = self
-                        .server_state
-                        .entities
-                        .lock()
-                        .unwrap()
-                        .add_entity(PlayerEntity {}, self.uuid);
-                    //player_entity.handler().lock().unwrap().metadata =
-                    //    EntityMetadataBundle::player_default();
-                    self.entity_viewer = Some(entity_viewer);
-                    self.player_entity = Some(player_entity);
+                    println!("Player {} loaded!", self.player_name());
                 }
                 packet::play::PlayPacket::AcceptTeleportation(_accept_teleportation) => {}
                 packet::play::PlayPacket::MovePlayerPosRot(move_player_pos_rot) => {
@@ -342,17 +328,15 @@ impl Player {
                     self.slot = new_slot;
                 }
                 packet::play::PlayPacket::SwingArm(packet::play::SwingArm(is_offhand)) => {
-                    if let Some(player_entity) = self.player_entity.as_ref() {
-                        player_entity
-                            .handler()
-                            .lock()
-                            .unwrap()
-                            .animate(if !is_offhand {
-                                EntityAnimationType::SwingMainArm
-                            } else {
-                                EntityAnimationType::SwingOffhand
-                            })
-                    }
+                    self.player_entity
+                        .handler()
+                        .lock()
+                        .unwrap()
+                        .animate(if !is_offhand {
+                            EntityAnimationType::SwingMainArm
+                        } else {
+                            EntityAnimationType::SwingOffhand
+                        });
 
                     let mut world = self.server_state.world.lock().unwrap();
                     if let Some(position) = Position::iter_ray(
@@ -379,13 +363,11 @@ impl Player {
         let mut world_viewer = self.world_viewer.lock().unwrap();
         world_viewer.position = self.position;
 
-        if let Some(player_entity) = &self.player_entity {
-            let mut player_entity_handler = player_entity.handler().lock().unwrap();
-            player_entity_handler.position = self.position;
-            player_entity_handler.yaw = self.yaw;
-            player_entity_handler.pitch = self.pitch;
-            player_entity_handler.head_yaw = self.yaw;
-        }
+        let mut player_entity_handler = self.player_entity.handler().lock().unwrap();
+        player_entity_handler.position = self.position;
+        player_entity_handler.yaw = self.yaw;
+        player_entity_handler.pitch = self.pitch;
+        player_entity_handler.head_yaw = self.yaw;
 
         Ok(())
     }

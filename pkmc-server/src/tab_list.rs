@@ -59,8 +59,9 @@ impl TabList {
     ) -> Result<Arc<Mutex<TabListViewer>>, ConnectionError> {
         connection.send(&packet::play::PlayerInfoUpdate(
             self.entries
-                .iter()
-                .map(|(_, entry)| {
+                .lock()
+                .into_values()
+                .map(|entry| {
                     (
                         entry.uuid,
                         vec![
@@ -104,7 +105,10 @@ impl TabList {
         }
         self.force_update = false;
 
-        self.viewers.iter().try_for_each(|viewer| {
+        let mut viewers = self.viewers.lock();
+        let entries = self.entries.lock();
+
+        viewers.iter_mut().try_for_each(|viewer| {
             if !removed_entries.is_empty() {
                 viewer
                     .connection
@@ -112,9 +116,9 @@ impl TabList {
             }
 
             viewer.connection.send(&packet::play::PlayerInfoUpdate(
-                self.entries
-                    .iter()
-                    .map(|(_, entry)| {
+                entries
+                    .values()
+                    .map(|entry| {
                         (
                             entry.uuid,
                             vec![

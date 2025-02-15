@@ -131,15 +131,21 @@ impl<T> WeakList<T> {
 
     /// Iterate through each element in the list.
     /// Each element is wrapped inside a [`WeakCollectionElement<T>`].
-    pub fn iter<'a>(&self) -> impl Iterator<Item = WeakCollectionElement<'a, T>>
+    pub fn iter<'a>(&self) -> impl Iterator<Item = WeakCollectionElement<'a, T>> + use<'a, '_, T>
     where
         T: 'a,
     {
         self.entries
             .iter()
             .flat_map(|e| WeakCollectionElement::new(e))
-            .collect::<Vec<_>>()
-            .into_iter()
+    }
+
+    /// Lock each element in the list, returning a [`WeakCollectionElement<T>`] of each element.
+    pub fn lock<'a>(&self) -> Vec<WeakCollectionElement<'a, T>>
+    where
+        T: 'a,
+    {
+        self.iter().collect()
     }
 }
 
@@ -285,5 +291,13 @@ impl<K: Hash + Eq, V> WeakMap<K, V> {
         self.entries
             .iter()
             .flat_map(|(k, v)| WeakCollectionElement::new(v).map(|v| (k, v)))
+    }
+
+    /// Lock each element in the map, returning a <code>(&K, [`WeakCollectionElement<T>`])</code> of each entry.
+    pub fn lock<'a>(&self) -> HashMap<&K, WeakCollectionElement<'a, V>>
+    where
+        V: 'a,
+    {
+        self.iter().collect()
     }
 }

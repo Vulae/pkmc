@@ -136,17 +136,23 @@ impl EntityManager {
     pub fn update_viewers(&mut self, force_sync: bool) -> Result<(), ConnectionError> {
         self.viewers.cleanup();
 
+        if self.viewers.is_empty() {
+            return Ok(());
+        }
+
         let removed_entities: HashSet<i32> = self.entities.cleanup();
+        let mut entities = self.entities.lock();
+        let mut viewers = self.viewers.lock();
 
         // Delete entities & create entities
-        self.viewers.iter().try_for_each(|mut viewer| {
+        viewers.iter_mut().try_for_each(|viewer| {
             if !removed_entities.is_empty() {
                 viewer
                     .connection
                     .send(&packet::play::RemoveEntities(removed_entities.clone()))?;
             }
 
-            self.entities.iter().try_for_each(|(_, entity)| {
+            entities.values_mut().try_for_each(|entity| {
                 if entity.uuid == viewer.uuid {
                     return Ok(());
                 }
@@ -182,11 +188,11 @@ impl EntityManager {
         })?;
 
         // Entity movement
-        self.viewers.iter().try_for_each(|viewer| {
-            self.entities
-                .iter()
-                .filter(|(_, entity)| viewer.viewing.contains(&entity.id))
-                .try_for_each(|(_, entity)| {
+        viewers.iter().try_for_each(|viewer| {
+            entities
+                .values()
+                .filter(|entity| viewer.viewing.contains(&entity.id))
+                .try_for_each(|entity| {
                     if force_sync {
                         viewer.connection.send(&packet::play::EntityPositionSync {
                             entity_id: entity.id,
@@ -274,14 +280,14 @@ impl EntityManager {
         })?;
 
         // Entity animation
-        self.viewers.iter().try_for_each(|viewer| {
-            self.entities.iter().try_for_each(|(entity_id, entity)| {
+        viewers.iter().try_for_each(|viewer| {
+            entities.iter().try_for_each(|(entity_id, entity)| {
                 if !viewer.viewing.contains(entity_id) {
                     return Ok(());
                 }
                 for animation in entity.animations.iter() {
                     viewer.connection.send(&packet::play::EntityAnimation {
-                        entity_id: *entity_id,
+                        entity_id: **entity_id,
                         r#type: *animation,
                     })?;
                 }
@@ -290,7 +296,7 @@ impl EntityManager {
         })?;
 
         // End of processing cleanup.
-        self.entities.iter().for_each(|(_, mut entity)| {
+        entities.values_mut().for_each(|entity| {
             entity.last_position = entity.position;
             entity.last_yaw_pitch = (entity.yaw, entity.pitch);
             entity.last_head_yaw = entity.head_yaw;

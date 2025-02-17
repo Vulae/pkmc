@@ -63,9 +63,9 @@ impl Data {
 
 pub static DATA: LazyLock<Data> = LazyLock::new(|| Data::load().unwrap());
 
-pub const PALETTED_DATA_BLOCKS_INDIRECT: RangeInclusive<u32> = 4..=8;
+pub const PALETTED_DATA_BLOCKS_INDIRECT: RangeInclusive<u8> = 4..=8;
 // TODO: Autogenerate this value.
-pub const PALETTED_DATA_BLOCKS_DIRECT: u32 = 15;
-pub const PALETTED_DATA_BIOMES_INDIRECT: RangeInclusive<u32> = 1..=3;
+pub const PALETTED_DATA_BLOCKS_DIRECT: u8 = 15;
+pub const PALETTED_DATA_BIOMES_INDIRECT: RangeInclusive<u8> = 1..=3;
 // TODO: Autogenerate this value.
-pub const PALETTED_DATA_BIOMES_DIRECT: u32 = 6;
+pub const PALETTED_DATA_BIOMES_DIRECT: u8 = 6;

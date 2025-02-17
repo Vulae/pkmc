@@ -22,8 +22,8 @@ use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
     nbt_compound,
     packet::{
-        to_paletted_data, to_paletted_data_precomputed, to_paletted_data_singular, ConnectionError,
-        ConnectionSender,
+        calculate_bpe, to_paletted_data, to_paletted_data_precomputed, to_paletted_data_singular,
+        ConnectionError, ConnectionSender,
     },
     IdTable, PackedArray, Position, ReadExt, Transmutable, Vec3, WeakList,
 };
@@ -78,7 +78,8 @@ impl<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8>
         match palette_count {
             0 => panic!(),
             1 => 0,
-            palette_count => PackedArray::bits_per_entry(palette_count as u64 - 1).clamp(I_S, I_E),
+            // NOTE: Data stored inside the world files doesn't have direct paletting.
+            palette_count => PackedArray::bits_per_entry(palette_count as u64 - 1).max(I_S),
         }
     }
 
@@ -160,8 +161,8 @@ impl<T: Debug + Default + Eq + Clone + Hash, const N: usize, const I_S: u8, cons
     }
 }
 
-const PALETTED_DATA_BLOCKS_INDIRECT_START: u8 = *PALETTED_DATA_BLOCKS_INDIRECT.start() as u8;
-const PALETTED_DATA_BLOCKS_INDIRECT_END: u8 = *PALETTED_DATA_BLOCKS_INDIRECT.end() as u8;
+const PALETTED_DATA_BLOCKS_INDIRECT_START: u8 = *PALETTED_DATA_BLOCKS_INDIRECT.start();
+const PALETTED_DATA_BLOCKS_INDIRECT_END: u8 = *PALETTED_DATA_BLOCKS_INDIRECT.end();
 type ChunkSectionBlockStates = PalettedData<
     Block,
     SECTION_BLOCKS,
@@ -219,7 +220,11 @@ impl ChunkSectionBlockStates {
 
         const FORCE_CHUNK_REENCODE: bool = false;
 
-        if !FORCE_CHUNK_REENCODE {
+        if !FORCE_CHUNK_REENCODE
+            // NOTE: Data stored in the anvil format doesn't have direct paletting.
+            // So we need to re-encode the data if there's too many palette values.
+            && calculate_bpe(block_ids.len()) <= PALETTED_DATA_BLOCKS_INDIRECT_END
+        {
             writer.write_all(&to_paletted_data_precomputed(
                 &block_ids,
                 &self.data,
@@ -240,8 +245,8 @@ impl ChunkSectionBlockStates {
     }
 }
 
-const PALETTED_DATA_BIOMES_INDIRECT_START: u8 = *PALETTED_DATA_BIOMES_INDIRECT.start() as u8;
-const PALETTED_DATA_BIOMES_INDIRECT_END: u8 = *PALETTED_DATA_BIOMES_INDIRECT.end() as u8;
+const PALETTED_DATA_BIOMES_INDIRECT_START: u8 = *PALETTED_DATA_BIOMES_INDIRECT.start();
+const PALETTED_DATA_BIOMES_INDIRECT_END: u8 = *PALETTED_DATA_BIOMES_INDIRECT.end();
 type ChunkSectionBiomes = PalettedData<
     Biome,
     SECTION_BIOMES,

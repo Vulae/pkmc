@@ -96,6 +96,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         .unwrap()
         .add_entity(TestEntity, UUID::new_v7());
 
+    std::thread::spawn({
+        let world = state.world.clone();
+        move || loop {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            if let Err(err) = world.lock().unwrap().update_viewers() {
+                println!("{:?}", err);
+            }
+        }
+    });
+
     let start = std::time::Instant::now();
     let mut last_tick = std::time::Instant::now();
     let mut num_ticks: u64 = 0;
@@ -144,8 +154,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             });
 
         players.iter_mut().try_for_each(|player| player.update())?;
-
-        state.world.lock().unwrap().update_viewers()?;
 
         let curtime = std::time::Instant::now()
             .duration_since(start)

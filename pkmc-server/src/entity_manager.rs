@@ -120,8 +120,8 @@ impl EntityViewer {
 
 #[derive(Debug, Default)]
 pub struct EntityManager {
-    entities: WeakMap<i32, EntityHandler>,
-    viewers: WeakList<EntityViewer>,
+    entities: WeakMap<i32, Mutex<EntityHandler>>,
+    viewers: WeakList<Mutex<EntityViewer>>,
 }
 
 impl EntityManager {
@@ -130,7 +130,8 @@ impl EntityManager {
         connection: ConnectionSender,
         uuid: UUID,
     ) -> Arc<Mutex<EntityViewer>> {
-        self.viewers.push(EntityViewer::new(connection, uuid))
+        self.viewers
+            .push(Mutex::new(EntityViewer::new(connection, uuid)))
     }
 
     pub fn update_viewers(&mut self, force_sync: bool) -> Result<(), ConnectionError> {
@@ -309,9 +310,10 @@ impl EntityManager {
     pub fn add_entity<T: Entity>(&mut self, entity: T, uuid: UUID) -> EntityBase<T> {
         let id = new_entity_id();
         EntityBase {
-            handler: self
-                .entities
-                .insert_ignored(id, EntityHandler::new(id, uuid, entity.r#type())),
+            handler: self.entities.insert_ignored(
+                id,
+                Mutex::new(EntityHandler::new(id, uuid, entity.r#type())),
+            ),
             inner: entity,
             uuid,
         }

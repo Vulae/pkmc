@@ -4,11 +4,11 @@ use crate::{packet::WriteExtPacket, PackedArray};
 use std::{collections::HashMap, io::Write};
 
 fn calculate_bpe(num_unique_values: usize) -> u32 {
-    match num_unique_values {
-        0 => panic!("calculate_bpe cannot calculate bpe with 0 unique values."),
-        1 => 0,
-        _ => u64::BITS - num_unique_values.leading_zeros(),
-    }
+    debug_assert!(
+        num_unique_values != 0,
+        "calculate_bpe cannot calculate bpe with 0 unique values."
+    );
+    u64::BITS - (num_unique_values - 1).leading_zeros()
 }
 
 #[derive(Debug)]

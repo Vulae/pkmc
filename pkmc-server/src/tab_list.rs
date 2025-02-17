@@ -44,11 +44,11 @@ pub struct TabListViewer {
 
 #[derive(Debug, Default)]
 pub struct TabList {
-    entries: WeakMap<UUID, TabListPlayer>,
+    entries: WeakMap<UUID, Mutex<TabListPlayer>>,
     // TODO: Optimize what data gets sent, send minimum data needed by keeping track of the
     // difference between viewer updates.
     force_update: bool,
-    viewers: WeakList<TabListViewer>,
+    viewers: WeakList<Mutex<TabListViewer>>,
 }
 
 impl TabList {
@@ -86,10 +86,10 @@ impl TabList {
                 .collect(),
         ))?;
 
-        Ok(self.viewers.push(TabListViewer {
+        Ok(self.viewers.push(Mutex::new(TabListViewer {
             connection,
             _uuid: uuid,
-        }))
+        })))
     }
 
     pub fn update_viewers(&mut self) -> Result<(), ConnectionError> {
@@ -152,6 +152,6 @@ impl TabList {
     pub fn insert(&mut self, uuid: UUID, name: String) -> Arc<Mutex<TabListPlayer>> {
         self.force_update = true;
         self.entries
-            .insert_ignored(uuid, TabListPlayer::new(uuid, name))
+            .insert_ignored(uuid, Mutex::new(TabListPlayer::new(uuid, name)))
     }
 }

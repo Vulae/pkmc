@@ -21,7 +21,10 @@ use pkmc_defs::{
 use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
     nbt_compound,
-    packet::{to_paletted_data, to_paletted_data_singular, ConnectionError, ConnectionSender},
+    packet::{
+        to_paletted_data, to_paletted_data_precomputed, to_paletted_data_singular, ConnectionError,
+        ConnectionSender,
+    },
     IdTable, PackedArray, Position, ReadExt, Transmutable, Vec3, WeakList,
 };
 use serde::Deserialize;
@@ -183,6 +186,22 @@ impl ChunkSectionBlockStates {
     }
 
     fn write(&self, mut writer: impl Write) -> Result<(), AnvilError> {
+        //if self.palette.len() == 1 {
+        //    let id = self.palette[0]
+        //        .id_with_default_fallback()
+        //        .unwrap_or_else(|| Block::air().id().unwrap());
+        //    writer.write_all(
+        //        &if generated::block::is_air(id) {
+        //            0u16
+        //        } else {
+        //            4096
+        //        }
+        //        .to_be_bytes(),
+        //    )?;
+        //    writer.write_all(&to_paletted_data_singular(id)?)?;
+        //    return Ok(());
+        //}
+
         let block_ids = self
             .palette
             .iter()
@@ -190,31 +209,32 @@ impl ChunkSectionBlockStates {
                 b.id_with_default_fallback()
                     .unwrap_or_else(|| Block::air().id().unwrap())
             })
-            .collect::<Box<[_]>>();
+            .collect::<Box<[i32]>>();
 
         let block_count = (0..SECTION_BLOCKS)
             .filter(|i| !generated::block::is_air(block_ids[self.palette_index(*i)]))
             .count();
 
         writer.write_all(&(block_count as u16).to_be_bytes())?;
-        // FIXME: Why does this work only most of the time?
-        // Some sections are just outright missing.
-        // My best guess is that there's 2 palette values that are the exact same, so when
-        // minecraft decodes the data it doesn't know what to do.
-        //writer.write_all(&to_paletted_data_precomputed(
-        //    &block_ids,
-        //    &self.data,
-        //    PALETTED_DATA_BLOCKS_INDIRECT,
-        //    PALETTED_DATA_BLOCKS_DIRECT,
-        //)?)?;
-        // For now we'll just do it the slow way.
-        writer.write_all(&to_paletted_data(
-            &(0..SECTION_BLOCKS)
-                .map(|i| block_ids[self.palette_index(i)])
-                .collect::<Box<[_]>>(),
-            PALETTED_DATA_BLOCKS_INDIRECT,
-            PALETTED_DATA_BLOCKS_DIRECT,
-        )?)?;
+
+        const FORCE_CHUNK_REENCODE: bool = false;
+
+        if !FORCE_CHUNK_REENCODE {
+            writer.write_all(&to_paletted_data_precomputed(
+                &block_ids,
+                &self.data,
+                PALETTED_DATA_BLOCKS_INDIRECT,
+                PALETTED_DATA_BLOCKS_DIRECT,
+            )?)?;
+        } else {
+            writer.write_all(&to_paletted_data(
+                &(0..SECTION_BLOCKS)
+                    .map(|i| block_ids[self.palette_index(i)])
+                    .collect::<Box<[_]>>(),
+                PALETTED_DATA_BLOCKS_INDIRECT,
+                PALETTED_DATA_BLOCKS_DIRECT,
+            )?)?;
+        }
 
         Ok(())
     }
@@ -526,7 +546,7 @@ pub struct AnvilWorld {
     loaded_regions: HashMap<(i32, i32), Option<Region>>,
     section_y_range: std::ops::RangeInclusive<i8>,
     biome_mapper: IdTable<Biome>,
-    viewers: WeakList<WorldViewer>,
+    viewers: WeakList<Mutex<WorldViewer>>,
     diffs: HashMap<(i32, i32), HashMap<i16, SectionDiff>>,
 }
 
@@ -643,7 +663,7 @@ impl World for AnvilWorld {
             loader: ChunkLoader::new(6),
             position: Vec3::new(0.0, 100.0, 0.0),
         };
-        self.viewers.push(viewer)
+        self.viewers.push(Mutex::new(viewer))
     }
 
     fn update_viewers(&mut self) -> Result<(), Self::Error> {

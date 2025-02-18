@@ -1,32 +1,24 @@
 use std::sync::{Arc, Mutex};
 
 use pkmc_defs::{
-    biome::Biome,
     block::Block,
     entity::entity_type_id,
-    packet::{
-        self,
-        play::{EntityAnimationType, EntityMetadataBundle},
-    },
+    packet::{self, play::EntityAnimationType},
     text_component::TextComponent,
 };
 use pkmc_server::{
     entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
     tab_list::{TabListPlayer, TabListViewer},
-    world::{
-        anvil::AnvilError,
-        chunk_loader::{ChunkLoader, ChunkPosition},
-        World, WorldBlock, WorldViewer,
-    },
+    world::{anvil::AnvilError, World as _, WorldBlock, WorldViewer},
 };
 use pkmc_util::{
-    packet::{ClientboundPacket, Connection, ConnectionError},
-    IdTable, Position, Vec3, UUID,
+    packet::{Connection, ConnectionError},
+    Position, Vec3, UUID,
 };
 use rand::Rng as _;
 use thiserror::Error;
 
-use crate::{ServerState, REGISTRIES};
+use crate::server::{ServerState, REGISTRIES};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
 
@@ -58,13 +50,13 @@ pub struct Player {
     connection: Connection,
     server_state: ServerState,
     world_viewer: Arc<Mutex<WorldViewer>>,
-    entity_viewer: Arc<Mutex<EntityViewer>>,
+    _entity_viewer: Arc<Mutex<EntityViewer>>,
     player_entity: EntityBase<PlayerEntity>,
-    tab_list_viewer: Arc<Mutex<TabListViewer>>,
-    tab_list_player: Arc<Mutex<TabListPlayer>>,
+    _tab_list_viewer: Arc<Mutex<TabListViewer>>,
+    _tab_list_player: Arc<Mutex<TabListPlayer>>,
     player_name: String,
-    player_uuid: UUID,
-    uuid: UUID,
+    _player_uuid: UUID,
+    _uuid: UUID,
     keepalive_time: std::time::Instant,
     keepalive_id: Option<i64>,
     position: Vec3<f64>,
@@ -188,13 +180,13 @@ impl Player {
             connection,
             server_state,
             world_viewer,
-            entity_viewer,
+            _entity_viewer: entity_viewer,
             player_entity,
-            tab_list_viewer,
-            tab_list_player,
+            _tab_list_viewer: tab_list_viewer,
+            _tab_list_player: tab_list_player,
             player_name,
-            player_uuid,
-            uuid,
+            _player_uuid: player_uuid,
+            _uuid: uuid,
             keepalive_time: std::time::Instant::now(),
             keepalive_id: None,
             position: Vec3::zero(),
@@ -214,14 +206,17 @@ impl Player {
         &self.player_name
     }
 
+    #[allow(unused)]
     pub fn player_uuid(&self) -> &UUID {
-        &self.player_uuid
+        &self._player_uuid
     }
 
+    #[allow(unused)]
     pub fn uuid(&self) -> &UUID {
-        &self.uuid
+        &self._uuid
     }
 
+    #[allow(unused)]
     pub fn set_view_distance(&mut self, view_distance: u8) -> Result<(), PlayerError> {
         self.world_viewer
             .lock()
@@ -233,6 +228,7 @@ impl Player {
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn kick<T: Into<TextComponent>>(&mut self, text: T) -> Result<(), PlayerError> {
         self.connection
             .send(&packet::play::Disconnect(text.into()))?;
@@ -281,7 +277,7 @@ impl Player {
                     // Either responded to invalid keepalive, or keepalive id is wrong.
                     _ => return Err(PlayerError::BadKeepAliveResponse),
                 },
-                packet::play::PlayPacket::PlayerLoaded(player_loaded) => {
+                packet::play::PlayPacket::PlayerLoaded(_player_loaded) => {
                     println!("Player {} loaded!", self.player_name());
                 }
                 packet::play::PlayPacket::AcceptTeleportation(_accept_teleportation) => {}
@@ -306,7 +302,7 @@ impl Player {
                 packet::play::PlayPacket::ClientTickEnd(_client_tick_end) => {}
                 packet::play::PlayPacket::PlayerInput(_player_input) => {}
                 packet::play::PlayPacket::PlayerAbilities(player_abilities) => {
-                    self.is_flying = (player_abilities.flags & 0x02 != 0);
+                    self.is_flying = player_abilities.flags & 0x02 != 0;
                 }
                 packet::play::PlayPacket::PlayerCommand(_player_command) => {}
                 packet::play::PlayPacket::SetHeldItem(set_held_item) => {

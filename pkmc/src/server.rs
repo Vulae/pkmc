@@ -93,7 +93,7 @@ impl Server {
         std::thread::spawn({
             let world = self.state.world.clone();
             move || loop {
-                std::thread::sleep(std::time::Duration::from_millis(1));
+                std::thread::sleep(std::time::Duration::from_nanos(100));
                 if let Err(err) = world.lock().unwrap().update_viewers() {
                     println!("{:?}", err);
                 }

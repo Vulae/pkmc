@@ -302,12 +302,14 @@ struct AnvilBlockEntity {
 pub struct AnvilChunk {
     //#[serde(rename = "DataVersion")]
     //data_version: i32,
-    //#[serde(rename = "xPos")]
-    //x_pos: i32,
-    //#[serde(rename = "zPos")]
-    //z_pos: i32,
-    //#[serde(rename = "yPos")]
-    //y_pos: i32,
+    #[serde(rename = "xPos")]
+    x_pos: i32,
+    #[serde(rename = "zPos")]
+    z_pos: i32,
+    #[serde(rename = "yPos")]
+    y_pos: Option<i8>,
+    #[serde(skip, default)]
+    section_y_pos: i8,
     //#[serde(rename = "Status")]
     //status: String,
     //#[serde(rename = "LastUpdate")]
@@ -319,8 +321,26 @@ pub struct AnvilChunk {
 }
 
 impl AnvilChunk {
-    fn initialize(&mut self) {
+    fn initialize(&mut self, section_y_range: std::ops::RangeInclusive<i8>) {
+        if let Some(y_pos) = self.y_pos {
+            assert!(*section_y_range.start() == y_pos);
+        }
+        self.section_y_pos = *section_y_range.start();
+
+        // Insert missing sections
+        section_y_range.for_each(|section_y| {
+            if self.sections.iter().any(|section| section.y == section_y) {
+                return;
+            }
+            self.sections.push(ChunkSection {
+                y: section_y,
+                block_states: None,
+                biomes: None,
+            })
+        });
+
         // Sometimes sections are unsorted.
+        // And also the inserting of sections in the above code may also cause it to become unsorted.
         self.sections.sort_by(|a, b| a.y.cmp(&b.y));
 
         self.parsed_block_entities = self
@@ -346,9 +366,11 @@ impl AnvilChunk {
     }
 
     fn get_section_mut(&mut self, section_y: i8) -> Option<&mut ChunkSection> {
+        //self.sections
+        //    .iter_mut()
+        //    .find(|section| section.y == section_y)
         self.sections
-            .iter_mut()
-            .find(|section| section.y == section_y)
+            .get_mut((section_y - self.section_y_pos) as usize)
     }
 
     fn get_tile_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<Block> {
@@ -411,6 +433,56 @@ impl AnvilChunk {
 
     fn block_entities(&self) -> &HashMap<(u8, i16, u8), BlockEntity> {
         &self.parsed_block_entities
+    }
+
+    fn to_packet(
+        &self,
+        biome_mapper: &IdTable<Biome>,
+    ) -> Result<packet::play::LevelChunkWithLight, AnvilError> {
+        Ok(packet::play::LevelChunkWithLight {
+            chunk_x: self.x_pos,
+            chunk_z: self.z_pos,
+            chunk_data: packet::play::LevelChunkData {
+                heightmaps: nbt_compound!(),
+                data: {
+                    let mut writer = Vec::new();
+
+                    self.sections.iter().try_for_each(|section| {
+                        if let Some(block_states) = &section.block_states {
+                            block_states.write(&mut writer)?;
+                        } else {
+                            writer.write_all(&0u16.to_be_bytes())?;
+                            writer.write_all(&to_paletted_data_singular(
+                                Block::air().id().unwrap(),
+                            )?)?;
+                        }
+                        if let Some(biomes) = &section.biomes {
+                            biomes.write(&mut writer, biome_mapper)?;
+                        } else {
+                            writer.write_all(&to_paletted_data_singular(
+                                Biome::default().id(biome_mapper).unwrap(),
+                            )?)?;
+                        }
+                        Ok::<_, AnvilError>(())
+                    })?;
+
+                    writer.into_boxed_slice()
+                },
+                block_entities: self
+                    .block_entities()
+                    .iter()
+                    .map(|((x, y, z), b)| packet::play::BlockEntity {
+                        x: *x,
+                        z: *z,
+                        y: *y,
+                        r#type: b.block_entity_id().unwrap(),
+                        data: b.data.clone(),
+                    })
+                    .collect(),
+            },
+            // TODO: Light data
+            light_data: packet::play::LevelLightData::full_bright(self.sections.len()),
+        })
     }
 }
 
@@ -483,7 +555,12 @@ impl Region {
             .transpose()?)
     }
 
-    fn prepare_chunk(&mut self, chunk_x: u8, chunk_z: u8) -> Result<(), AnvilError> {
+    fn prepare_chunk(
+        &mut self,
+        chunk_x: u8,
+        chunk_z: u8,
+        section_y_range: std::ops::RangeInclusive<i8>,
+    ) -> Result<(), AnvilError> {
         if self.loaded_chunks.contains_key(&(chunk_x, chunk_z)) {
             return Ok(());
         }
@@ -494,7 +571,7 @@ impl Region {
             .transpose()?
         {
             Some(mut chunk) => {
-                chunk.initialize();
+                chunk.initialize(section_y_range);
                 self.loaded_chunks.insert((chunk_x, chunk_z), Some(chunk));
             }
             None => {
@@ -620,10 +697,12 @@ impl AnvilWorld {
 
         self.prepare_region(region_x, region_z)?;
 
+        let section_y_range = self.section_y_range();
         if let Some(region) = self.get_region_mut(region_x, region_z) {
             region.prepare_chunk(
                 chunk_x.wrapping_rem_euclid(REGION_SIZE as i32) as u8,
                 chunk_z.wrapping_rem_euclid(REGION_SIZE as i32) as u8,
+                section_y_range,
             )?;
         }
 
@@ -730,64 +809,7 @@ impl World for AnvilWorld {
                 if let Some(chunk) = self.get_chunk(to_load.chunk_x, to_load.chunk_z) {
                     viewer
                         .connection()
-                        .send(&packet::play::LevelChunkWithLight {
-                            chunk_x: to_load.chunk_x,
-                            chunk_z: to_load.chunk_z,
-                            chunk_data: packet::play::LevelChunkData {
-                                heightmaps: nbt_compound!(),
-                                data: {
-                                    let mut writer = Vec::new();
-
-                                    self.section_y_range().try_for_each(|section_y| {
-                                        if let Some(section) = chunk.get_section(section_y) {
-                                            if let Some(block_states) = &section.block_states {
-                                                block_states.write(&mut writer)?;
-                                            } else {
-                                                writer.write_all(&0u16.to_be_bytes())?;
-                                                writer.write_all(&to_paletted_data_singular(
-                                                    Block::air().id().unwrap(),
-                                                )?)?;
-                                            }
-                                            if let Some(biomes) = &section.biomes {
-                                                biomes.write(&mut writer, &self.biome_mapper)?;
-                                            } else {
-                                                writer.write_all(&to_paletted_data_singular(
-                                                    Biome::default()
-                                                        .id(&self.biome_mapper)
-                                                        .unwrap(),
-                                                )?)?;
-                                            }
-                                        } else {
-                                            writer.write_all(&0u16.to_be_bytes())?;
-                                            writer.write_all(&to_paletted_data_singular(
-                                                Block::air().id().unwrap(),
-                                            )?)?;
-                                            writer.write_all(&to_paletted_data_singular(
-                                                Biome::default().id(&self.biome_mapper).unwrap(),
-                                            )?)?;
-                                        }
-                                        Ok::<_, AnvilError>(())
-                                    })?;
-
-                                    writer.into_boxed_slice()
-                                },
-                                block_entities: chunk
-                                    .block_entities()
-                                    .iter()
-                                    .map(|((x, y, z), b)| packet::play::BlockEntity {
-                                        x: *x,
-                                        z: *z,
-                                        y: *y,
-                                        r#type: b.block_entity_id().unwrap(),
-                                        data: b.data.clone(),
-                                    })
-                                    .collect(),
-                            },
-                            // TODO: Light data
-                            light_data: packet::play::LevelLightData::full_bright(
-                                self.section_y_range().count(),
-                            ),
-                        })?;
+                        .send(&chunk.to_packet(&self.biome_mapper)?)?;
                 } else {
                     viewer
                         .connection()

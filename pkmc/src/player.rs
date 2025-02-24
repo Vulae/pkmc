@@ -50,7 +50,7 @@ pub struct Player {
     connection: Connection,
     server_state: ServerState,
     world_viewer: Arc<Mutex<WorldViewer>>,
-    _entity_viewer: Arc<Mutex<EntityViewer>>,
+    entity_viewer: Arc<Mutex<EntityViewer>>,
     player_entity: EntityBase<PlayerEntity>,
     _tab_list_viewer: Arc<Mutex<TabListViewer>>,
     _tab_list_player: Arc<Mutex<TabListPlayer>>,
@@ -75,6 +75,7 @@ impl Player {
         player_uuid: UUID,
         uuid: UUID,
         view_distance: u8,
+        entity_distance: f64,
     ) -> Result<Self, PlayerError> {
         let dimension = server_state.world.lock().unwrap().identifier().to_owned();
 
@@ -158,11 +159,18 @@ impl Player {
             .lock()
             .unwrap()
             .add_viewer(connection.sender(), uuid);
+        entity_viewer.lock().unwrap().radius = entity_distance;
         let player_entity = server_state
             .entities
             .lock()
             .unwrap()
             .add_entity(PlayerEntity {}, uuid);
+        player_entity
+            .handler()
+            .lock()
+            .unwrap()
+            .visibility
+            .exclude(uuid);
 
         let tab_list_viewer = server_state
             .tab_list
@@ -180,7 +188,7 @@ impl Player {
             connection,
             server_state,
             world_viewer,
-            _entity_viewer: entity_viewer,
+            entity_viewer,
             player_entity,
             _tab_list_viewer: tab_list_viewer,
             _tab_list_player: tab_list_player,
@@ -356,8 +364,8 @@ impl Player {
             }
         }
 
-        let mut world_viewer = self.world_viewer.lock().unwrap();
-        world_viewer.position = self.position;
+        self.world_viewer.lock().unwrap().position = self.position;
+        self.entity_viewer.lock().unwrap().position = self.position;
 
         let mut player_entity_handler = self.player_entity.handler().lock().unwrap();
         player_entity_handler.position = self.position;

@@ -158,6 +158,7 @@ impl Server {
                     player.player_id,
                     UUID::new_v7(),
                     self.config.view_distance,
+                    self.config.entity_distance,
                 )?;
                 println!("{} Connected", player.player_name());
                 self.players.push(player);

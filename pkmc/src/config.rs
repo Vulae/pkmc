@@ -35,6 +35,10 @@ fn config_default_view_distance() -> u8 {
     12
 }
 
+fn config_default_entity_distance() -> f64 {
+    256.0
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub address: String,
@@ -47,6 +51,8 @@ pub struct Config {
     pub world: PathBuf,
     #[serde(default = "config_default_view_distance", rename = "view-distance")]
     pub view_distance: u8,
+    #[serde(default = "config_default_entity_distance", rename = "entity-distance")]
+    pub entity_distance: f64,
     #[serde(rename = "motd-text")]
     pub motd_text: Option<String>,
     #[serde(rename = "motd-icon")]

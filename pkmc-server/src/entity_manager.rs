@@ -55,6 +55,52 @@ impl<T: Entity + Sized> EntityBase<T> {
     }
 }
 
+/// Determines when entity is sent to viewers.
+#[derive(Debug)]
+pub enum EntityVisibility {
+    /// Entity is visible to all but selected viewers.
+    Exclude(HashSet<UUID>),
+    /// Entity is visible to selected viewers.
+    Include(HashSet<UUID>),
+}
+
+impl Default for EntityVisibility {
+    fn default() -> Self {
+        EntityVisibility::Exclude(HashSet::new())
+    }
+}
+
+impl EntityVisibility {
+    pub fn include(&mut self, uuid: UUID) {
+        match self {
+            EntityVisibility::Include(uuids) => {
+                uuids.insert(uuid);
+            }
+            EntityVisibility::Exclude(uuids) => {
+                uuids.remove(&uuid);
+            }
+        }
+    }
+
+    pub fn exclude(&mut self, uuid: UUID) {
+        match self {
+            EntityVisibility::Include(uuids) => {
+                uuids.remove(&uuid);
+            }
+            EntityVisibility::Exclude(uuids) => {
+                uuids.insert(uuid);
+            }
+        }
+    }
+
+    pub fn contains(&self, uuid: &UUID) -> bool {
+        match self {
+            EntityVisibility::Include(uuids) => uuids.contains(uuid),
+            EntityVisibility::Exclude(uuids) => !uuids.contains(uuid),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct EntityHandler {
     id: i32,
@@ -71,6 +117,7 @@ pub struct EntityHandler {
     pub head_yaw: f32,
     last_head_yaw: f32,
     animations: Vec<EntityAnimationType>,
+    pub visibility: EntityVisibility,
 }
 
 impl EntityHandler {
@@ -90,6 +137,7 @@ impl EntityHandler {
             head_yaw: 0.0,
             last_head_yaw: 0.0,
             animations: Vec::new(),
+            visibility: EntityVisibility::default(),
         }
     }
 
@@ -105,6 +153,8 @@ impl EntityHandler {
 pub struct EntityViewer {
     connection: ConnectionSender,
     uuid: UUID,
+    pub position: Vec3<f64>,
+    pub radius: f64,
     viewing: HashSet<i32>,
 }
 
@@ -113,6 +163,8 @@ impl EntityViewer {
         Self {
             connection,
             uuid,
+            position: Vec3::zero(),
+            radius: 256.0,
             viewing: HashSet::new(),
         }
     }
@@ -136,56 +188,74 @@ impl EntityManager {
 
     pub fn update_viewers(&mut self, force_sync: bool) -> Result<(), ConnectionError> {
         self.viewers.cleanup();
+        self.entities.cleanup();
 
-        if self.viewers.is_empty() {
-            return Ok(());
-        }
-
-        let removed_entities: HashSet<i32> = self.entities.cleanup();
         let mut entities = self.entities.lock();
         let mut viewers = self.viewers.lock();
 
         // Delete entities & create entities
         viewers.iter_mut().try_for_each(|viewer| {
-            if !removed_entities.is_empty() {
+            // Entities that the current viewer should have visible.
+            let viewing_entities = entities
+                .values()
+                .flat_map(|entity| {
+                    (entity.visibility.contains(&viewer.uuid)
+                        //&& (entity.uuid != viewer.uuid)
+                        && (entity.position.distance(&viewer.position) <= viewer.radius))
+                        .then_some(entity.id)
+                })
+                .collect::<HashSet<i32>>();
+
+            // Initialize new entities for viewer
+            viewing_entities
+                .difference(&viewer.viewing)
+                .map(|id| entities.get(id).unwrap())
+                .collect::<Vec<_>>()
+                .into_iter()
+                .try_for_each(|entity| {
+                    viewer.viewing.insert(entity.id);
+                    viewer.connection.send(&packet::play::BundleDelimiter)?;
+                    viewer.connection.send(&packet::play::AddEntity {
+                        id: entity.id,
+                        uuid: entity.uuid,
+                        r#type: entity.r#type,
+                        position: entity.position,
+                        pitch: 0,
+                        yaw: 0,
+                        head_yaw: 0,
+                        data: 0,
+                        velocity_x: 0,
+                        velocity_y: 0,
+                        velocity_z: 0,
+                    })?;
+                    viewer.connection.send(&packet::play::SetHeadRotation {
+                        entity_id: entity.id,
+                        yaw: quantize_angle(entity.head_yaw),
+                    })?;
+                    viewer.connection.send(&packet::play::SetEntityMetadata {
+                        entity_id: entity.id,
+                        metadata: entity.metadata.clone(),
+                    })?;
+                    viewer.connection.send(&packet::play::BundleDelimiter)?;
+                    Ok::<_, ConnectionError>(())
+                })?;
+
+            // Remove not visible entities for viewers.
+            let removed = viewer
+                .viewing
+                .difference(&viewing_entities)
+                .cloned()
+                .collect::<HashSet<i32>>();
+            if !removed.is_empty() {
+                removed.iter().for_each(|id| {
+                    viewer.viewing.remove(id);
+                });
                 viewer
                     .connection
-                    .send(&packet::play::RemoveEntities(removed_entities.clone()))?;
+                    .send(&packet::play::RemoveEntities(removed))?;
             }
 
-            entities.values_mut().try_for_each(|entity| {
-                if entity.uuid == viewer.uuid {
-                    return Ok(());
-                }
-                if viewer.viewing.contains(&entity.id) {
-                    return Ok(());
-                }
-                viewer.viewing.insert(entity.id);
-                viewer.connection.send(&packet::play::BundleDelimiter)?;
-                viewer.connection.send(&packet::play::AddEntity {
-                    id: entity.id,
-                    uuid: entity.uuid,
-                    r#type: entity.r#type,
-                    position: entity.position,
-                    pitch: 0,
-                    yaw: 0,
-                    head_yaw: 0,
-                    data: 0,
-                    velocity_x: 0,
-                    velocity_y: 0,
-                    velocity_z: 0,
-                })?;
-                viewer.connection.send(&packet::play::SetHeadRotation {
-                    entity_id: entity.id,
-                    yaw: quantize_angle(entity.head_yaw),
-                })?;
-                viewer.connection.send(&packet::play::SetEntityMetadata {
-                    entity_id: entity.id,
-                    metadata: entity.metadata.clone(),
-                })?;
-                viewer.connection.send(&packet::play::BundleDelimiter)?;
-                Ok::<_, ConnectionError>(())
-            })
+            Ok::<_, ConnectionError>(())
         })?;
 
         // Entity movement

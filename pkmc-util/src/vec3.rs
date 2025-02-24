@@ -19,6 +19,12 @@ impl<T> Vec3<T> {
     }
 }
 
+impl<T: Copy> Vec3<T> {
+    pub const fn all(v: T) -> Self {
+        Self::new(v, v, v)
+    }
+}
+
 macro_rules! impl_vec3_vec3_basic_operation {
     ($trait_name:ident, $fn_name:ident, $assign_trait_name:ident, $assign_fn_name:ident, $oper:tt) => {
         impl<T: Float> std::ops::$trait_name for Vec3<T> {

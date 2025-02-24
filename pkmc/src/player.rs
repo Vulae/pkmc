@@ -4,6 +4,7 @@ use pkmc_defs::{
     block::Block,
     entity::entity_type_id,
     packet::{self, play::EntityAnimationType},
+    particle::Particle,
     text_component::TextComponent,
 };
 use pkmc_server::{
@@ -13,7 +14,7 @@ use pkmc_server::{
 };
 use pkmc_util::{
     packet::{Connection, ConnectionError},
-    Position, Vec3, UUID,
+    Color, Position, Vec3, UUID,
 };
 use rand::Rng as _;
 use thiserror::Error;
@@ -356,6 +357,19 @@ impl Player {
                             .map(|b| !b.as_block().is_air())
                             .unwrap_or(false)
                     }) {
+                        self.connection.send(&packet::play::LevelParticles {
+                            long_distance: true,
+                            always_visible: false,
+                            position: Vec3::new(
+                                position.x.into(),
+                                position.y.into(),
+                                position.z.into(),
+                            ),
+                            offset: Vec3::all(12.0),
+                            max_speed: 0.0,
+                            particle_count: 64,
+                            particle: Particle::ExplosionEmitter,
+                        })?;
                         Position::iter_offset(Position::iter_sphere(32.0), position).try_for_each(
                             |p| world.set_block(p, WorldBlock::Block(Block::air())),
                         )?;
@@ -372,6 +386,20 @@ impl Player {
         player_entity_handler.yaw = self.yaw;
         player_entity_handler.pitch = self.pitch;
         player_entity_handler.head_yaw = self.yaw;
+
+        self.connection.send(&packet::play::LevelParticles {
+            long_distance: false,
+            always_visible: false,
+            position: self.position,
+            offset: Vec3::all(0.1),
+            max_speed: 1.0,
+            particle_count: 1,
+            particle: Particle::DustColorTransition {
+                from: Color::hue(rand::thread_rng().gen()),
+                to: Color::WHITE,
+                scale: 1.0,
+            },
+        })?;
 
         Ok(())
     }

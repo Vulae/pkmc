@@ -11,17 +11,22 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs {
-          inherit system overlays;
+        pkgs = import nixpkgs { inherit system overlays; };
+        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [ "rust-src" "rust-analyzer" ];
+          targets = [ "x86_64-unknown-linux-gnu" ];
         };
       in
       {
-        devShells.default = with pkgs; mkShell {
+        devShells.default = pkgs.mkShell {
           buildInputs = [
-            cargo rustc rust-analyzer rustfmt clippy
-            openssl
-            pkg-config
+            rustToolchain
+            pkgs.openssl
+            pkgs.pkg-config
+            pkgs.jdk21
           ];
+
+          RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
         };
       }
     );

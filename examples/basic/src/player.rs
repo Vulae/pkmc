@@ -16,7 +16,6 @@ use pkmc_util::{
     packet::{Connection, ConnectionError},
     Color, Position, Vec3, UUID,
 };
-use rand::Rng as _;
 use thiserror::Error;
 
 use crate::server::{ServerState, REGISTRIES};
@@ -266,7 +265,7 @@ impl Player {
             if self.keepalive_id.is_some() {
                 return Err(PlayerError::BadKeepAliveResponse);
             }
-            let id: i64 = rand::thread_rng().gen();
+            let id: i64 = rand::random();
             self.keepalive_id = Some(id);
             self.connection.send(&packet::play::KeepAlive { id })?;
         }
@@ -395,7 +394,7 @@ impl Player {
             max_speed: 1.0,
             particle_count: 1,
             particle: Particle::DustColorTransition {
-                from: Color::hue(rand::thread_rng().gen()),
+                from: Color::hue(rand::random()),
                 to: Color::WHITE,
                 scale: 1.0,
             },

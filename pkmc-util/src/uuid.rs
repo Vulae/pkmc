@@ -3,15 +3,13 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rand::Rng;
-
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub struct UUID(pub [u8; 16]);
 
 impl UUID {
     pub fn new_v7() -> Self {
         let time_since_epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        let mut value: u128 = rand::thread_rng().gen();
+        let mut value: u128 = rand::random();
         value &= !0xFFFFFFFF_FFFF_0000_0000_000000000000;
         value |= time_since_epoch.as_millis() << 80;
         value &= !0x00000000_0000_F000_F000_000000000000;

@@ -1,7 +1,7 @@
 # [pkmc](https://github.com/Vulae/pkmc)
 
 Simple modular building blocks for Minecraft minigame-like servers.
-See [pkmc](./pkmc/) for example server.
+See [examples/basic](./examples/basic) for example server.
 
 > [!WARNING]
 > This project is in early development, expect ALOT of code to change.
@@ -15,10 +15,10 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 ## [Running Example Server](#running-example-server)
 
 1. Clone repo
-2. Start the server `cargo run --release`
+2. Start the server `cargo run -p example-basic --release`
 3. Join the server (Default IP is `[::1]:52817`)
 
-[pkmc/pkmc.toml](./pkmc/pkmc.toml) to configure.
+[examples/basic/config.toml](./examples/basic/config.toml) to configure.
 
 ## [Features](#features)
 
@@ -48,7 +48,7 @@ Some extra features may be implemented inside the example server.
 - `pkmc-generated` Generate some code for `pkmc-defs/src/generated`
 - `pkmc-defs` Definitions for blocks, packets, & other stuff.
 - `pkmc-server` General building blocks for a server.
-- `pkmc` Example/testing server, that may be used as reference.
+- `examples/*` Some examples & some testing stuff.
 
 ## [Goals](#goals)
 

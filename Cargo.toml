@@ -1,15 +1,23 @@
 [workspace]
-members = ["pkmc-util", "pkmc-generated", "pkmc-defs", "pkmc-server", "pkmc"]
+members = [
+    "pkmc-util",
+    "pkmc-generated",
+    "pkmc-defs",
+    "pkmc-server",
+    # Examples on this type of project layout *seem* impossible, so we just include it as a member instead.
+    "examples/basic",
+]
 resolver = "2"
 package.version = "0.1.0"
 package.edition = "2021"
 
 [workspace.dependencies]
 thiserror = "2.0.11"
-flate2 = "1.0.35"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.135"
+flate2 = "1.1.0"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.139"
 itertools = "0.14.0"
+rand = "0.9.0"
 
 [profile.release]
 # codegen-units = 1

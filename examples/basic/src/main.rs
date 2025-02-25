@@ -48,7 +48,7 @@ fn test_entities(entity_manager: Arc<Mutex<EntityManager>>) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let config = Config::load(&["pkmc.toml", "pkmc/pkmc.toml"])?;
+    let config = Config::load(&["config.toml", "examples/basic/config.toml"])?;
     let mut server = Server::new(config)?;
     test_entities(server.state().entities);
     server.run()?;

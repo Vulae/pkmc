@@ -112,10 +112,8 @@ impl<T: Write> WriteExtPacket for T {
     }
 
     fn write_nbt(&mut self, nbt: &NBT) -> std::io::Result<()> {
-        self.write_all(
-            &nbt.to_bytes_network()
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?,
-        )?;
+        nbt.write_network(self)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
         Ok(())
     }
 }

@@ -5,7 +5,6 @@ use std::{
 
 use pkmc_util::{
     nbt::NBT,
-    nbt_compound,
     packet::{
         to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, FixedBitSet,
         ReadExtPacket as _, ServerboundPacket, WriteExtPacket,
@@ -482,7 +481,7 @@ impl LevelChunkWithLight {
             chunk_x,
             chunk_z,
             chunk_data: LevelChunkData {
-                heightmaps: nbt_compound!(),
+                heightmaps: NBT::Compound(HashMap::new()),
                 data: {
                     let mut writer = Vec::new();
 
@@ -1213,8 +1212,8 @@ impl EntityMetadataBundle {
         bundle.player_score(0);
         bundle.player_skin_parts(0);
         bundle.player_main_hand(0);
-        bundle.player_left_parrot(NBT::empty());
-        bundle.player_right_parrot(NBT::empty());
+        bundle.player_left_parrot(NBT::Compound(HashMap::new()));
+        bundle.player_right_parrot(NBT::Compound(HashMap::new()));
         bundle
     }
 }

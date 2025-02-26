@@ -164,11 +164,7 @@ impl ClientboundPacket for RegistryData {
             writer.write_string(&entry.entry_id)?;
             if let Some(data) = &entry.data {
                 writer.write_bool(true)?;
-                writer.write_all(
-                    &data
-                        .to_bytes_network()
-                        .map_err(|err| ConnectionError::Other(Box::new(err)))?,
-                )?;
+                writer.write_nbt(&data)?;
             } else {
                 writer.write_bool(false)?;
             }

@@ -20,7 +20,6 @@ use pkmc_defs::{
 };
 use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
-    nbt_compound,
     packet::{
         calculate_bpe, to_paletted_data, to_paletted_data_precomputed, to_paletted_data_singular,
         ConnectionError, ConnectionSender,
@@ -443,7 +442,7 @@ impl AnvilChunk {
             chunk_x: self.x_pos,
             chunk_z: self.z_pos,
             chunk_data: packet::play::LevelChunkData {
-                heightmaps: nbt_compound!(),
+                heightmaps: NBT::Compound(HashMap::new()),
                 data: {
                     let mut writer = Vec::new();
 
@@ -551,7 +550,7 @@ impl Region {
     fn read_nbt(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<(String, NBT)>, AnvilError> {
         Ok(self
             .read(chunk_x, chunk_z)?
-            .map(|data| NBT::read(std::io::Cursor::new(data), false))
+            .map(|data| NBT::read(std::io::Cursor::new(data)))
             .transpose()?)
     }
 

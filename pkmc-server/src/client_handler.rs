@@ -287,13 +287,7 @@ impl ClientHandler {
                                                 .map(|(entry_id, data)| {
                                                     Ok::<_, ClientHandlerError>(packet::configuration::RegistryDataEntry {
                                                         entry_id,
-                                                        data: match NBT::try_from(data) {
-                                                            Ok(nbt) => Ok(Some(nbt)),
-                                                            Err(
-                                                                NBTError::JsonConversionEmptyArray,
-                                                            ) => Ok(None),
-                                                            Err(err) => Err(err),
-                                                        }?,
+                                                        data: Some(NBT::try_from(data)?),
                                                     })
                                                 })
                                                 .collect::<Result<Vec<_>, _>>()?,

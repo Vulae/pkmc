@@ -98,12 +98,14 @@ impl<T: Write> WriteExtPacket for T {
     fn write_bitset(&mut self, bitset: &BitSet) -> std::io::Result<()> {
         self.write_varint(
             bitset
-                .num_longs()
+                .inner()
+                .len()
                 .try_into()
                 .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?,
         )?;
         bitset
-            .longs_iter()
+            .inner()
+            .iter()
             .map(|l| self.write_all(&l.to_be_bytes()))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(())

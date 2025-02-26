@@ -7,8 +7,8 @@ use pkmc_util::{
     nbt::NBT,
     nbt_compound,
     packet::{
-        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, ReadExtPacket as _,
-        ServerboundPacket, WriteExtPacket,
+        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, FixedBitSet,
+        ReadExtPacket as _, ServerboundPacket, WriteExtPacket,
     },
     serverbound_packet_enum, Position, ReadExt as _, Transmutable, Vec3, UUID,
 };
@@ -1636,6 +1636,64 @@ impl ClientboundPacket for LevelParticles {
     }
 }
 
+#[derive(Debug)]
+pub struct ChatMessage {
+    pub message: String,
+    pub timestamp: i64,
+    pub salt: i64,
+    pub signature: Option<[u8; 256]>,
+    pub message_count: i32,
+    pub acknowledged: FixedBitSet<20>,
+}
+
+impl ServerboundPacket for ChatMessage {
+    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_CHAT;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            message: reader.read_string()?,
+            timestamp: i64::from_be_bytes(reader.read_const()?),
+            salt: i64::from_be_bytes(reader.read_const()?),
+            signature: reader
+                .read_bool()?
+                .then(|| reader.read_const())
+                .transpose()?,
+            message_count: reader.read_varint()?,
+            acknowledged: reader.read_fixed_bit_set()?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct DisguisedChatMessage {
+    pub message: TextComponent,
+    // TODO: minecraft:chat_type registry generated code enum
+    pub chat_type: i32,
+    pub sender_name: TextComponent,
+    pub target_name: Option<TextComponent>,
+}
+
+impl ClientboundPacket for DisguisedChatMessage {
+    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_DISGUISED_CHAT;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        // FIXME: Minecraft doesn't like decoding this, and I have no idea why.
+        writer.write_nbt(&self.message.to_nbt())?;
+        writer.write_varint(self.chat_type)?;
+        writer.write_nbt(&self.sender_name.to_nbt())?;
+        if let Some(target_name) = &self.target_name {
+            writer.write_bool(true)?;
+            writer.write_nbt(&target_name.to_nbt())?;
+        } else {
+            writer.write_bool(false)?;
+        }
+        Ok(())
+    }
+}
+
 serverbound_packet_enum!(pub PlayPacket;
     KeepAlive, KeepAlive;
     PlayerLoaded, PlayerLoaded;
@@ -1650,4 +1708,5 @@ serverbound_packet_enum!(pub PlayPacket;
     PlayerCommand, PlayerCommand;
     SetCarriedItem, SetHeldItem;
     SwingArm, SwingArm;
+    ChatMessage, ChatMessage;
 );

@@ -2,6 +2,8 @@ use std::io::Read;
 
 use crate::{Position, ReadExt as _, UUID};
 
+use super::FixedBitSet;
+
 pub fn read_varint_ret_bytes(mut reader: impl Read) -> std::io::Result<(usize, i32)> {
     let mut bytes = 0;
     let mut value = 0;
@@ -41,6 +43,7 @@ pub trait ReadExtPacket {
     fn read_bool(&mut self) -> std::io::Result<bool>;
     fn read_uuid(&mut self) -> std::io::Result<UUID>;
     fn read_position(&mut self) -> std::io::Result<Position>;
+    fn read_fixed_bit_set<const N: usize>(&mut self) -> std::io::Result<FixedBitSet<N>>;
 }
 
 impl<T: Read> ReadExtPacket for T {
@@ -82,6 +85,11 @@ impl<T: Read> ReadExtPacket for T {
             y: (v << 52 >> 52) as i16,
             z: (v << 26 >> 38) as i32,
         })
+    }
+
+    fn read_fixed_bit_set<const N: usize>(&mut self) -> std::io::Result<FixedBitSet<N>> {
+        let bytes = vec![0u8; N.div_ceil(8)].into_boxed_slice();
+        Ok(FixedBitSet::from_inner(bytes))
     }
 }
 

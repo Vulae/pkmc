@@ -138,10 +138,10 @@ impl Player {
             ..Default::default()
         })?;
 
-        connection.send(&packet::play::SetActionBarText(TextComponent::rainbow(
-            &format!("Hello, {}!", player_name),
-            0.0,
-        )))?;
+        connection.send(&packet::play::SystemChat {
+            content: TextComponent::rainbow(&format!("Hello, {}!", player_name), 0.0),
+            overlay: false,
+        })?;
 
         let world_viewer = server_state
             .world
@@ -373,6 +373,14 @@ impl Player {
                             |p| world.set_block(p, WorldBlock::Block(Block::air())),
                         )?;
                     }
+                }
+                packet::play::PlayPacket::ChatMessage(chat_message) => {
+                    self.connection.send(&packet::play::DisguisedChatMessage {
+                        message: TextComponent::from(chat_message.message),
+                        chat_type: 0,
+                        sender_name: TextComponent::from(self.player_name()),
+                        target_name: None,
+                    })?;
                 }
             }
         }

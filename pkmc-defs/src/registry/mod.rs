@@ -18,13 +18,13 @@ pub enum IntProvider {
 pub type Registry = BTreeMap<String, serde_json::Value>;
 pub type Registries = HashMap<String, Registry>;
 
-pub mod worldgen;
-
-pub mod banner_pattern;
-pub mod chat_type;
-pub mod damage_type;
-pub mod dimension_type;
-pub mod painting_variant;
-pub mod trim_material;
-pub mod trim_pattern;
-pub mod wolf_variant;
+//pub mod worldgen;
+//
+//pub mod banner_pattern;
+//pub mod chat_type;
+//pub mod damage_type;
+//pub mod dimension_type;
+//pub mod painting_variant;
+//pub mod trim_material;
+//pub mod trim_pattern;
+//pub mod wolf_variant;

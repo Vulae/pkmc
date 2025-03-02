@@ -1568,7 +1568,7 @@ impl ClientboundPacket for LevelParticles {
         writer.write_all(&self.offset.z.to_be_bytes())?;
         writer.write_all(&self.max_speed.to_be_bytes())?;
         writer.write_all(&self.particle_count.to_be_bytes())?;
-        writer.write_varint(self.particle.id())?;
+        writer.write_varint(self.particle.r#type().to_value())?;
         match &self.particle {
             Particle::Block(block) => {
                 writer.write_varint(block.id_with_default_fallback().unwrap())?;

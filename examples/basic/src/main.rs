@@ -8,6 +8,7 @@ use std::{
 };
 
 use config::Config;
+use pkmc_defs::generated::generated::registries::EntityType;
 use pkmc_server::entity_manager::{Entity, EntityManager};
 use pkmc_util::{Vec3, UUID};
 use server::Server;
@@ -16,9 +17,7 @@ fn test_entities(entity_manager: Arc<Mutex<EntityManager>>) {
     #[derive(Debug)]
     struct TestEntity;
     impl Entity for TestEntity {
-        fn r#type(&self) -> i32 {
-            110
-        }
+        const TYPE: EntityType = EntityType::Slime;
     }
 
     let entity1 = entity_manager

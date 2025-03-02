@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use pkmc_defs::{
     block::Block,
-    entity::entity_type_id,
+    generated::generated::registries::EntityType,
     packet::{self, play::EntityAnimationType},
     particle::Particle,
     text_component::TextComponent,
@@ -40,9 +40,7 @@ pub enum PlayerError {
 struct PlayerEntity {}
 
 impl Entity for PlayerEntity {
-    fn r#type(&self) -> i32 {
-        entity_type_id("minecraft:player").unwrap()
-    }
+    const TYPE: EntityType = EntityType::Player;
 }
 
 #[derive(Debug)]
@@ -356,19 +354,19 @@ impl Player {
                             .map(|b| !b.as_block().is_air())
                             .unwrap_or(false)
                     }) {
-                        self.connection.send(&packet::play::LevelParticles {
-                            long_distance: true,
-                            always_visible: false,
-                            position: Vec3::new(
-                                position.x.into(),
-                                position.y.into(),
-                                position.z.into(),
-                            ),
-                            offset: Vec3::all(12.0),
-                            max_speed: 0.0,
-                            particle_count: 64,
-                            particle: Particle::ExplosionEmitter,
-                        })?;
+                        //self.connection.send(&packet::play::LevelParticles {
+                        //    long_distance: true,
+                        //    always_visible: false,
+                        //    position: Vec3::new(
+                        //        position.x.into(),
+                        //        position.y.into(),
+                        //        position.z.into(),
+                        //    ),
+                        //    offset: Vec3::all(12.0),
+                        //    max_speed: 0.0,
+                        //    particle_count: 64,
+                        //    particle: Particle::ExplosionEmitter,
+                        //})?;
                         Position::iter_offset(Position::iter_sphere(32.0), position).try_for_each(
                             |p| world.set_block(p, WorldBlock::Block(Block::air())),
                         )?;

@@ -4,9 +4,12 @@ use std::{
     sync::{atomic::AtomicI32, Arc, Mutex},
 };
 
-use pkmc_defs::packet::{
-    self,
-    play::{EntityAnimationType, EntityMetadataBundle},
+use pkmc_defs::{
+    generated::generated::registries::EntityType,
+    packet::{
+        self,
+        play::{EntityAnimationType, EntityMetadataBundle},
+    },
 };
 use pkmc_util::{
     packet::{ConnectionError, ConnectionSender},
@@ -29,7 +32,10 @@ pub fn quantize_angle(angle: f32) -> u8 {
 }
 
 pub trait Entity: Debug {
-    fn r#type(&self) -> i32;
+    const TYPE: EntityType;
+    fn r#type(&self) -> EntityType {
+        Self::TYPE
+    }
 }
 
 #[derive(Debug)]
@@ -382,7 +388,7 @@ impl EntityManager {
         EntityBase {
             handler: self.entities.insert_ignored(
                 id,
-                Mutex::new(EntityHandler::new(id, uuid, entity.r#type())),
+                Mutex::new(EntityHandler::new(id, uuid, entity.r#type().to_value())),
             ),
             inner: entity,
             uuid,

@@ -204,7 +204,7 @@ impl From<NBT> for serde_json::Value {
             NBT::Float(float) => serde_json::Value::from(float),
             NBT::Double(double) => serde_json::Value::from(double),
             NBT::String(string) => serde_json::Value::from(string),
-            NBT::List(list) => serde_json::Value::from_iter(list.into_iter()),
+            NBT::List(list) => serde_json::Value::from_iter(list),
             NBT::Compound(compound) => serde_json::Value::Object(
                 compound
                     .into_iter()

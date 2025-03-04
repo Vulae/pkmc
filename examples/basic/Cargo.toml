@@ -8,6 +8,7 @@ full-image = ["image/default"]
 
 [dependencies]
 pkmc-util = { path = "../../pkmc-util" }
+pkmc-generated = { path = "../../pkmc-generated/generated" }
 pkmc-defs = { path = "../../pkmc-defs" }
 pkmc-server = { path = "../../pkmc-server" }
 thiserror.workspace = true

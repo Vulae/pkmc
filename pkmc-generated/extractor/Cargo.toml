@@ -1,12 +1,11 @@
 [package]
-name = "pkmc-defs"
+name = "pkmc-generated-extractor"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-pkmc-util = { path = "../pkmc-util" }
-pkmc-generated = { path = "../pkmc-generated/generated" }
 thiserror.workspace = true
 serde.workspace = true
+clap = { version = "4.5.23", features = ["derive"] }
 serde_json.workspace = true
-flate2.workspace = true
+reqwest = { version = "0.12.12", features = ["blocking", "json"] }

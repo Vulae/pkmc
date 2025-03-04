@@ -15,8 +15,9 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 ## [Running Example Server](#running-example-server)
 
 1. Clone repo
-2. Start the server `cargo run -p example-basic --release`
-3. Join the server (Default IP is `[::1]:52817`)
+2. Extract Minecraft data `cargo run -p pkmc-generated-extractor -- --release 1.21.4 --output pkmc-generated/assets/`
+3. Start the server `cargo run -p example-basic --release`
+4. Join the server (Default IP is `[::1]:52817`)
 
 [examples/basic/config.toml](./examples/basic/config.toml) to configure.
 
@@ -45,7 +46,7 @@ Some extra features may be implemented inside the example server.
 ## [Project Layout](#project-layout)
 
 - `pkmc-util` Some utility stuff for everything else to use.
-- `pkmc-generated` Generate some code for `pkmc-defs/src/generated`
+- `pkmc-generated` Extract Minecraft server.jar data & convert to code.
 - `pkmc-defs` Definitions for blocks, packets, & other stuff.
 - `pkmc-server` General building blocks for a server.
 - `examples/*` Some examples & some testing stuff.

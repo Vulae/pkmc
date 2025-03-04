@@ -5,8 +5,6 @@ use pkmc_util::{
     ReadExt as _,
 };
 
-use crate::generated::generated;
-
 #[derive(Debug)]
 pub enum IntentionNextState {
     Status,
@@ -38,7 +36,7 @@ pub struct Intention {
 }
 
 impl ServerboundPacket for Intention {
-    const SERVERBOUND_ID: i32 = generated::packet::handshake::SERVERBOUND_MINECRAFT_INTENTION;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::handshake::SERVERBOUND_INTENTION;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where

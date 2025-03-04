@@ -2,11 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use pkmc_defs::{
     block::Block,
-    generated::generated::registries::EntityType,
     packet::{self, play::EntityAnimationType},
     particle::Particle,
     text_component::TextComponent,
 };
+use pkmc_generated::registry::EntityType;
 use pkmc_server::{
     entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
     tab_list::{TabListPlayer, TabListViewer},

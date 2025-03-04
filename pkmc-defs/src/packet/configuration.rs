@@ -12,8 +12,6 @@ use pkmc_util::{
     serverbound_packet_enum, ReadExt as _,
 };
 
-use crate::generated::generated;
-
 #[derive(Debug)]
 pub enum CustomPayload {
     Unknown { channel: String, data: Box<[u8]> },
@@ -21,8 +19,7 @@ pub enum CustomPayload {
 }
 
 impl ServerboundPacket for CustomPayload {
-    const SERVERBOUND_ID: i32 =
-        generated::packet::configuration::SERVERBOUND_MINECRAFT_CUSTOM_PAYLOAD;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::configuration::SERVERBOUND_CUSTOM_PAYLOAD;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -40,8 +37,7 @@ impl ServerboundPacket for CustomPayload {
 }
 
 impl ClientboundPacket for CustomPayload {
-    const CLIENTBOUND_ID: i32 =
-        generated::packet::configuration::CLIENTBOUND_MINECRAFT_CUSTOM_PAYLOAD;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::configuration::CLIENTBOUND_CUSTOM_PAYLOAD;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         match self {
@@ -72,7 +68,7 @@ pub struct ClientInformation {
 
 impl ServerboundPacket for ClientInformation {
     const SERVERBOUND_ID: i32 =
-        generated::packet::configuration::SERVERBOUND_MINECRAFT_CLIENT_INFORMATION;
+        pkmc_generated::packet::configuration::SERVERBOUND_CLIENT_INFORMATION;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -106,7 +102,7 @@ pub struct SelectKnownPacks {
 
 impl ClientboundPacket for SelectKnownPacks {
     const CLIENTBOUND_ID: i32 =
-        generated::packet::configuration::CLIENTBOUND_MINECRAFT_SELECT_KNOWN_PACKS;
+        pkmc_generated::packet::configuration::CLIENTBOUND_SELECT_KNOWN_PACKS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.packs.len() as i32)?;
@@ -121,7 +117,7 @@ impl ClientboundPacket for SelectKnownPacks {
 
 impl ServerboundPacket for SelectKnownPacks {
     const SERVERBOUND_ID: i32 =
-        generated::packet::configuration::SERVERBOUND_MINECRAFT_SELECT_KNOWN_PACKS;
+        pkmc_generated::packet::configuration::SERVERBOUND_SELECT_KNOWN_PACKS;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -154,8 +150,7 @@ pub struct RegistryData {
 }
 
 impl ClientboundPacket for RegistryData {
-    const CLIENTBOUND_ID: i32 =
-        generated::packet::configuration::CLIENTBOUND_MINECRAFT_REGISTRY_DATA;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::configuration::CLIENTBOUND_REGISTRY_DATA;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_string(&self.registry_id)?;
@@ -164,7 +159,7 @@ impl ClientboundPacket for RegistryData {
             writer.write_string(&entry.entry_id)?;
             if let Some(data) = &entry.data {
                 writer.write_bool(true)?;
-                writer.write_nbt(&data)?;
+                writer.write_nbt(data)?;
             } else {
                 writer.write_bool(false)?;
             }
@@ -179,7 +174,7 @@ pub struct UpdateTags {
 }
 
 impl ClientboundPacket for UpdateTags {
-    const CLIENTBOUND_ID: i32 = generated::packet::configuration::CLIENTBOUND_MINECRAFT_UPDATE_TAGS;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::configuration::CLIENTBOUND_UPDATE_TAGS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.registries.len() as i32)?;
@@ -205,7 +200,7 @@ pub struct FinishConfiguration;
 
 impl ClientboundPacket for FinishConfiguration {
     const CLIENTBOUND_ID: i32 =
-        generated::packet::configuration::CLIENTBOUND_MINECRAFT_FINISH_CONFIGURATION;
+        pkmc_generated::packet::configuration::CLIENTBOUND_FINISH_CONFIGURATION;
 
     fn packet_write(&self, _writer: impl Write) -> Result<(), ConnectionError> {
         Ok(())
@@ -214,7 +209,7 @@ impl ClientboundPacket for FinishConfiguration {
 
 impl ServerboundPacket for FinishConfiguration {
     const SERVERBOUND_ID: i32 =
-        generated::packet::configuration::SERVERBOUND_MINECRAFT_FINISH_CONFIGURATION;
+        pkmc_generated::packet::configuration::SERVERBOUND_FINISH_CONFIGURATION;
 
     fn packet_read(_reader: impl Read) -> Result<Self, ConnectionError>
     where

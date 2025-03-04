@@ -13,7 +13,6 @@ use pkmc_util::{
 };
 
 use crate::{
-    generated::generated,
     particle::{self, Particle},
     text_component::TextComponent,
 };
@@ -22,7 +21,7 @@ use crate::{
 pub struct BundleDelimiter;
 
 impl ClientboundPacket for BundleDelimiter {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_BUNDLE_DELIMITER;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_BUNDLE_DELIMITER;
 
     fn packet_write(&self, _writer: impl Write) -> Result<(), ConnectionError> {
         Ok(())
@@ -54,7 +53,7 @@ pub struct Login {
 }
 
 impl ClientboundPacket for Login {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_LOGIN;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_LOGIN;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.entity_id.to_be_bytes())?;
@@ -94,7 +93,7 @@ impl ClientboundPacket for Login {
 pub struct Disconnect(pub TextComponent);
 
 impl ClientboundPacket for Disconnect {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_DISCONNECT;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_DISCONNECT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_nbt(&self.0.to_nbt())?;
@@ -109,7 +108,7 @@ pub enum GameEvent {
 }
 
 impl ClientboundPacket for GameEvent {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_GAME_EVENT;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_GAME_EVENT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         match self {
@@ -132,7 +131,7 @@ pub struct KeepAlive {
 }
 
 impl ClientboundPacket for KeepAlive {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_KEEP_ALIVE;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_KEEP_ALIVE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.id.to_be_bytes())?;
@@ -141,7 +140,7 @@ impl ClientboundPacket for KeepAlive {
 }
 
 impl ServerboundPacket for KeepAlive {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_KEEP_ALIVE;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_KEEP_ALIVE;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -157,7 +156,7 @@ impl ServerboundPacket for KeepAlive {
 pub struct PlayerLoaded;
 
 impl ServerboundPacket for PlayerLoaded {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_PLAYER_LOADED;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_PLAYER_LOADED;
 
     fn packet_read(_reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -185,7 +184,7 @@ pub struct PlayerPosition {
 }
 
 impl ClientboundPacket for PlayerPosition {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_POSITION;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_PLAYER_POSITION;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.teleport_id)?;
@@ -214,7 +213,7 @@ pub struct AcceptTeleportation {
 }
 
 impl ServerboundPacket for AcceptTeleportation {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_ACCEPT_TELEPORTATION;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_ACCEPT_TELEPORTATION;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -237,7 +236,7 @@ pub struct MovePlayerPosRot {
 }
 
 impl ServerboundPacket for MovePlayerPosRot {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_MOVE_PLAYER_POS_ROT;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_MOVE_PLAYER_POS_ROT;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -263,7 +262,7 @@ pub struct MovePlayerPos {
 }
 
 impl ServerboundPacket for MovePlayerPos {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_MOVE_PLAYER_POS;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_MOVE_PLAYER_POS;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -286,7 +285,7 @@ pub struct MovePlayerRot {
 }
 
 impl ServerboundPacket for MovePlayerRot {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_MOVE_PLAYER_ROT;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_MOVE_PLAYER_ROT;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -306,8 +305,7 @@ pub struct MovePlayerStatusOnly {
 }
 
 impl ServerboundPacket for MovePlayerStatusOnly {
-    const SERVERBOUND_ID: i32 =
-        generated::packet::play::SERVERBOUND_MINECRAFT_MOVE_PLAYER_STATUS_ONLY;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_MOVE_PLAYER_STATUS_ONLY;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -323,7 +321,7 @@ impl ServerboundPacket for MovePlayerStatusOnly {
 pub struct ClientTickEnd;
 
 impl ServerboundPacket for ClientTickEnd {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_CLIENT_TICK_END;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_CLIENT_TICK_END;
 
     fn packet_read(_reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -339,7 +337,7 @@ pub struct PlayerInput {
 }
 
 impl ServerboundPacket for PlayerInput {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_PLAYER_INPUT;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_PLAYER_INPUT;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -358,8 +356,7 @@ pub struct SetChunkCacheCenter {
 }
 
 impl ClientboundPacket for SetChunkCacheCenter {
-    const CLIENTBOUND_ID: i32 =
-        generated::packet::play::CLIENTBOUND_MINECRAFT_SET_CHUNK_CACHE_CENTER;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SET_CHUNK_CACHE_CENTER;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.chunk_x)?;
@@ -489,7 +486,7 @@ impl LevelChunkWithLight {
                         let block_id = if i == 0 { 1 } else { 0 };
                         // Num non-air blocks
                         writer.write_all(
-                            &if generated::block::is_air(block_id) {
+                            &if pkmc_generated::block::is_air(block_id) {
                                 0i16
                             } else {
                                 4096i16
@@ -513,8 +510,7 @@ impl LevelChunkWithLight {
 }
 
 impl ClientboundPacket for LevelChunkWithLight {
-    const CLIENTBOUND_ID: i32 =
-        generated::packet::play::CLIENTBOUND_MINECRAFT_LEVEL_CHUNK_WITH_LIGHT;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_LEVEL_CHUNK_WITH_LIGHT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.chunk_x.to_be_bytes())?;
@@ -532,7 +528,7 @@ pub struct ForgetLevelChunk {
 }
 
 impl ClientboundPacket for ForgetLevelChunk {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_FORGET_LEVEL_CHUNK;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_FORGET_LEVEL_CHUNK;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.chunk_z.to_be_bytes())?;
@@ -550,7 +546,7 @@ pub struct PlayerAbilities_Clientbound {
 }
 
 impl ClientboundPacket for PlayerAbilities_Clientbound {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_ABILITIES;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_PLAYER_ABILITIES;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.flags.to_be_bytes())?;
@@ -567,7 +563,7 @@ pub struct PlayerAbilities_Serverbound {
 }
 
 impl ServerboundPacket for PlayerAbilities_Serverbound {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_PLAYER_ABILITIES;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_PLAYER_ABILITIES;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -621,7 +617,7 @@ pub struct PlayerCommand {
 }
 
 impl ServerboundPacket for PlayerCommand {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_PLAYER_COMMAND;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_PLAYER_COMMAND;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -642,7 +638,7 @@ pub struct SystemChat {
 }
 
 impl ClientboundPacket for SystemChat {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_SYSTEM_CHAT;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SYSTEM_CHAT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_nbt(&self.content.to_nbt())?;
@@ -655,7 +651,7 @@ impl ClientboundPacket for SystemChat {
 pub struct SetActionBarText(pub TextComponent);
 
 impl ClientboundPacket for SetActionBarText {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_SET_ACTION_BAR_TEXT;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SET_ACTION_BAR_TEXT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_nbt(&self.0.to_nbt())?;
@@ -719,7 +715,7 @@ impl ServerLinks {
 }
 
 impl ClientboundPacket for ServerLinks {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_SERVER_LINKS;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SERVER_LINKS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.links.len() as i32)?;
@@ -735,7 +731,7 @@ impl ClientboundPacket for ServerLinks {
 pub struct SetCarriedItem(pub u16);
 
 impl ServerboundPacket for SetCarriedItem {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_SET_CARRIED_ITEM;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_SET_CARRIED_ITEM;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -749,8 +745,7 @@ impl ServerboundPacket for SetCarriedItem {
 pub struct SetChunkChacheRadius(pub i32);
 
 impl ClientboundPacket for SetChunkChacheRadius {
-    const CLIENTBOUND_ID: i32 =
-        generated::packet::play::CLIENTBOUND_MINECRAFT_SET_CHUNK_CACHE_RADIUS;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SET_CHUNK_CACHE_RADIUS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.0)?;
@@ -762,7 +757,7 @@ impl ClientboundPacket for SetChunkChacheRadius {
 pub struct SwingArm(pub bool);
 
 impl ServerboundPacket for SwingArm {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_SWING;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_SWING;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -783,8 +778,7 @@ pub struct UpdateSectionBlocks {
 }
 
 impl ClientboundPacket for UpdateSectionBlocks {
-    const CLIENTBOUND_ID: i32 =
-        generated::packet::play::CLIENTBOUND_MINECRAFT_SECTION_BLOCKS_UPDATE;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SECTION_BLOCKS_UPDATE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         //writer.write_position(&self.section)?;
@@ -823,7 +817,7 @@ pub struct AddEntity {
 }
 
 impl ClientboundPacket for AddEntity {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_ADD_ENTITY;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_ADD_ENTITY;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.id)?;
@@ -1225,7 +1219,7 @@ pub struct SetEntityMetadata {
 }
 
 impl ClientboundPacket for SetEntityMetadata {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_SET_ENTITY_DATA;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SET_ENTITY_DATA;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.entity_id)?;
@@ -1249,7 +1243,7 @@ pub struct EntityPositionSync {
 }
 
 impl ClientboundPacket for EntityPositionSync {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_ENTITY_POSITION_SYNC;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_ENTITY_POSITION_SYNC;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.entity_id)?;
@@ -1276,7 +1270,7 @@ pub struct MoveEntityPos {
 }
 
 impl ClientboundPacket for MoveEntityPos {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_MOVE_ENTITY_POS;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_MOVE_ENTITY_POS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.entity_id)?;
@@ -1300,7 +1294,7 @@ pub struct MoveEntityPosRot {
 }
 
 impl ClientboundPacket for MoveEntityPosRot {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_MOVE_ENTITY_POS_ROT;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_MOVE_ENTITY_POS_ROT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.entity_id)?;
@@ -1323,7 +1317,7 @@ pub struct MoveEntityRot {
 }
 
 impl ClientboundPacket for MoveEntityRot {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_MOVE_ENTITY_ROT;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_MOVE_ENTITY_ROT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.entity_id)?;
@@ -1341,7 +1335,7 @@ pub struct SetHeadRotation {
 }
 
 impl ClientboundPacket for SetHeadRotation {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_ROTATE_HEAD;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_ROTATE_HEAD;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.entity_id)?;
@@ -1384,7 +1378,7 @@ pub struct EntityAnimation {
 }
 
 impl ClientboundPacket for EntityAnimation {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_ANIMATE;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_ANIMATE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.entity_id)?;
@@ -1397,7 +1391,7 @@ impl ClientboundPacket for EntityAnimation {
 pub struct RemoveEntities(pub HashSet<i32>);
 
 impl ClientboundPacket for RemoveEntities {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_REMOVE_ENTITIES;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_REMOVE_ENTITIES;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.0.len() as i32)?;
@@ -1443,7 +1437,7 @@ impl PlayerInfoUpdateAction {
 pub struct PlayerInfoUpdate(pub HashMap<UUID, Vec<PlayerInfoUpdateAction>>);
 
 impl ClientboundPacket for PlayerInfoUpdate {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_INFO_UPDATE;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_PLAYER_INFO_UPDATE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         // https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Protocol#Player_Info_Update
@@ -1532,7 +1526,7 @@ impl ClientboundPacket for PlayerInfoUpdate {
 pub struct PlayerInfoRemove(pub HashSet<UUID>);
 
 impl ClientboundPacket for PlayerInfoRemove {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_PLAYER_INFO_REMOVE;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_PLAYER_INFO_REMOVE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.0.len() as i32)?;
@@ -1555,7 +1549,7 @@ pub struct LevelParticles {
 }
 
 impl ClientboundPacket for LevelParticles {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_LEVEL_PARTICLES;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_LEVEL_PARTICLES;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_bool(self.long_distance)?;
@@ -1568,7 +1562,7 @@ impl ClientboundPacket for LevelParticles {
         writer.write_all(&self.offset.z.to_be_bytes())?;
         writer.write_all(&self.max_speed.to_be_bytes())?;
         writer.write_all(&self.particle_count.to_be_bytes())?;
-        writer.write_varint(self.particle.r#type().to_value())?;
+        writer.write_varint(self.particle.r#type().to_id())?;
         match &self.particle {
             Particle::Block(block) => {
                 writer.write_varint(block.id_with_default_fallback().unwrap())?;
@@ -1646,7 +1640,7 @@ pub struct ChatMessage {
 }
 
 impl ServerboundPacket for ChatMessage {
-    const SERVERBOUND_ID: i32 = generated::packet::play::SERVERBOUND_MINECRAFT_CHAT;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_CHAT;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -1676,7 +1670,7 @@ pub struct DisguisedChatMessage {
 }
 
 impl ClientboundPacket for DisguisedChatMessage {
-    const CLIENTBOUND_ID: i32 = generated::packet::play::CLIENTBOUND_MINECRAFT_DISGUISED_CHAT;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_DISGUISED_CHAT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         // FIXME: Minecraft doesn't like decoding this, and I have no idea why.

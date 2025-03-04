@@ -12,11 +12,11 @@ use itertools::Itertools;
 use pkmc_defs::{
     biome::Biome,
     block::{Block, BlockEntity},
-    generated::{
-        generated, PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT,
-        PALETTED_DATA_BLOCKS_DIRECT, PALETTED_DATA_BLOCKS_INDIRECT,
-    },
     packet,
+};
+use pkmc_generated::consts::{
+    PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT, PALETTED_DATA_BLOCKS_DIRECT,
+    PALETTED_DATA_BLOCKS_INDIRECT,
 };
 use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
@@ -212,7 +212,7 @@ impl ChunkSectionBlockStates {
             .collect::<Box<[i32]>>();
 
         let block_count = (0..SECTION_BLOCKS)
-            .filter(|i| !generated::block::is_air(block_ids[self.palette_index(*i)]))
+            .filter(|i| !pkmc_generated::block::is_air(block_ids[self.palette_index(*i)]))
             .count();
 
         writer.write_all(&(block_count as u16).to_be_bytes())?;

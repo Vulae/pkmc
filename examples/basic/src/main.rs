@@ -8,7 +8,7 @@ use std::{
 };
 
 use config::Config;
-use pkmc_defs::generated::generated::registries::EntityType;
+use pkmc_generated::registry::EntityType;
 use pkmc_server::entity_manager::{Entity, EntityManager};
 use pkmc_util::{Vec3, UUID};
 use server::Server;

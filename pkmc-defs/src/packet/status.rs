@@ -6,13 +6,11 @@ use pkmc_util::{
 };
 use serde::Serialize;
 
-use crate::generated::generated;
-
 #[derive(Debug)]
 pub struct Request;
 
 impl ServerboundPacket for Request {
-    const SERVERBOUND_ID: i32 = generated::packet::status::SERVERBOUND_MINECRAFT_STATUS_REQUEST;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::status::SERVERBOUND_STATUS_REQUEST;
 
     fn packet_read(_reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -57,7 +55,7 @@ pub struct Response {
 }
 
 impl ClientboundPacket for Response {
-    const CLIENTBOUND_ID: i32 = generated::packet::status::CLIENTBOUND_MINECRAFT_STATUS_RESPONSE;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::status::CLIENTBOUND_STATUS_RESPONSE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_string(
@@ -73,7 +71,7 @@ pub struct Ping {
 }
 
 impl ServerboundPacket for Ping {
-    const SERVERBOUND_ID: i32 = generated::packet::status::SERVERBOUND_MINECRAFT_PING_REQUEST;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::status::SERVERBOUND_PING_REQUEST;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -86,7 +84,7 @@ impl ServerboundPacket for Ping {
 }
 
 impl ClientboundPacket for Ping {
-    const CLIENTBOUND_ID: i32 = generated::packet::status::CLIENTBOUND_MINECRAFT_PONG_RESPONSE;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::status::CLIENTBOUND_PONG_RESPONSE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.payload.to_be_bytes())?;

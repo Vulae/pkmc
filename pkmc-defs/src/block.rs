@@ -1,9 +1,8 @@
 use std::{collections::BTreeMap, sync::LazyLock};
 
+use pkmc_generated::{block::BLOCKS_REPORT, registry::BlockEntityType};
 use pkmc_util::{nbt::NBT, IdTable};
 use serde::{Deserialize, Serialize};
-
-use crate::generated::{generated, DATA};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[serde(transparent)]
@@ -83,7 +82,9 @@ impl Block {
         //    self.name.as_ref(),
         //    "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
         //)
-        self.id().map(generated::block::is_air).unwrap_or(false)
+        self.id()
+            .map(pkmc_generated::block::is_air)
+            .unwrap_or(false)
     }
 
     pub fn id(&self) -> Option<i32> {
@@ -122,13 +123,13 @@ impl BlockEntity {
     }
 
     pub fn block_entity_id(&self) -> Option<i32> {
-        BLOCK_ENTITIES_TO_IDS.get(&self.r#type).copied()
+        BlockEntityType::from_str(&self.r#type).map(|r#type| r#type.to_id())
     }
 }
 
 pub static BLOCKS_TO_IDS: LazyLock<IdTable<Block>> = LazyLock::new(|| {
     let mut blocks_to_ids = IdTable::new();
-    DATA.block.iter().for_each(|(name, block)| {
+    BLOCKS_REPORT.0.iter().for_each(|(name, block)| {
         block.states.iter().for_each(|state| {
             if state.default {
                 blocks_to_ids.insert(Block::new(name), state.id);
@@ -137,15 +138,6 @@ pub static BLOCKS_TO_IDS: LazyLock<IdTable<Block>> = LazyLock::new(|| {
         });
     });
     blocks_to_ids
-});
-
-pub static BLOCK_ENTITIES_TO_IDS: LazyLock<IdTable<String>> = LazyLock::new(|| {
-    let registry = DATA.registries.get("minecraft:block_entity_type").unwrap();
-    let mut blocks_entities_to_ids = IdTable::new();
-    registry.entries.iter().for_each(|(name, id)| {
-        blocks_entities_to_ids.insert(name.to_owned(), *id);
-    });
-    blocks_entities_to_ids
 });
 
 #[cfg(test)]

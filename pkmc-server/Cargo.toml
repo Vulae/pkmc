@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 pkmc-util = { path = "../pkmc-util" }
 pkmc-defs = { path = "../pkmc-defs" }
+pkmc-generated = { path = "../pkmc-generated/generated" }
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true

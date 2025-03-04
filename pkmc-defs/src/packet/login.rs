@@ -8,8 +8,6 @@ use pkmc_util::{
     serverbound_packet_enum, UUID,
 };
 
-use crate::generated::generated;
-
 #[derive(Debug)]
 pub struct Hello {
     pub name: String,
@@ -17,7 +15,7 @@ pub struct Hello {
 }
 
 impl ServerboundPacket for Hello {
-    const SERVERBOUND_ID: i32 = generated::packet::login::SERVERBOUND_MINECRAFT_HELLO;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::login::SERVERBOUND_HELLO;
 
     fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
     where
@@ -36,7 +34,7 @@ pub struct Compression {
 }
 
 impl ClientboundPacket for Compression {
-    const CLIENTBOUND_ID: i32 = generated::packet::login::CLIENTBOUND_MINECRAFT_LOGIN_COMPRESSION;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::login::CLIENTBOUND_LOGIN_COMPRESSION;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_varint(self.threshold)?;
@@ -59,7 +57,7 @@ pub struct Finished {
 }
 
 impl ClientboundPacket for Finished {
-    const CLIENTBOUND_ID: i32 = generated::packet::login::CLIENTBOUND_MINECRAFT_LOGIN_FINISHED;
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::login::CLIENTBOUND_LOGIN_FINISHED;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_uuid(&self.uuid)?;
@@ -83,7 +81,7 @@ impl ClientboundPacket for Finished {
 pub struct Acknowledged;
 
 impl ServerboundPacket for Acknowledged {
-    const SERVERBOUND_ID: i32 = generated::packet::login::SERVERBOUND_MINECRAFT_LOGIN_ACKNOWLEDGED;
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::login::SERVERBOUND_LOGIN_ACKNOWLEDGED;
 
     fn packet_read(_reader: impl Read) -> Result<Self, ConnectionError>
     where

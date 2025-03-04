@@ -4,13 +4,11 @@ use std::{
     sync::{atomic::AtomicI32, Arc, Mutex},
 };
 
-use pkmc_defs::{
-    generated::generated::registries::EntityType,
-    packet::{
-        self,
-        play::{EntityAnimationType, EntityMetadataBundle},
-    },
+use pkmc_defs::packet::{
+    self,
+    play::{EntityAnimationType, EntityMetadataBundle},
 };
+use pkmc_generated::registry::EntityType;
 use pkmc_util::{
     packet::{ConnectionError, ConnectionSender},
     Vec3, WeakList, WeakMap, UUID,
@@ -388,7 +386,7 @@ impl EntityManager {
         EntityBase {
             handler: self.entities.insert_ignored(
                 id,
-                Mutex::new(EntityHandler::new(id, uuid, entity.r#type().to_value())),
+                Mutex::new(EntityHandler::new(id, uuid, entity.r#type().to_id())),
             ),
             inner: entity,
             uuid,

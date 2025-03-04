@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "pkmc-util",
-    "pkmc-generated",
+    "pkmc-generated/extractor",
+    "pkmc-generated/proc",
+    "pkmc-generated/generated",
     "pkmc-defs",
     "pkmc-server",
     # Examples on this type of project layout *seem* impossible, so we just include it as a member instead.

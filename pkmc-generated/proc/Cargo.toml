@@ -1,12 +1,17 @@
 [package]
-name = "pkmc-defs"
+name = "pkmc-generated-proc"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+proc-macro = true
+
 [dependencies]
-pkmc-util = { path = "../pkmc-util" }
-pkmc-generated = { path = "../pkmc-generated/generated" }
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 flate2.workspace = true
+syn = "2.0.98"
+quote = "1.0.38"
+proc-macro2 = "1.0.93"
+convert_case = "0.8.0"

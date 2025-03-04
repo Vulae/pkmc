@@ -1,6 +1,7 @@
+use pkmc_generated::registry::ParticleType;
 use pkmc_util::{Color, Position, Vec3};
 
-use crate::{block::Block, generated::generated::registries::ParticleType};
+use crate::block::Block;
 
 #[derive(Debug)]
 pub enum Particle {

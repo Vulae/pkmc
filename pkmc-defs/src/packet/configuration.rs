@@ -6,8 +6,8 @@ use std::{
 use pkmc_util::{
     nbt::NBT,
     packet::{
-        ClientboundPacket, ConnectionError, ReadExtPacket as _, ServerboundPacket,
-        WriteExtPacket as _,
+        ClientboundPacket, ConnectionError, PacketDecoder as _, PacketEncoder as _,
+        ServerboundPacket,
     },
     serverbound_packet_enum, ReadExt as _,
 };
@@ -25,10 +25,9 @@ impl ServerboundPacket for CustomPayload {
     where
         Self: Sized,
     {
-        let channel = reader.read_string()?;
-        match channel.as_ref() {
-            "minecraft:brand" => Ok(CustomPayload::Brand(reader.read_string()?)),
-            _ => Ok(CustomPayload::Unknown {
+        match reader.decode::<String>()? {
+            channel if &channel == "minecraft:brand" => Ok(CustomPayload::Brand(reader.decode()?)),
+            channel => Ok(CustomPayload::Unknown {
                 channel,
                 data: reader.read_all()?,
             }),
@@ -42,12 +41,12 @@ impl ClientboundPacket for CustomPayload {
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         match self {
             CustomPayload::Unknown { channel, data } => {
-                writer.write_string(channel)?;
+                writer.encode(channel)?;
                 writer.write_all(data)?;
             }
             CustomPayload::Brand(brand) => {
-                writer.write_string("minecraft:brand")?;
-                writer.write_string(brand)?;
+                writer.encode(&"minecraft:brand".to_owned())?;
+                writer.encode(brand)?;
             }
         }
         Ok(())
@@ -75,15 +74,15 @@ impl ServerboundPacket for ClientInformation {
         Self: Sized,
     {
         Ok(Self {
-            locale: reader.read_string()?,
+            locale: reader.decode()?,
             view_distance: i8::from_be_bytes(reader.read_const()?),
-            chat_mode: reader.read_varint()?,
-            chat_colors: reader.read_bool()?,
+            chat_mode: reader.decode()?,
+            chat_colors: reader.decode()?,
             displayed_skin_parts: u8::from_be_bytes(reader.read_const()?),
             // TODO: Is this correct?
-            left_handed: reader.read_varint()? == 0,
-            enable_text_filtering: reader.read_bool()?,
-            allow_server_listings: reader.read_bool()?,
+            left_handed: reader.decode::<i32>()? == 0,
+            enable_text_filtering: reader.decode()?,
+            allow_server_listings: reader.decode()?,
         })
     }
 }
@@ -105,11 +104,11 @@ impl ClientboundPacket for SelectKnownPacks {
         pkmc_generated::packet::configuration::CLIENTBOUND_SELECT_KNOWN_PACKS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.packs.len() as i32)?;
+        writer.encode(self.packs.len() as i32)?;
         for pack in self.packs.iter() {
-            writer.write_string(&pack.namespace)?;
-            writer.write_string(&pack.id)?;
-            writer.write_string(&pack.version)?;
+            writer.encode(&pack.namespace)?;
+            writer.encode(&pack.id)?;
+            writer.encode(&pack.version)?;
         }
         Ok(())
     }
@@ -124,12 +123,12 @@ impl ServerboundPacket for SelectKnownPacks {
         Self: Sized,
     {
         Ok(Self {
-            packs: (0..reader.read_varint()?)
+            packs: (0..reader.decode::<i32>()?)
                 .map(|_| {
                     Ok(KnownPack {
-                        namespace: reader.read_string()?,
-                        id: reader.read_string()?,
-                        version: reader.read_string()?,
+                        namespace: reader.decode()?,
+                        id: reader.decode()?,
+                        version: reader.decode()?,
                     })
                 })
                 .collect::<Result<Vec<_>, std::io::Error>>()?,
@@ -153,16 +152,11 @@ impl ClientboundPacket for RegistryData {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::configuration::CLIENTBOUND_REGISTRY_DATA;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_string(&self.registry_id)?;
-        writer.write_varint(self.entries.len() as i32)?;
+        writer.encode(&self.registry_id)?;
+        writer.encode(self.entries.len() as i32)?;
         for entry in self.entries.iter() {
-            writer.write_string(&entry.entry_id)?;
-            if let Some(data) = &entry.data {
-                writer.write_bool(true)?;
-                writer.write_nbt(data)?;
-            } else {
-                writer.write_bool(false)?;
-            }
+            writer.encode(&entry.entry_id)?;
+            writer.encode(entry.data.as_ref())?;
         }
         Ok(())
     }
@@ -177,16 +171,16 @@ impl ClientboundPacket for UpdateTags {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::configuration::CLIENTBOUND_UPDATE_TAGS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.registries.len() as i32)?;
+        writer.encode(self.registries.len() as i32)?;
         self.registries
             .iter()
             .try_for_each(|(registry_name, registry_data)| {
-                writer.write_string(registry_name)?;
-                writer.write_varint(registry_data.len() as i32)?;
+                writer.encode(registry_name)?;
+                writer.encode(registry_data.len() as i32)?;
                 registry_data.iter().try_for_each(|(tag_name, tag_ids)| {
-                    writer.write_string(tag_name)?;
-                    writer.write_varint(tag_ids.len() as i32)?;
-                    tag_ids.iter().try_for_each(|id| writer.write_varint(*id))?;
+                    writer.encode(tag_name)?;
+                    writer.encode(tag_ids.len() as i32)?;
+                    tag_ids.iter().try_for_each(|id| writer.encode(*id))?;
                     Ok::<(), std::io::Error>(())
                 })?;
                 Ok::<(), std::io::Error>(())

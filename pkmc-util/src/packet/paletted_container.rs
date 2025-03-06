@@ -1,6 +1,6 @@
 use itertools::Itertools as _;
 
-use crate::{packet::WriteExtPacket, PackedArray};
+use crate::{packet::PacketEncoder as _, PackedArray};
 use std::{collections::HashMap, io::Write};
 
 pub const fn calculate_bpe(num_unique_values: usize) -> u8 {
@@ -19,8 +19,8 @@ struct SinglePalettedContainer {
 impl SinglePalettedContainer {
     fn write(&self, mut writer: impl Write) -> std::io::Result<()> {
         writer.write_all(&0u8.to_be_bytes())?;
-        writer.write_varint(self.value)?;
-        writer.write_varint(0)?;
+        writer.encode(self.value)?;
+        writer.encode(0)?;
         Ok(())
     }
 }
@@ -36,14 +36,11 @@ impl IndirectPalettedContainer<'_> {
     fn write(&self, mut writer: impl Write) -> std::io::Result<()> {
         writer.write_all(&self.bpe.to_be_bytes())?;
 
-        writer.write_varint(self.palette.len() as i32)?;
+        writer.encode(self.palette.len() as i32)?;
         self.palette
             .iter()
             .sorted_by(|(_, a), (_, b)| a.cmp(b))
-            .try_for_each(|(v, _)| {
-                writer.write_varint(*v)?;
-                Ok::<_, std::io::Error>(())
-            })?;
+            .try_for_each(|(v, _)| writer.encode(*v))?;
 
         let mut packed = PackedArray::new(self.bpe, self.values.len());
         let remaining = packed.consume(
@@ -54,7 +51,7 @@ impl IndirectPalettedContainer<'_> {
         debug_assert!(remaining.count() == 0);
         let packed = packed.into_inner();
 
-        writer.write_varint(packed.len() as i32)?;
+        writer.encode(packed.len() as i32)?;
         packed.iter().try_for_each(|v| {
             writer.write_all(&v.to_be_bytes())?;
             Ok::<_, std::io::Error>(())
@@ -81,7 +78,7 @@ impl DirectPalettedContainer<'_> {
         debug_assert!(remaining.count() == 0);
         let packed = packed.into_inner();
 
-        writer.write_varint(packed.len() as i32)?;
+        writer.encode(packed.len() as i32)?;
         packed.iter().try_for_each(|v| {
             writer.write_all(&v.to_be_bytes())?;
             Ok::<_, std::io::Error>(())
@@ -182,10 +179,10 @@ pub fn to_paletted_data_precomputed(
                     .to_be_bytes(),
             )?;
 
-            writer.write_varint(palette.len() as i32)?;
-            palette.iter().try_for_each(|v| writer.write_varint(*v))?;
+            writer.encode(palette.len() as i32)?;
+            palette.iter().try_for_each(|v| writer.encode(*v))?;
 
-            writer.write_varint(packed_indices.len() as i32)?;
+            writer.encode(packed_indices.len() as i32)?;
             packed_indices
                 .iter()
                 .try_for_each(|v| writer.write_all(&v.to_be_bytes()))?;
@@ -197,7 +194,7 @@ pub fn to_paletted_data_precomputed(
 
             writer.write_all(&direct_size.to_be_bytes())?;
 
-            writer.write_varint(packed_indices.len() as i32)?;
+            writer.encode(packed_indices.len() as i32)?;
             packed_indices
                 .iter()
                 .try_for_each(|v| writer.write_all(&v.to_be_bytes()))?;

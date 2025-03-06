@@ -1,15 +1,14 @@
+mod codec;
 mod connection;
 pub mod handler;
-mod packet;
 mod paletted_container;
-mod reader;
-mod writer;
+pub mod varint;
 
+use std::io::{Read, Write};
+
+pub use codec::*;
 pub use connection::*;
-pub use packet::*;
 pub use paletted_container::*;
-pub use reader::*;
-pub use writer::*;
 
 use thiserror::Error;
 
@@ -25,99 +24,93 @@ pub enum ConnectionError {
     InvalidRawPacketIDForParser(i32, i32),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct BitSet {
-    length: usize,
-    data: Box<[u64]>,
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RawPacket {
+    pub id: i32,
+    pub data: Box<[u8]>,
 }
 
-impl BitSet {
-    pub fn new(length: usize) -> Self {
-        Self {
-            length,
-            data: vec![0; length.div_ceil(64)].into_boxed_slice(),
-        }
+impl RawPacket {
+    pub fn new(id: i32, data: Box<[u8]>) -> Self {
+        Self { id, data }
     }
 
-    pub fn from_inner(length: usize, inner: Box<[u64]>) -> Self {
-        assert!(inner.len() == length.div_ceil(64));
-        Self {
-            length,
-            data: inner,
-        }
-    }
-
-    pub fn into_inner(self) -> Box<[u64]> {
-        self.data
-    }
-
-    pub fn inner(&self) -> &[u64] {
-        &self.data
-    }
-
-    pub fn num_bits(&self) -> usize {
-        self.length
-    }
-
-    pub fn get(&self, index: usize) -> Option<bool> {
-        (index < self.length).then(|| (self.data[index >> 6] & (1 << (index & 0b111111))) != 0)
-    }
-
-    pub fn set(&mut self, index: usize, set: bool) {
-        if index >= self.length {
-            return;
-        }
-        if set {
-            self.data[index >> 6] |= 1 << (index & 0b111111);
-        } else {
-            self.data[index >> 6] &= !(1 << (index & 0b111111));
-        }
+    pub fn into_bytes(self) -> Box<[u8]> {
+        let mut data = Vec::new();
+        data.encode(self.id).unwrap();
+        data.write_all(&self.data).unwrap();
+        data.into_boxed_slice()
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct FixedBitSet<const N: usize> {
-    data: Box<[u8]>,
+pub trait ServerboundPacket {
+    const SERVERBOUND_ID: i32;
+
+    fn serverbound_id(&self) -> i32 {
+        Self::SERVERBOUND_ID
+    }
+
+    fn packet_read(reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized;
+
+    fn packet_raw_read(raw: &RawPacket) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        if raw.id != Self::SERVERBOUND_ID {
+            return Err(ConnectionError::InvalidRawPacketIDForParser(
+                Self::SERVERBOUND_ID,
+                raw.id,
+            ));
+        }
+        Self::packet_read(std::io::Cursor::new(&raw.data))
+    }
 }
 
-impl<const N: usize> Default for FixedBitSet<N> {
-    fn default() -> Self {
-        Self {
-            data: vec![0u8; N.div_ceil(8)].into_boxed_slice(),
-        }
+pub trait ClientboundPacket {
+    const CLIENTBOUND_ID: i32;
+
+    fn clientbound_id(&self) -> i32 {
+        Self::CLIENTBOUND_ID
+    }
+
+    fn packet_write(&self, writer: impl Write) -> Result<(), ConnectionError>;
+
+    fn raw_packet(&self) -> Result<RawPacket, ConnectionError> {
+        let mut raw_data = Vec::new();
+        self.packet_write(&mut raw_data)?;
+        Ok(RawPacket {
+            id: self.clientbound_id(),
+            data: raw_data.into_boxed_slice(),
+        })
     }
 }
 
-impl<const N: usize> FixedBitSet<N> {
-    pub fn from_inner(inner: Box<[u8]>) -> Self {
-        assert!(inner.len() == N.div_ceil(8));
-        Self { data: inner }
-    }
-
-    pub fn into_inner(self) -> Box<[u8]> {
-        self.data
-    }
-
-    pub fn inner(&self) -> &[u8] {
-        &self.data
-    }
-
-    pub const fn num_bits() -> usize {
-        N
-    }
-
-    pub fn get(&self, index: usize) -> Option<bool> {
-        (index < N).then(|| (self.data[index >> 3] & (1 << (index & 0b111))) != 0)
-    }
-
-    pub fn set(&mut self, index: usize, set: bool) {
-        if index >= N {
-            return;
+#[macro_export]
+macro_rules! serverbound_packet_enum {
+    ($enum_vis:vis $enum_name:ident; $($type:ty, $name:ident;)*) => {
+        #[derive(Debug)]
+        #[allow(unused)]
+        $enum_vis enum $enum_name {
+            $(
+                $name($type),
+            )*
         }
-        if set {
-            self.data[index >> 3] |= 1 << (index & 0b111);
-        } else {
-            self.data[index >> 3] &= !(1 << index & 0b111);
+
+        impl TryFrom<$crate::packet::RawPacket> for $enum_name {
+            type Error = $crate::packet::ConnectionError;
+
+            fn try_from(value: $crate::packet::RawPacket) -> std::result::Result<Self, Self::Error> {
+                use $crate::packet::ServerboundPacket as _;
+                let mut reader = std::io::Cursor::new(&value.data);
+                match value.id {
+                    $(
+                        <$type>::SERVERBOUND_ID => Ok(Self::$name(<$type>::packet_read(&mut reader)?)),
+                    )*
+                    _ => Err(Self::Error::UnsupportedPacket(stringify!($enum_name).to_owned(), value.id)),
+                }
+            }
         }
     }
 }

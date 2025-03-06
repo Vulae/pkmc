@@ -5,11 +5,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{packet::try_read_varint_ret_bytes, ReadExt};
+use crate::{packet::varint::try_read_varint_ret_bytes, ReadExt as _};
 
 use super::{
     handler::{PacketHandler, UncompressedPacketHandler},
-    ClientboundPacket, ConnectionError, RawPacket, ReadExtPacket, WriteExtPacket,
+    ClientboundPacket, ConnectionError, PacketDecoder as _, PacketEncoder as _, RawPacket,
 };
 
 #[derive(Debug)]
@@ -40,7 +40,7 @@ impl ConnectionSender {
         let encoded = handler.write(&bytes)?;
 
         let mut with_size = Vec::new();
-        with_size.write_varint(encoded.len() as i32)?;
+        with_size.encode(encoded.len() as i32)?;
         with_size.write_all(&encoded)?;
 
         let mut inner = self.inner.lock().unwrap();
@@ -163,7 +163,7 @@ impl Connection {
 
         let mut reader = std::io::Cursor::new(&decoded);
         Ok(Some(RawPacket {
-            id: reader.read_varint()?,
+            id: reader.decode::<i32>()?,
             data: reader.read_all()?,
         }))
     }

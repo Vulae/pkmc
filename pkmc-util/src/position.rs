@@ -1,4 +1,7 @@
-use crate::Vec3;
+use crate::{
+    packet::{PacketDecodable, PacketEncodable},
+    ReadExt as _, Transmutable, Vec3,
+};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 /// An in-world block position
@@ -171,5 +174,26 @@ impl Position {
         offset: Position,
     ) -> impl Iterator<Item = Position> {
         iter.flat_map(move |p| p.checked_add(offset))
+    }
+}
+
+impl PacketEncodable for &Position {
+    fn packet_encode(self, mut writer: impl std::io::Write) -> std::io::Result<()> {
+        let v: u64 = Transmutable::<u64>::transmute((self.x as i64) << 38)
+            | (Transmutable::<u64>::transmute((self.y as i64) << 52) >> 52)
+            | (Transmutable::<u64>::transmute((self.z as i64) << 38) >> 26);
+        writer.write_all(&v.to_be_bytes())?;
+        Ok(())
+    }
+}
+
+impl PacketDecodable for Position {
+    fn packet_decode(mut reader: impl std::io::Read) -> std::io::Result<Self> {
+        let v = i64::from_be_bytes(reader.read_const()?);
+        Ok(Position {
+            x: (v >> 38) as i32,
+            y: (v << 52 >> 52) as i16,
+            z: (v << 26 >> 38) as i32,
+        })
     }
 }

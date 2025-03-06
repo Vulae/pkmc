@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+mod bitset;
 mod color;
 mod iter_retain;
 pub mod nbt;
@@ -12,6 +13,7 @@ mod uuid;
 mod vec3;
 mod weak_collections;
 
+pub use bitset::*;
 pub use color::*;
 pub use iter_retain::*;
 pub use packed_array::*;

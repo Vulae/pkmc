@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use pkmc_util::{
-    packet::{ConnectionError, ReadExtPacket as _, ServerboundPacket},
+    packet::{ConnectionError, PacketDecoder as _, ServerboundPacket},
     ReadExt as _,
 };
 
@@ -43,10 +43,10 @@ impl ServerboundPacket for Intention {
         Self: Sized,
     {
         Ok(Self {
-            protocol_version: reader.read_varint()?,
-            server_address: reader.read_string()?,
+            protocol_version: reader.decode()?,
+            server_address: reader.decode()?,
             server_port: u16::from_be_bytes(reader.read_const()?),
-            next_state: IntentionNextState::try_from(reader.read_varint()?)?,
+            next_state: IntentionNextState::try_from(reader.decode::<i32>()?)?,
         })
     }
 }

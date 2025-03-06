@@ -1,7 +1,7 @@
 use std::io::Write as _;
 
 use crate::{
-    packet::{ConnectionError, ReadExtPacket, WriteExtPacket},
+    packet::{ConnectionError, PacketDecoder as _, PacketEncoder as _},
     ReadExt,
 };
 
@@ -25,7 +25,7 @@ impl ZlibPacketHandler {
     pub(super) fn write(&self, raw: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
         if raw.len() < self.threshold {
             let mut writer = Vec::new();
-            writer.write_varint(0)?;
+            writer.encode(0)?;
             writer.write_all(raw)?;
             Ok(writer.into_boxed_slice())
         } else {
@@ -37,7 +37,7 @@ impl ZlibPacketHandler {
             let compressed = compressed.flush_finish()?;
 
             let mut writer = Vec::new();
-            writer.write_varint(raw.len() as i32)?;
+            writer.encode(raw.len() as i32)?;
             writer.write_all(&compressed)?;
 
             Ok(writer.into_boxed_slice())
@@ -46,7 +46,7 @@ impl ZlibPacketHandler {
 
     pub(super) fn read(&self, buf: &[u8]) -> Result<Box<[u8]>, ConnectionError> {
         let mut reader = std::io::Cursor::new(buf);
-        match reader.read_varint()? {
+        match reader.decode::<i32>()? {
             0 => Ok(reader.read_all()?),
             _uncompressed_size => Ok(flate2::read::ZlibDecoder::new(reader).read_all()?),
         }

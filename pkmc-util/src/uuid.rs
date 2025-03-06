@@ -1,6 +1,12 @@
 use std::{
     fmt,
+    io::{Read, Write},
     time::{SystemTime, UNIX_EPOCH},
+};
+
+use crate::{
+    packet::{PacketDecodable, PacketEncodable},
+    ReadExt,
 };
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
@@ -30,5 +36,17 @@ impl fmt::Display for UUID {
             self.0[8], self.0[9],
             self.0[10], self.0[11], self.0[12], self.0[13], self.0[14], self.0[15],
         )
+    }
+}
+
+impl PacketEncodable for &UUID {
+    fn packet_encode(self, mut writer: impl Write) -> std::io::Result<()> {
+        writer.write_all(&self.0)
+    }
+}
+
+impl PacketDecodable for UUID {
+    fn packet_decode(mut reader: impl Read) -> std::io::Result<Self> {
+        Ok(UUID(reader.read_const()?))
     }
 }

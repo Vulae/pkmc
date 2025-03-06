@@ -2,8 +2,8 @@ use std::io::{Read, Write};
 
 use pkmc_util::{
     packet::{
-        ClientboundPacket, ConnectionError, ReadExtPacket as _, ServerboundPacket,
-        WriteExtPacket as _,
+        ClientboundPacket, ConnectionError, PacketDecoder as _, PacketEncoder as _,
+        ServerboundPacket,
     },
     serverbound_packet_enum, UUID,
 };
@@ -22,8 +22,8 @@ impl ServerboundPacket for Hello {
         Self: Sized,
     {
         Ok(Self {
-            name: reader.read_string()?,
-            uuid: reader.read_uuid()?,
+            name: reader.decode()?,
+            uuid: reader.decode()?,
         })
     }
 }
@@ -37,7 +37,7 @@ impl ClientboundPacket for Compression {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::login::CLIENTBOUND_LOGIN_COMPRESSION;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.threshold)?;
+        writer.encode(self.threshold)?;
         Ok(())
     }
 }
@@ -60,18 +60,13 @@ impl ClientboundPacket for Finished {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::login::CLIENTBOUND_LOGIN_FINISHED;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_uuid(&self.uuid)?;
-        writer.write_string(&self.name)?;
-        writer.write_varint(self.properties.len() as i32)?;
+        writer.encode(&self.uuid)?;
+        writer.encode(&self.name)?;
+        writer.encode(self.properties.len() as i32)?;
         for property in self.properties.iter() {
-            writer.write_string(&property.name)?;
-            writer.write_string(&property.value)?;
-            if let Some(signature) = &property.signature {
-                writer.write_bool(true)?;
-                writer.write_string(signature)?;
-            } else {
-                writer.write_bool(false)?;
-            }
+            writer.encode(&property.name)?;
+            writer.encode(&property.value)?;
+            writer.encode(property.signature.as_ref())?;
         }
         Ok(())
     }

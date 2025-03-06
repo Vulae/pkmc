@@ -6,10 +6,10 @@ use std::{
 use pkmc_util::{
     nbt::NBT,
     packet::{
-        to_paletted_data_singular, BitSet, ClientboundPacket, ConnectionError, FixedBitSet,
-        ReadExtPacket as _, ServerboundPacket, WriteExtPacket,
+        to_paletted_data_singular, ClientboundPacket, ConnectionError, PacketDecoder as _,
+        PacketEncoder as _, ServerboundPacket,
     },
-    serverbound_packet_enum, Position, ReadExt as _, Transmutable, Vec3, UUID,
+    serverbound_packet_enum, BitSet, FixedBitSet, Position, ReadExt as _, Transmutable, Vec3, UUID,
 };
 
 use crate::{
@@ -57,34 +57,32 @@ impl ClientboundPacket for Login {
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.write_all(&self.entity_id.to_be_bytes())?;
-        writer.write_bool(self.is_hardcore)?;
-        writer.write_varint(self.dimensions.len() as i32)?;
-        for dimension in self.dimensions.iter() {
-            writer.write_string(dimension)?;
-        }
-        writer.write_varint(self.max_players)?;
-        writer.write_varint(self.view_distance)?;
-        writer.write_varint(self.simulation_distance)?;
-        writer.write_bool(self.reduced_debug_info)?;
-        writer.write_bool(self.enable_respawn_screen)?;
-        writer.write_bool(self.do_limited_crafting)?;
-        writer.write_varint(self.dimension_type)?;
-        writer.write_string(&self.dimension_name)?;
+        writer.encode(self.is_hardcore)?;
+        writer.encode(self.dimensions.len() as i32)?;
+        self.dimensions.iter().try_for_each(|s| writer.encode(s))?;
+        writer.encode(self.max_players)?;
+        writer.encode(self.view_distance)?;
+        writer.encode(self.simulation_distance)?;
+        writer.encode(self.reduced_debug_info)?;
+        writer.encode(self.enable_respawn_screen)?;
+        writer.encode(self.do_limited_crafting)?;
+        writer.encode(self.dimension_type)?;
+        writer.encode(&self.dimension_name)?;
         writer.write_all(&self.hashed_seed.to_be_bytes())?;
         writer.write_all(&self.game_mode.to_be_bytes())?;
         writer.write_all(&self.previous_game_mode.to_be_bytes())?;
-        writer.write_bool(self.is_debug)?;
-        writer.write_bool(self.is_flat)?;
+        writer.encode(self.is_debug)?;
+        writer.encode(self.is_flat)?;
         if let Some(death) = &self.death {
-            writer.write_bool(true)?;
-            writer.write_string(&death.0)?;
-            writer.write_position(&death.1)?;
+            writer.encode(true)?;
+            writer.encode(&death.0)?;
+            writer.encode(&death.1)?;
         } else {
-            writer.write_bool(false)?;
+            writer.encode(false)?;
         }
-        writer.write_varint(self.portal_cooldown)?;
-        writer.write_varint(self.sea_level)?;
-        writer.write_bool(self.enforces_secure_chat)?;
+        writer.encode(self.portal_cooldown)?;
+        writer.encode(self.sea_level)?;
+        writer.encode(self.enforces_secure_chat)?;
         Ok(())
     }
 }
@@ -96,7 +94,7 @@ impl ClientboundPacket for Disconnect {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_DISCONNECT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_nbt(&self.0.to_nbt())?;
+        writer.encode(&self.0.to_nbt())?;
         Ok(())
     }
 }
@@ -187,7 +185,7 @@ impl ClientboundPacket for PlayerPosition {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_PLAYER_POSITION;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.teleport_id)?;
+        writer.encode(self.teleport_id)?;
         writer.write_all(&self.x.to_be_bytes())?;
         writer.write_all(&self.y.to_be_bytes())?;
         writer.write_all(&self.z.to_be_bytes())?;
@@ -220,7 +218,7 @@ impl ServerboundPacket for AcceptTeleportation {
         Self: Sized,
     {
         Ok(Self {
-            teleport_id: reader.read_varint()?,
+            teleport_id: reader.decode()?,
         })
     }
 }
@@ -359,8 +357,8 @@ impl ClientboundPacket for SetChunkCacheCenter {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SET_CHUNK_CACHE_CENTER;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.chunk_x)?;
-        writer.write_varint(self.chunk_z)?;
+        writer.encode(self.chunk_x)?;
+        writer.encode(self.chunk_z)?;
         Ok(())
     }
 }
@@ -385,17 +383,17 @@ pub struct LevelChunkData {
 
 impl LevelChunkData {
     fn write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_nbt(&self.heightmaps)?;
-        writer.write_varint(self.data.len() as i32)?;
+        writer.encode(&self.heightmaps)?;
+        writer.encode(self.data.len() as i32)?;
         writer.write_all(&self.data)?;
-        writer.write_varint(self.block_entities.len() as i32)?;
+        writer.encode(self.block_entities.len() as i32)?;
         for block_entity in self.block_entities.iter() {
             debug_assert!(block_entity.x <= 15);
             debug_assert!(block_entity.z <= 15);
             writer.write_all(&((block_entity.x << 4) | block_entity.z).to_be_bytes())?;
             writer.write_all(&block_entity.y.to_be_bytes())?;
-            writer.write_varint(block_entity.r#type)?;
-            writer.write_nbt(&block_entity.data)?;
+            writer.encode(block_entity.r#type)?;
+            writer.encode(&block_entity.data)?;
         }
         //println!("{:#?}", self.block_entities);
         Ok(())
@@ -435,28 +433,28 @@ impl LevelLightData {
             .iter()
             .enumerate()
             .for_each(|(i, a)| sky_light_bitset.set(i, a.is_some()));
-        writer.write_bitset(&sky_light_bitset)?;
+        writer.encode(&sky_light_bitset)?;
 
         let mut block_light_bitset = BitSet::new(self.num_sections + 2);
         self.block_lights_arrays
             .iter()
             .enumerate()
             .for_each(|(i, a)| block_light_bitset.set(i, a.is_some()));
-        writer.write_bitset(&block_light_bitset)?;
+        writer.encode(&block_light_bitset)?;
 
         // ?????
-        writer.write_varint(0)?;
-        writer.write_varint(0)?;
+        writer.encode(0)?;
+        writer.encode(0)?;
 
-        writer.write_varint(self.sky_lights_arrays.iter().flatten().count() as i32)?;
+        writer.encode(self.sky_lights_arrays.iter().flatten().count() as i32)?;
         for sky_light_array in self.sky_lights_arrays.iter().flatten() {
-            writer.write_varint(2048)?;
+            writer.encode(2048)?;
             writer.write_all(sky_light_array)?;
         }
 
-        writer.write_varint(self.block_lights_arrays.iter().flatten().count() as i32)?;
+        writer.encode(self.block_lights_arrays.iter().flatten().count() as i32)?;
         for block_light_array in self.block_lights_arrays.iter().flatten() {
-            writer.write_varint(2048)?;
+            writer.encode(2048)?;
             writer.write_all(block_light_array)?;
         }
 
@@ -624,9 +622,9 @@ impl ServerboundPacket for PlayerCommand {
         Self: Sized,
     {
         Ok(Self {
-            entity_id: reader.read_varint()?,
-            action: PlayerCommandAction::try_from(reader.read_varint()?)?,
-            jump_boost: reader.read_varint()?,
+            entity_id: reader.decode()?,
+            action: PlayerCommandAction::try_from(reader.decode::<i32>()?)?,
+            jump_boost: reader.decode()?,
         })
     }
 }
@@ -641,8 +639,8 @@ impl ClientboundPacket for SystemChat {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SYSTEM_CHAT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_nbt(&self.content.to_nbt())?;
-        writer.write_bool(self.overlay)?;
+        writer.encode(&self.content.to_nbt())?;
+        writer.encode(self.overlay)?;
         Ok(())
     }
 }
@@ -654,7 +652,7 @@ impl ClientboundPacket for SetActionBarText {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SET_ACTION_BAR_TEXT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_nbt(&self.0.to_nbt())?;
+        writer.encode(&self.0.to_nbt())?;
         Ok(())
     }
 }
@@ -676,19 +674,19 @@ pub enum ServerLink {
 
 impl ServerLink {
     fn write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_bool(!matches!(self, ServerLink::Custom(..)))?;
+        writer.encode(!matches!(self, ServerLink::Custom(..)))?;
         match self {
-            ServerLink::BugReport => writer.write_varint(0)?,
-            ServerLink::CommunityGuidelines => writer.write_varint(1)?,
-            ServerLink::Support => writer.write_varint(2)?,
-            ServerLink::Status => writer.write_varint(3)?,
-            ServerLink::Feedback => writer.write_varint(4)?,
-            ServerLink::Community => writer.write_varint(5)?,
-            ServerLink::Website => writer.write_varint(6)?,
-            ServerLink::Forums => writer.write_varint(7)?,
-            ServerLink::News => writer.write_varint(8)?,
-            ServerLink::Announcements => writer.write_varint(9)?,
-            ServerLink::Custom(text_component) => writer.write_nbt(&text_component.to_nbt())?,
+            ServerLink::BugReport => writer.encode(0)?,
+            ServerLink::CommunityGuidelines => writer.encode(1)?,
+            ServerLink::Support => writer.encode(2)?,
+            ServerLink::Status => writer.encode(3)?,
+            ServerLink::Feedback => writer.encode(4)?,
+            ServerLink::Community => writer.encode(5)?,
+            ServerLink::Website => writer.encode(6)?,
+            ServerLink::Forums => writer.encode(7)?,
+            ServerLink::News => writer.encode(8)?,
+            ServerLink::Announcements => writer.encode(9)?,
+            ServerLink::Custom(text_component) => writer.encode(&text_component.to_nbt())?,
         }
         Ok(())
     }
@@ -718,10 +716,10 @@ impl ClientboundPacket for ServerLinks {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SERVER_LINKS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.links.len() as i32)?;
+        writer.encode(self.links.len() as i32)?;
         for (link, url) in &self.links {
             link.write(&mut writer)?;
-            writer.write_string(url)?;
+            writer.encode(url)?;
         }
         Ok(())
     }
@@ -748,7 +746,7 @@ impl ClientboundPacket for SetChunkChacheRadius {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SET_CHUNK_CACHE_RADIUS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.0)?;
+        writer.encode(self.0)?;
         Ok(())
     }
 }
@@ -763,7 +761,7 @@ impl ServerboundPacket for SwingArm {
     where
         Self: Sized,
     {
-        Ok(Self(match reader.read_varint()? {
+        Ok(Self(match reader.decode::<i32>()? {
             0 => false,
             1 => true,
             _ => return Err(ConnectionError::Other("Invalid swing arm.".into())),
@@ -787,15 +785,14 @@ impl ClientboundPacket for UpdateSectionBlocks {
             | (Transmutable::<u64>::transmute((self.section.z as i64) << 42) >> 22);
         writer.write_all(&v.to_be_bytes())?;
 
-        writer.write_varint(self.blocks.len() as i32)?;
+        writer.encode(self.blocks.len() as i32)?;
         for (bx, by, bz, id) in self.blocks.iter() {
             debug_assert!(*bx <= 15);
             debug_assert!(*by <= 15);
             debug_assert!(*bz <= 15);
             let encoded_position: u64 = ((*bx as u64) << 8) | ((*bz as u64) << 4) | (*by as u64);
-            writer.write_varlong(
-                ((*id as i64) << 12) | Transmutable::<i64>::transmute(encoded_position),
-            )?;
+            writer
+                .encode(((*id as i64) << 12) | Transmutable::<i64>::transmute(encoded_position))?;
         }
         Ok(())
     }
@@ -820,16 +817,16 @@ impl ClientboundPacket for AddEntity {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_ADD_ENTITY;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.id)?;
-        writer.write_uuid(&self.uuid)?;
-        writer.write_varint(self.r#type)?;
+        writer.encode(self.id)?;
+        writer.encode(&self.uuid)?;
+        writer.encode(self.r#type)?;
         writer.write_all(&self.position.x.to_be_bytes())?;
         writer.write_all(&self.position.y.to_be_bytes())?;
         writer.write_all(&self.position.z.to_be_bytes())?;
         writer.write_all(&self.pitch.to_be_bytes())?;
         writer.write_all(&self.yaw.to_be_bytes())?;
         writer.write_all(&self.head_yaw.to_be_bytes())?;
-        writer.write_varint(self.data)?;
+        writer.encode(self.data)?;
         writer.write_all(&self.velocity_x.to_be_bytes())?;
         writer.write_all(&self.velocity_y.to_be_bytes())?;
         writer.write_all(&self.velocity_z.to_be_bytes())?;
@@ -884,157 +881,145 @@ impl EntityMetadata {
     pub fn write(&self, mut writer: impl Write) -> std::io::Result<()> {
         match self {
             EntityMetadata::Byte(byte) => {
-                writer.write_varint(0)?;
+                writer.encode(0)?;
                 writer.write_all(&byte.to_be_bytes())?;
             }
             EntityMetadata::VarInt(varint) => {
-                writer.write_varint(1)?;
-                writer.write_varint(*varint)?;
+                writer.encode(1)?;
+                writer.encode(*varint)?;
             }
             EntityMetadata::VarLong(varlong) => {
-                writer.write_varint(2)?;
-                writer.write_varlong(*varlong)?;
+                writer.encode(2)?;
+                writer.encode(*varlong)?;
             }
             EntityMetadata::Float(float) => {
-                writer.write_varint(3)?;
+                writer.encode(3)?;
                 writer.write_all(&float.to_be_bytes())?;
             }
             EntityMetadata::String(string) => {
-                writer.write_varint(4)?;
-                writer.write_string(string)?;
+                writer.encode(4)?;
+                writer.encode(string)?;
             }
             EntityMetadata::TextComponent(text_component) => {
-                writer.write_varint(5)?;
-                writer.write_nbt(&text_component.to_nbt())?;
+                writer.encode(5)?;
+                writer.encode(&text_component.to_nbt())?;
             }
             EntityMetadata::OptionalTextComponent(text_component) => {
-                writer.write_varint(6)?;
-                if let Some(text_component) = text_component {
-                    writer.write_bool(true)?;
-                    writer.write_nbt(&text_component.to_nbt())?;
-                } else {
-                    writer.write_bool(false)?;
-                }
+                writer.encode(6)?;
+                writer.encode(text_component.as_ref().map(|v| v.to_nbt()).as_ref())?;
             }
             EntityMetadata::Slot => todo!(),
             EntityMetadata::Boolean(bool) => {
-                writer.write_varint(8)?;
-                writer.write_bool(*bool)?;
+                writer.encode(8)?;
+                writer.encode(*bool)?;
             }
             EntityMetadata::Rotations(rx, ry, rz) => {
-                writer.write_varint(9)?;
+                writer.encode(9)?;
                 writer.write_all(&rx.to_be_bytes())?;
                 writer.write_all(&ry.to_be_bytes())?;
                 writer.write_all(&rz.to_be_bytes())?;
             }
             EntityMetadata::Position(position) => {
-                writer.write_varint(10)?;
-                writer.write_position(position)?;
+                writer.encode(10)?;
+                writer.encode(position)?;
             }
             EntityMetadata::OptionalPosition(position) => {
-                writer.write_varint(11)?;
-                if let Some(position) = position {
-                    writer.write_bool(true)?;
-                    writer.write_position(position)?;
-                } else {
-                    writer.write_bool(false)?;
-                }
+                writer.encode(11)?;
+                writer.encode(position.as_ref())?;
             }
             EntityMetadata::Direction(direction) => {
-                writer.write_varint(12)?;
-                writer.write_varint(*direction)?;
+                writer.encode(12)?;
+                writer.encode(*direction)?;
             }
             EntityMetadata::OptionalUUID(uuid) => {
-                writer.write_varint(13)?;
-                if let Some(uuid) = uuid {
-                    writer.write_bool(true)?;
-                    writer.write_uuid(uuid)?;
-                } else {
-                    writer.write_bool(false)?;
-                }
+                writer.encode(13)?;
+                writer.encode(uuid.as_ref())?;
             }
             EntityMetadata::BlockState(block_state) => {
-                writer.write_varint(14)?;
-                writer.write_varint(*block_state)?;
+                writer.encode(14)?;
+                writer.encode(*block_state)?;
             }
             EntityMetadata::OptionalBlockState(block_state) => {
-                writer.write_varint(15)?;
+                writer.encode(15)?;
                 if let Some(block_state) = block_state {
                     assert_ne!(*block_state, 0);
-                    writer.write_varint(*block_state)?;
+                    writer.encode(*block_state)?;
                 } else {
-                    writer.write_varint(0)?;
+                    writer.encode(0)?;
                 }
             }
             EntityMetadata::NBT(nbt) => {
-                writer.write_varint(16)?;
-                writer.write_nbt(nbt)?;
+                writer.encode(16)?;
+                writer.encode(nbt)?;
             }
             EntityMetadata::Particle(particle) => {
-                writer.write_varint(17)?;
-                writer.write_varint(*particle)?;
+                writer.encode(17)?;
+                writer.encode(*particle)?;
             }
             EntityMetadata::Particles(particles) => {
-                writer.write_varint(18)?;
-                writer.write_varint(particles.len() as i32)?;
+                writer.encode(18)?;
+                writer.encode(particles.len() as i32)?;
                 for particle in particles {
-                    writer.write_varint(*particle)?;
+                    writer.encode(*particle)?;
                 }
             }
             EntityMetadata::VillagerData(r#type, profession, level) => {
-                writer.write_varint(19)?;
-                writer.write_varint(*r#type)?;
-                writer.write_varint(*profession)?;
-                writer.write_varint(*level)?;
+                writer.encode(19)?;
+                writer.encode(*r#type)?;
+                writer.encode(*profession)?;
+                writer.encode(*level)?;
             }
             EntityMetadata::OptionalVarInt(var_int) => {
-                writer.write_varint(20)?;
+                writer.encode(20)?;
                 if let Some(var_int) = var_int {
-                    writer.write_varint(*var_int + 1)?;
+                    writer.encode(var_int.checked_add(1).ok_or(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "Optional var int size too large",
+                    ))?)?;
                 } else {
-                    writer.write_varint(0)?;
+                    writer.encode(0)?;
                 }
             }
             EntityMetadata::Pose(pose) => {
-                writer.write_varint(21)?;
-                writer.write_varint(*pose)?;
+                writer.encode(21)?;
+                writer.encode(*pose)?;
             }
             EntityMetadata::CatVariant(cat_variant) => {
-                writer.write_varint(22)?;
-                writer.write_varint(*cat_variant)?;
+                writer.encode(22)?;
+                writer.encode(*cat_variant)?;
             }
             EntityMetadata::WolfVariant(_wolf_variant) => todo!(),
             EntityMetadata::FrogVariant(frog_variant) => {
-                writer.write_varint(24)?;
-                writer.write_varint(*frog_variant)?;
+                writer.encode(24)?;
+                writer.encode(*frog_variant)?;
             }
             EntityMetadata::OptionalGlobalPosition(global_position) => {
-                writer.write_varint(25)?;
+                writer.encode(25)?;
                 if let Some((dimension, position)) = global_position {
-                    writer.write_bool(true)?;
-                    writer.write_string(dimension)?;
-                    writer.write_position(position)?;
+                    writer.encode(true)?;
+                    writer.encode(dimension)?;
+                    writer.encode(position)?;
                 } else {
-                    writer.write_bool(false)?;
+                    writer.encode(false)?;
                 }
             }
             EntityMetadata::PaintingVariant => todo!(),
             EntityMetadata::SnifferState(sniffer_state) => {
-                writer.write_varint(27)?;
-                writer.write_varint(*sniffer_state)?;
+                writer.encode(27)?;
+                writer.encode(*sniffer_state)?;
             }
             EntityMetadata::ArmadilloState(armadillo_state) => {
-                writer.write_varint(28)?;
-                writer.write_varint(*armadillo_state)?;
+                writer.encode(28)?;
+                writer.encode(*armadillo_state)?;
             }
             EntityMetadata::Vector3(vec3) => {
-                writer.write_varint(29)?;
+                writer.encode(29)?;
                 writer.write_all(&vec3.x.to_be_bytes())?;
                 writer.write_all(&vec3.y.to_be_bytes())?;
                 writer.write_all(&vec3.z.to_be_bytes())?;
             }
             EntityMetadata::Quaternion(x, y, z, w) => {
-                writer.write_varint(30)?;
+                writer.encode(30)?;
                 writer.write_all(&x.to_be_bytes())?;
                 writer.write_all(&y.to_be_bytes())?;
                 writer.write_all(&z.to_be_bytes())?;
@@ -1222,7 +1207,7 @@ impl ClientboundPacket for SetEntityMetadata {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SET_ENTITY_DATA;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.entity_id)?;
+        writer.encode(self.entity_id)?;
         for (index, data) in &self.metadata.0 {
             writer.write_all(&index.to_be_bytes())?;
             data.write(&mut writer)?;
@@ -1246,7 +1231,7 @@ impl ClientboundPacket for EntityPositionSync {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_ENTITY_POSITION_SYNC;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.entity_id)?;
+        writer.encode(self.entity_id)?;
         writer.write_all(&self.position.x.to_be_bytes())?;
         writer.write_all(&self.position.y.to_be_bytes())?;
         writer.write_all(&self.position.z.to_be_bytes())?;
@@ -1255,7 +1240,7 @@ impl ClientboundPacket for EntityPositionSync {
         writer.write_all(&self.velocity.z.to_be_bytes())?;
         writer.write_all(&self.yaw.to_be_bytes())?;
         writer.write_all(&self.pitch.to_be_bytes())?;
-        writer.write_bool(self.on_ground)?;
+        writer.encode(self.on_ground)?;
         Ok(())
     }
 }
@@ -1273,11 +1258,11 @@ impl ClientboundPacket for MoveEntityPos {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_MOVE_ENTITY_POS;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.entity_id)?;
+        writer.encode(self.entity_id)?;
         writer.write_all(&self.delta_x.to_be_bytes())?;
         writer.write_all(&self.delta_y.to_be_bytes())?;
         writer.write_all(&self.delta_z.to_be_bytes())?;
-        writer.write_bool(self.on_ground)?;
+        writer.encode(self.on_ground)?;
         Ok(())
     }
 }
@@ -1297,13 +1282,13 @@ impl ClientboundPacket for MoveEntityPosRot {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_MOVE_ENTITY_POS_ROT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.entity_id)?;
+        writer.encode(self.entity_id)?;
         writer.write_all(&self.delta_x.to_be_bytes())?;
         writer.write_all(&self.delta_y.to_be_bytes())?;
         writer.write_all(&self.delta_z.to_be_bytes())?;
         writer.write_all(&self.yaw.to_be_bytes())?;
         writer.write_all(&self.pitch.to_be_bytes())?;
-        writer.write_bool(self.on_ground)?;
+        writer.encode(self.on_ground)?;
         Ok(())
     }
 }
@@ -1320,10 +1305,10 @@ impl ClientboundPacket for MoveEntityRot {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_MOVE_ENTITY_ROT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.entity_id)?;
+        writer.encode(self.entity_id)?;
         writer.write_all(&self.yaw.to_be_bytes())?;
         writer.write_all(&self.pitch.to_be_bytes())?;
-        writer.write_bool(self.on_ground)?;
+        writer.encode(self.on_ground)?;
         Ok(())
     }
 }
@@ -1338,7 +1323,7 @@ impl ClientboundPacket for SetHeadRotation {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_ROTATE_HEAD;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.entity_id)?;
+        writer.encode(self.entity_id)?;
         writer.write_all(&self.yaw.to_be_bytes())?;
         Ok(())
     }
@@ -1381,7 +1366,7 @@ impl ClientboundPacket for EntityAnimation {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_ANIMATE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.entity_id)?;
+        writer.encode(self.entity_id)?;
         writer.write_all(&self.r#type.value().to_be_bytes())?;
         Ok(())
     }
@@ -1394,9 +1379,9 @@ impl ClientboundPacket for RemoveEntities {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_REMOVE_ENTITIES;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.0.len() as i32)?;
+        writer.encode(self.0.len() as i32)?;
         for id in &self.0 {
-            writer.write_varint(*id)?;
+            writer.encode(*id)?;
         }
         Ok(())
     }
@@ -1446,16 +1431,16 @@ impl ClientboundPacket for PlayerInfoUpdate {
             //    "PlayerInfoUpdate cannot be empty.".into(),
             //));
             writer.write_all(&0u8.to_be_bytes())?;
-            writer.write_varint(0)?;
+            writer.encode(0)?;
             return Ok(());
         };
         let actions_flags = first.iter().fold(0, |f, a| f | a.flag());
         writer.write_all(&actions_flags.to_be_bytes())?;
 
-        writer.write_varint(self.0.len() as i32)?;
+        writer.encode(self.0.len() as i32)?;
 
         for (uuid, actions) in &self.0 {
-            writer.write_uuid(uuid)?;
+            writer.encode(uuid)?;
 
             // Validate flags
             if Some(actions_flags)
@@ -1475,44 +1460,34 @@ impl ClientboundPacket for PlayerInfoUpdate {
             for action in sorted_actions {
                 match action {
                     PlayerInfoUpdateAction::AddPlayer { name, properties } => {
-                        writer.write_string(name)?;
-                        writer.write_varint(properties.len() as i32)?;
+                        writer.encode(name)?;
+                        writer.encode(properties.len() as i32)?;
                         for (key, (value, signature)) in properties {
-                            writer.write_string(key)?;
-                            writer.write_string(value)?;
-                            if let Some(signature) = &signature {
-                                writer.write_bool(true)?;
-                                writer.write_string(signature)?;
-                            } else {
-                                writer.write_bool(false)?;
-                            }
+                            writer.encode(key)?;
+                            writer.encode(value)?;
+                            writer.encode(signature.as_ref())?;
                         }
                     }
                     PlayerInfoUpdateAction::InitializeChat => {
-                        writer.write_bool(false)?;
+                        writer.encode(false)?;
                     }
                     PlayerInfoUpdateAction::UpdateGamemode(gamemode) => {
-                        writer.write_varint(*gamemode)?;
+                        writer.encode(*gamemode)?;
                     }
                     PlayerInfoUpdateAction::UpdateListed(listed) => {
-                        writer.write_bool(*listed)?;
+                        writer.encode(*listed)?;
                     }
                     PlayerInfoUpdateAction::UpdateLatency(latency) => {
-                        writer.write_varint(*latency)?;
+                        writer.encode(*latency)?;
                     }
                     PlayerInfoUpdateAction::UpdateDisplayName(display_name) => {
-                        if let Some(display_name) = display_name.as_ref() {
-                            writer.write_bool(true)?;
-                            writer.write_nbt(&display_name.to_nbt())?;
-                        } else {
-                            writer.write_bool(false)?;
-                        }
+                        writer.encode(display_name.as_ref().map(|v| v.to_nbt()).as_ref())?;
                     }
                     PlayerInfoUpdateAction::UpdateListPriority(list_priority) => {
-                        writer.write_varint(*list_priority)?;
+                        writer.encode(*list_priority)?;
                     }
                     PlayerInfoUpdateAction::UpdateHat(hat) => {
-                        writer.write_bool(*hat)?;
+                        writer.encode(*hat)?;
                     }
                 }
             }
@@ -1529,9 +1504,9 @@ impl ClientboundPacket for PlayerInfoRemove {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_PLAYER_INFO_REMOVE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_varint(self.0.len() as i32)?;
+        writer.encode(self.0.len() as i32)?;
         for uuid in &self.0 {
-            writer.write_uuid(uuid)?;
+            writer.encode(uuid)?;
         }
         Ok(())
     }
@@ -1552,8 +1527,8 @@ impl ClientboundPacket for LevelParticles {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_LEVEL_PARTICLES;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_bool(self.long_distance)?;
-        writer.write_bool(self.always_visible)?;
+        writer.encode(self.long_distance)?;
+        writer.encode(self.always_visible)?;
         writer.write_all(&self.position.x.to_be_bytes())?;
         writer.write_all(&self.position.y.to_be_bytes())?;
         writer.write_all(&self.position.z.to_be_bytes())?;
@@ -1562,13 +1537,13 @@ impl ClientboundPacket for LevelParticles {
         writer.write_all(&self.offset.z.to_be_bytes())?;
         writer.write_all(&self.max_speed.to_be_bytes())?;
         writer.write_all(&self.particle_count.to_be_bytes())?;
-        writer.write_varint(self.particle.r#type().to_id())?;
+        writer.encode(self.particle.r#type().to_id())?;
         match &self.particle {
             Particle::Block(block) => {
-                writer.write_varint(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.id_with_default_fallback().unwrap())?;
             }
             Particle::BlockMarker(block) => {
-                writer.write_varint(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.id_with_default_fallback().unwrap())?;
             }
             Particle::Dust { color, scale } => {
                 writer.write_all(&color.to_argb8888(0).to_be_bytes())?;
@@ -1583,7 +1558,7 @@ impl ClientboundPacket for LevelParticles {
                 writer.write_all(&color.to_argb8888(*alpha).to_be_bytes())?;
             }
             Particle::FallingDust(block) => {
-                writer.write_varint(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.id_with_default_fallback().unwrap())?;
             }
             Particle::SculkCharge { roll } => {
                 writer.write_all(&roll.to_be_bytes())?;
@@ -1592,16 +1567,16 @@ impl ClientboundPacket for LevelParticles {
             Particle::Vibration { source, ticks } => {
                 match source {
                     particle::VibrationSource::Block(position) => {
-                        writer.write_varint(0)?;
-                        writer.write_position(position)?;
+                        writer.encode(0)?;
+                        writer.encode(position)?;
                     }
                     particle::VibrationSource::Entity { id, eye_height } => {
-                        writer.write_varint(1)?;
-                        writer.write_varint(*id)?;
+                        writer.encode(1)?;
+                        writer.encode(*id)?;
                         writer.write_all(&eye_height.to_be_bytes())?;
                     }
                 }
-                writer.write_varint(*ticks)?;
+                writer.encode(*ticks)?;
             }
             Particle::Trail {
                 position,
@@ -1612,16 +1587,16 @@ impl ClientboundPacket for LevelParticles {
                 writer.write_all(&position.y.to_be_bytes())?;
                 writer.write_all(&position.z.to_be_bytes())?;
                 writer.write_all(&color.to_argb8888(0).to_be_bytes())?;
-                writer.write_varint(*duration)?;
+                writer.encode(*duration)?;
             }
             Particle::Shriek { delay } => {
-                writer.write_varint(*delay)?;
+                writer.encode(*delay)?;
             }
             Particle::DustPillar(block) => {
-                writer.write_varint(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.id_with_default_fallback().unwrap())?;
             }
             Particle::BlockCrumble(block) => {
-                writer.write_varint(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.id_with_default_fallback().unwrap())?;
             }
             _ => {}
         }
@@ -1647,15 +1622,15 @@ impl ServerboundPacket for ChatMessage {
         Self: Sized,
     {
         Ok(Self {
-            message: reader.read_string()?,
+            message: reader.decode()?,
             timestamp: i64::from_be_bytes(reader.read_const()?),
             salt: i64::from_be_bytes(reader.read_const()?),
             signature: reader
-                .read_bool()?
+                .decode::<bool>()?
                 .then(|| reader.read_const())
                 .transpose()?,
-            message_count: reader.read_varint()?,
-            acknowledged: reader.read_fixed_bit_set()?,
+            message_count: reader.decode()?,
+            acknowledged: reader.decode()?,
         })
     }
 }
@@ -1674,14 +1649,14 @@ impl ClientboundPacket for DisguisedChatMessage {
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         // FIXME: Minecraft doesn't like decoding this, and I have no idea why.
-        writer.write_nbt(&self.message.to_nbt())?;
-        writer.write_varint(self.chat_type)?;
-        writer.write_nbt(&self.sender_name.to_nbt())?;
+        writer.encode(&self.message.to_nbt())?;
+        writer.encode(self.chat_type)?;
+        writer.encode(&self.sender_name.to_nbt())?;
         if let Some(target_name) = &self.target_name {
-            writer.write_bool(true)?;
-            writer.write_nbt(&target_name.to_nbt())?;
+            writer.encode(true)?;
+            writer.encode(&target_name.to_nbt())?;
         } else {
-            writer.write_bool(false)?;
+            writer.encode(false)?;
         }
         Ok(())
     }

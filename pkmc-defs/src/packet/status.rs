@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
 use pkmc_util::{
-    packet::{ClientboundPacket, ConnectionError, ServerboundPacket, WriteExtPacket as _},
+    packet::{ClientboundPacket, ConnectionError, PacketEncoder as _, ServerboundPacket},
     serverbound_packet_enum, ReadExt as _,
 };
 use serde::Serialize;
@@ -58,7 +58,7 @@ impl ClientboundPacket for Response {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::status::CLIENTBOUND_STATUS_RESPONSE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.write_string(
+        writer.encode(
             &serde_json::to_string(self).map_err(|err| ConnectionError::Other(Box::new(err)))?,
         )?;
         Ok(())

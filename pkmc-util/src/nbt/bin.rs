@@ -4,7 +4,10 @@ use std::{
 };
 
 use super::{tag::NBTTag, NBTError, NBTList, NBT};
-use crate::{ReadExt as _, Transmutable};
+use crate::{
+    packet::{PacketDecodable, PacketEncodable},
+    ReadExt as _, Transmutable,
+};
 
 impl NBT {
     fn read_tag(data: &mut impl Read, tag: NBTTag) -> Result<Self, NBTError> {
@@ -155,5 +158,18 @@ impl NBT {
 
     pub fn write_network(&self, mut data: impl Write) -> Result<(), NBTError> {
         self.write_tag(None, true, &mut data)
+    }
+}
+
+impl PacketEncodable for &NBT {
+    fn packet_encode(self, writer: impl Write) -> std::io::Result<()> {
+        self.write_network(writer)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
+    }
+}
+
+impl PacketDecodable for NBT {
+    fn packet_decode(reader: impl Read) -> std::io::Result<Self> {
+        NBT::read_network(reader).map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
     }
 }

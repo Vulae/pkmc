@@ -492,7 +492,6 @@ struct Region {
     region_x: i32,
     region_z: i32,
     locations: [(u32, u32); CHUNKS_PER_REGION],
-    loaded_chunks: HashMap<(u8, u8), Option<AnvilChunk>>,
 }
 
 impl Region {
@@ -510,7 +509,6 @@ impl Region {
             region_x,
             region_z,
             locations,
-            loaded_chunks: HashMap::new(),
         })
     }
 
@@ -554,43 +552,11 @@ impl Region {
             .transpose()?)
     }
 
-    fn prepare_chunk(
-        &mut self,
-        chunk_x: u8,
-        chunk_z: u8,
-        section_y_range: std::ops::RangeInclusive<i8>,
-    ) -> Result<(), AnvilError> {
-        if self.loaded_chunks.contains_key(&(chunk_x, chunk_z)) {
-            return Ok(());
-        }
-
-        match self
+    fn load_chunk(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<AnvilChunk>, AnvilError> {
+        Ok(self
             .read_nbt(chunk_x, chunk_z)?
-            .map(|nbt| from_nbt::<AnvilChunk>(nbt.1))
-            .transpose()?
-        {
-            Some(mut chunk) => {
-                chunk.initialize(section_y_range);
-                self.loaded_chunks.insert((chunk_x, chunk_z), Some(chunk));
-            }
-            None => {
-                self.loaded_chunks.insert((chunk_x, chunk_z), None);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn get_chunk(&self, chunk_x: u8, chunk_z: u8) -> Option<&AnvilChunk> {
-        self.loaded_chunks
-            .get(&(chunk_x, chunk_z))
-            .and_then(|i| i.as_ref())
-    }
-
-    fn get_chunk_mut(&mut self, chunk_x: u8, chunk_z: u8) -> Option<&mut AnvilChunk> {
-        self.loaded_chunks
-            .get_mut(&(chunk_x, chunk_z))
-            .and_then(|i| i.as_mut())
+            .map(|(_, nbt)| from_nbt::<AnvilChunk>(nbt))
+            .transpose()?)
     }
 }
 
@@ -624,7 +590,8 @@ impl SectionDiff {
 pub struct AnvilWorld {
     root: PathBuf,
     identifier: String,
-    loaded_regions: HashMap<(i32, i32), Option<Region>>,
+    regions: HashMap<(i32, i32), Option<Region>>,
+    chunks: HashMap<(i32, i32), Option<AnvilChunk>>,
     section_y_range: std::ops::RangeInclusive<i8>,
     biome_mapper: IdTable<Biome>,
     viewers: WeakList<Mutex<WorldViewer>>,
@@ -641,7 +608,8 @@ impl AnvilWorld {
         Self {
             root: root.into(),
             identifier: identifier.to_owned(),
-            loaded_regions: HashMap::new(),
+            regions: HashMap::new(),
+            chunks: HashMap::new(),
             section_y_range,
             biome_mapper,
             viewers: WeakList::new(),
@@ -653,10 +621,15 @@ impl AnvilWorld {
         &self.identifier
     }
 
+    fn section_y_range(&self) -> std::ops::RangeInclusive<i8> {
+        self.section_y_range.clone()
+    }
+
     fn prepare_region(&mut self, region_x: i32, region_z: i32) -> Result<(), AnvilError> {
-        if self.loaded_regions.contains_key(&(region_x, region_z)) {
+        if self.regions.contains_key(&(region_x, region_z)) {
             return Ok(());
         }
+        self.regions.insert((region_x, region_z), None);
 
         let mut path = self.root.clone();
         path.push("region");
@@ -664,13 +637,12 @@ impl AnvilWorld {
 
         let file = match std::fs::File::open(path) {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                self.loaded_regions.insert((region_x, region_z), None);
                 return Ok(());
             }
             result => result,
         }?;
 
-        self.loaded_regions.insert(
+        self.regions.insert(
             (region_x, region_z),
             Some(Region::load(file, region_x, region_z)?),
         );
@@ -678,62 +650,30 @@ impl AnvilWorld {
         Ok(())
     }
 
-    fn get_region(&self, region_x: i32, region_z: i32) -> Option<&Region> {
-        self.loaded_regions
-            .get(&(region_x, region_z))
-            .and_then(|i| i.as_ref())
-    }
-
-    fn get_region_mut(&mut self, region_x: i32, region_z: i32) -> Option<&mut Region> {
-        self.loaded_regions
-            .get_mut(&(region_x, region_z))
-            .and_then(|i| i.as_mut())
-    }
-
     fn prepare_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Result<(), AnvilError> {
+        if self.chunks.contains_key(&(chunk_x, chunk_z)) {
+            return Ok(());
+        }
+        self.chunks.insert((chunk_x, chunk_z), None);
+
         let region_x = chunk_x.div_euclid(REGION_SIZE as i32);
         let region_z = chunk_z.div_euclid(REGION_SIZE as i32);
 
         self.prepare_region(region_x, region_z)?;
 
-        let section_y_range = self.section_y_range();
-        if let Some(region) = self.get_region_mut(region_x, region_z) {
-            region.prepare_chunk(
-                chunk_x.wrapping_rem_euclid(REGION_SIZE as i32) as u8,
-                chunk_z.wrapping_rem_euclid(REGION_SIZE as i32) as u8,
-                section_y_range,
-            )?;
+        let Some(Some(region)) = self.regions.get_mut(&(region_x, region_z)) else {
+            return Ok(());
+        };
+
+        if let Some(mut chunk) = region.load_chunk(
+            chunk_x.rem_euclid(REGION_SIZE as i32) as u8,
+            chunk_z.rem_euclid(REGION_SIZE as i32) as u8,
+        )? {
+            chunk.initialize(self.section_y_range());
+            self.chunks.insert((chunk_x, chunk_z), Some(chunk));
         }
 
         Ok(())
-    }
-
-    fn get_chunk(&self, chunk_x: i32, chunk_z: i32) -> Option<&AnvilChunk> {
-        let region = self.get_region(
-            chunk_x.div_euclid(REGION_SIZE as i32),
-            chunk_z.div_euclid(REGION_SIZE as i32),
-        )?;
-        let chunk = region.get_chunk(
-            (chunk_x.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
-            (chunk_z.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
-        )?;
-        Some(chunk)
-    }
-
-    fn get_chunk_mut(&mut self, chunk_x: i32, chunk_z: i32) -> Option<&mut AnvilChunk> {
-        let region = self.get_region_mut(
-            chunk_x.div_euclid(REGION_SIZE as i32),
-            chunk_z.div_euclid(REGION_SIZE as i32),
-        )?;
-        let chunk = region.get_chunk_mut(
-            (chunk_x.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
-            (chunk_z.wrapping_rem_euclid(REGION_SIZE as i32)) as u8,
-        )?;
-        Some(chunk)
-    }
-
-    fn section_y_range(&self) -> std::ops::RangeInclusive<i8> {
-        self.section_y_range.clone()
     }
 }
 
@@ -805,7 +745,7 @@ impl World for AnvilWorld {
 
             if let Some(to_load) = viewer.loader.next_to_load() {
                 self.prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
-                if let Some(chunk) = self.get_chunk(to_load.chunk_x, to_load.chunk_z) {
+                if let Some(Some(chunk)) = self.chunks.get(&(to_load.chunk_x, to_load.chunk_z)) {
                     viewer
                         .connection()
                         .send(&chunk.to_packet(&self.biome_mapper)?)?;
@@ -830,10 +770,10 @@ impl World for AnvilWorld {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
         self.prepare_chunk(chunk_x, chunk_z)?;
-        let Some(chunk) = self.get_chunk(
+        let Some(Some(chunk)) = self.chunks.get(&(
             position.x.div_euclid(CHUNK_SIZE as i32),
             position.z.div_euclid(CHUNK_SIZE as i32),
-        ) else {
+        )) else {
             return Ok(None);
         };
         Ok(chunk.get_block(
@@ -847,10 +787,10 @@ impl World for AnvilWorld {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
         self.prepare_chunk(chunk_x, chunk_z)?;
-        let Some(chunk) = self.get_chunk_mut(
+        let Some(Some(chunk)) = self.chunks.get_mut(&(
             position.x.div_euclid(CHUNK_SIZE as i32),
             position.z.div_euclid(CHUNK_SIZE as i32),
-        ) else {
+        )) else {
             return Ok(());
         };
         if chunk.set_block(

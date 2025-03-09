@@ -5,7 +5,7 @@ use std::{
     hash::Hash,
     io::{Seek, Write},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use itertools::Itertools;
@@ -32,8 +32,7 @@ use thiserror::Error;
 use crate::world::{chunk_loader::ChunkPosition, SECTION_SIZE};
 
 use super::{
-    chunk_loader::ChunkLoader, World, WorldBlock, WorldViewer, CHUNK_SIZE, SECTION_BIOMES,
-    SECTION_BLOCKS,
+    chunk_loader::ChunkLoader, World, WorldBlock, CHUNK_SIZE, SECTION_BIOMES, SECTION_BLOCKS,
 };
 
 pub const REGION_SIZE: usize = 32;
@@ -560,67 +559,16 @@ impl Region {
     }
 }
 
-#[derive(Debug, Default)]
-struct SectionDiff {
-    // TODO: Don't use hashmap for this.
-    change: HashMap<(u8, u8, u8), i32>,
-}
-
-impl SectionDiff {
-    fn set(&mut self, x: u8, y: u8, z: u8, id: i32) {
-        assert!((x as usize) < SECTION_SIZE);
-        assert!((y as usize) < SECTION_SIZE);
-        assert!((z as usize) < SECTION_SIZE);
-        self.change.insert((x, y, z), id);
-    }
-
-    fn num_blocks(&self) -> usize {
-        self.change.len()
-    }
-
-    fn to_packet_data(&self) -> Vec<(u8, u8, u8, i32)> {
-        self.change
-            .iter()
-            .map(|((x, y, z), v)| (*x, *y, *z, *v))
-            .collect()
-    }
-}
-
 #[derive(Debug)]
-pub struct AnvilWorld {
+struct AnvilWorldInner {
     root: PathBuf,
-    identifier: String,
     regions: HashMap<(i32, i32), Option<Region>>,
-    chunks: HashMap<(i32, i32), Option<AnvilChunk>>,
+    chunks: HashMap<(i32, i32), Arc<RwLock<Option<AnvilChunk>>>>,
     section_y_range: std::ops::RangeInclusive<i8>,
     biome_mapper: IdTable<Biome>,
-    viewers: WeakList<Mutex<WorldViewer>>,
-    diffs: HashMap<(i32, i32), HashMap<i16, SectionDiff>>,
 }
 
-impl AnvilWorld {
-    pub fn new<P: Into<PathBuf>>(
-        root: P,
-        identifier: &str,
-        section_y_range: std::ops::RangeInclusive<i8>,
-        biome_mapper: IdTable<Biome>,
-    ) -> Self {
-        Self {
-            root: root.into(),
-            identifier: identifier.to_owned(),
-            regions: HashMap::new(),
-            chunks: HashMap::new(),
-            section_y_range,
-            biome_mapper,
-            viewers: WeakList::new(),
-            diffs: HashMap::new(),
-        }
-    }
-
-    pub fn identifier(&self) -> &str {
-        &self.identifier
-    }
-
+impl AnvilWorldInner {
     fn section_y_range(&self) -> std::ops::RangeInclusive<i8> {
         self.section_y_range.clone()
     }
@@ -654,7 +602,8 @@ impl AnvilWorld {
         if self.chunks.contains_key(&(chunk_x, chunk_z)) {
             return Ok(());
         }
-        self.chunks.insert((chunk_x, chunk_z), None);
+        let lock = Arc::new(RwLock::new(None));
+        self.chunks.insert((chunk_x, chunk_z), Arc::clone(&lock));
 
         let region_x = chunk_x.div_euclid(REGION_SIZE as i32);
         let region_z = chunk_z.div_euclid(REGION_SIZE as i32);
@@ -670,110 +619,169 @@ impl AnvilWorld {
             chunk_z.rem_euclid(REGION_SIZE as i32) as u8,
         )? {
             chunk.initialize(self.section_y_range());
-            self.chunks.insert((chunk_x, chunk_z), Some(chunk));
+            *lock.write().unwrap() = Some(chunk);
         }
 
         Ok(())
     }
 }
 
-impl World for AnvilWorld {
-    type Error = AnvilError;
+#[derive(Debug)]
+pub struct AnvilWorldViewer {
+    connection: ConnectionSender,
+    pub loader: ChunkLoader,
+    pub position: Vec3<f64>,
+    world: Arc<RwLock<AnvilWorldInner>>,
+}
 
-    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<WorldViewer>> {
-        let viewer = WorldViewer {
-            connection,
-            loader: ChunkLoader::new(6),
-            position: Vec3::new(0.0, 100.0, 0.0),
-        };
-        self.viewers.push(Mutex::new(viewer))
-    }
-
-    fn update_viewers(&mut self) -> Result<(), Self::Error> {
-        self.viewers.cleanup();
-
-        let mut viewers = self.viewers.lock();
-
-        self.diffs
-            .drain()
-            .try_for_each(|((chunk_x, chunk_z), sections)| {
-                let chunk_position = ChunkPosition::new(chunk_x, chunk_z);
-                if sections.len() >= UPDATE_SECTION_CHUNK_SWITCH_NUM_SECTIONS
-                    || sections.values().fold(0, |t, s| t + s.num_blocks())
-                        >= UPDATE_SECTION_CHUNK_SWITCH_NUM_BLOCKS
-                {
-                    // Just resend the whole chunk
-                    viewers
-                        .iter_mut()
-                        .for_each(|viewer| viewer.loader.force_reload(chunk_position));
-                    Ok(())
-                } else {
-                    // Resend each section
-                    sections.into_iter().try_for_each(|(section_y, diff)| {
-                        let packet = packet::play::UpdateSectionBlocks {
-                            section: Position::new(chunk_x, section_y, chunk_z),
-                            blocks: diff.to_packet_data(),
-                        };
-                        viewers
-                            .iter()
-                            .filter(|viewer| viewer.loader.has_loaded(chunk_position))
-                            .try_for_each(|viewer| viewer.connection().send(&packet))
-                    })
-                }
+impl AnvilWorldViewer {
+    pub fn unload_all_chunks(&mut self) -> Result<(), ConnectionError> {
+        for chunk in self.loader.unload_all() {
+            self.connection.send(&packet::play::ForgetLevelChunk {
+                chunk_x: chunk.chunk_x,
+                chunk_z: chunk.chunk_z,
             })?;
+        }
+        Ok(())
+    }
+}
 
-        viewers.iter_mut().try_for_each(|viewer| {
-            let center = ChunkPosition::new(
-                (viewer.position.x / 16.0) as i32,
-                (viewer.position.z / 16.0) as i32,
-            );
-            if viewer.loader.update_center(Some(center)) {
-                viewer
-                    .connection()
-                    .send(&packet::play::SetChunkCacheCenter {
-                        chunk_x: center.chunk_x,
-                        chunk_z: center.chunk_z,
-                    })?;
-            }
+impl AnvilWorldViewer {
+    fn update(&mut self) -> Result<(), AnvilError> {
+        let center = ChunkPosition::new(
+            (self.position.x / 16.0) as i32,
+            (self.position.z / 16.0) as i32,
+        );
+        if self.loader.update_center(Some(center)) {
+            self.connection.send(&packet::play::SetChunkCacheCenter {
+                chunk_x: center.chunk_x,
+                chunk_z: center.chunk_z,
+            })?;
+        }
 
-            while let Some(to_unload) = viewer.loader.next_to_unload() {
-                viewer.connection().send(&packet::play::ForgetLevelChunk {
-                    chunk_x: to_unload.chunk_x,
-                    chunk_z: to_unload.chunk_z,
-                })?;
-            }
+        while let Some(to_unload) = self.loader.next_to_unload() {
+            self.connection.send(&packet::play::ForgetLevelChunk {
+                chunk_x: to_unload.chunk_x,
+                chunk_z: to_unload.chunk_z,
+            })?;
+        }
 
-            if let Some(to_load) = viewer.loader.next_to_load() {
-                self.prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
-                if let Some(Some(chunk)) = self.chunks.get(&(to_load.chunk_x, to_load.chunk_z)) {
-                    viewer
-                        .connection()
-                        .send(&chunk.to_packet(&self.biome_mapper)?)?;
+        if let Some(to_load) = self.loader.next_to_load() {
+            self.world
+                .write()
+                .unwrap()
+                .prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
+            let world = self.world.read().unwrap();
+            if let Some(chunk) = self
+                .world
+                .read()
+                .unwrap()
+                .chunks
+                .get(&(to_load.chunk_x, to_load.chunk_z))
+            {
+                let guard = chunk.read().unwrap();
+                if let Some(chunk) = guard.as_ref() {
+                    self.connection
+                        .send(&chunk.to_packet(&world.biome_mapper)?)?;
                 } else {
-                    viewer
-                        .connection()
+                    self.connection
                         .send(&packet::play::LevelChunkWithLight::generate_test(
                             to_load.chunk_x,
                             to_load.chunk_z,
-                            self.section_y_range().count(),
+                            world.section_y_range().count(),
                         )?)?;
                 }
+            } else {
+                self.connection
+                    .send(&packet::play::LevelChunkWithLight::generate_test(
+                        to_load.chunk_x,
+                        to_load.chunk_z,
+                        world.section_y_range().count(),
+                    )?)?;
             }
-
-            Ok::<(), Self::Error>(())
-        })?;
+        }
 
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct AnvilWorld {
+    identifier: String,
+    inner: Arc<RwLock<AnvilWorldInner>>,
+    viewers: WeakList<Mutex<AnvilWorldViewer>>,
+    #[allow(clippy::type_complexity)]
+    changes: HashMap<(i32, i32), HashMap<(u8, i16, u8), WorldBlock>>,
+}
+
+impl AnvilWorld {
+    pub fn new<P: Into<PathBuf>>(
+        root: P,
+        identifier: &str,
+        section_y_range: std::ops::RangeInclusive<i8>,
+        biome_mapper: IdTable<Biome>,
+    ) -> Self {
+        Self {
+            identifier: identifier.to_owned(),
+            inner: Arc::new(RwLock::new(AnvilWorldInner {
+                root: root.into(),
+                regions: HashMap::new(),
+                chunks: HashMap::new(),
+                section_y_range,
+                biome_mapper,
+            })),
+            viewers: WeakList::new(),
+            changes: HashMap::new(),
+        }
+    }
+
+    pub fn identifier(&self) -> &str {
+        &self.identifier
+    }
+}
+
+impl World for AnvilWorld {
+    type Error = AnvilError;
+    type Viewer = AnvilWorldViewer;
+
+    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<Self::Viewer>> {
+        let viewer = self.viewers.push(Mutex::new(AnvilWorldViewer {
+            connection,
+            loader: ChunkLoader::new(6),
+            position: Vec3::new(0.0, 100.0, 0.0),
+            world: Arc::clone(&self.inner),
+        }));
+        std::thread::spawn({
+            let viewer = Arc::downgrade(&viewer);
+            move || loop {
+                std::thread::sleep(std::time::Duration::from_nanos(100));
+
+                if let Some(viewer) = viewer.upgrade() {
+                    if let Err(err) = viewer.lock().unwrap().update() {
+                        println!("{:#?}", err);
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
+        viewer
     }
 
     fn get_block(&mut self, position: Position) -> Result<Option<WorldBlock>, Self::Error> {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
-        self.prepare_chunk(chunk_x, chunk_z)?;
-        let Some(Some(chunk)) = self.chunks.get(&(
-            position.x.div_euclid(CHUNK_SIZE as i32),
-            position.z.div_euclid(CHUNK_SIZE as i32),
-        )) else {
+        self.inner
+            .write()
+            .unwrap()
+            .prepare_chunk(chunk_x, chunk_z)?;
+        let inner = self.inner.read().unwrap();
+        let Some(chunk) = inner.chunks.get(&(chunk_x, chunk_z)) else {
+            return Ok(None);
+        };
+        let guard = chunk.read().unwrap();
+        let Some(chunk) = guard.as_ref() else {
             return Ok(None);
         };
         Ok(chunk.get_block(
@@ -784,39 +792,51 @@ impl World for AnvilWorld {
     }
 
     fn set_block(&mut self, position: Position, block: WorldBlock) -> Result<(), Self::Error> {
-        let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
-        let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
-        self.prepare_chunk(chunk_x, chunk_z)?;
-        let Some(Some(chunk)) = self.chunks.get_mut(&(
-            position.x.div_euclid(CHUNK_SIZE as i32),
-            position.z.div_euclid(CHUNK_SIZE as i32),
-        )) else {
-            return Ok(());
-        };
-        if chunk.set_block(
-            (position.x.rem_euclid(CHUNK_SIZE as i32)) as u8,
-            position.y,
-            (position.z.rem_euclid(CHUNK_SIZE as i32)) as u8,
-            block.clone(),
-        ) {
-            self.diffs
-                .entry((
-                    position.x.div_euclid(SECTION_SIZE as i32),
-                    position.z.div_euclid(SECTION_SIZE as i32),
-                ))
-                .or_default()
-                .entry(position.y.div_euclid(SECTION_SIZE as i16))
-                .or_default()
-                .set(
-                    position.x.rem_euclid(SECTION_SIZE as i32) as u8,
-                    position.y.rem_euclid(SECTION_SIZE as i16) as u8,
-                    position.z.rem_euclid(SECTION_SIZE as i32) as u8,
-                    block
-                        .as_block()
-                        .id_with_default_fallback()
-                        .unwrap_or_else(|| Block::air().id().unwrap()),
-                );
-        }
+        self.changes
+            .entry((
+                position.x.div_euclid(CHUNK_SIZE as i32),
+                position.z.div_euclid(CHUNK_SIZE as i32),
+            ))
+            .or_default()
+            .insert(
+                (
+                    position.x.rem_euclid(CHUNK_SIZE as i32) as u8,
+                    position.y,
+                    position.z.rem_euclid(CHUNK_SIZE as i32) as u8,
+                ),
+                block,
+            );
+        Ok(())
+    }
+
+    fn update(&mut self) -> Result<(), Self::Error> {
+        let mut viewers = self.viewers.lock();
+        let mut inner = self.inner.write().unwrap();
+        self.changes
+            .drain()
+            .try_for_each(|((chunk_x, chunk_z), chunk_changes)| {
+                inner.prepare_chunk(chunk_x, chunk_z)?;
+                let Some(chunk) = inner.chunks.get_mut(&(chunk_x, chunk_z)) else {
+                    return Ok(());
+                };
+                let mut guard = chunk.write().unwrap();
+                let Some(chunk) = guard.as_mut() else {
+                    return Ok(());
+                };
+                let changed = chunk_changes
+                    .into_iter()
+                    .fold(false, |changed, ((x, y, z), block)| {
+                        changed | chunk.set_block(x, y, z, block)
+                    });
+                if changed {
+                    viewers.iter_mut().for_each(|viewer| {
+                        viewer
+                            .loader
+                            .force_reload(ChunkPosition { chunk_x, chunk_z });
+                    });
+                }
+                Ok::<(), AnvilError>(())
+            })?;
         Ok(())
     }
 }

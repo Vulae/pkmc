@@ -151,6 +151,29 @@ impl ServerboundPacket for KeepAlive {
 }
 
 #[derive(Debug)]
+pub struct PingRequest(pub i64);
+
+impl ServerboundPacket for PingRequest {
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_PING_REQUEST;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self(i64::from_be_bytes(reader.read_const()?)))
+    }
+}
+
+impl ClientboundPacket for PingRequest {
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_PONG_RESPONSE;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.write_all(&self.0.to_be_bytes())?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct PlayerLoaded;
 
 impl ServerboundPacket for PlayerLoaded {
@@ -1664,6 +1687,7 @@ impl ClientboundPacket for DisguisedChatMessage {
 
 serverbound_packet_enum!(pub PlayPacket;
     KeepAlive, KeepAlive;
+    PingRequest, PingRequest;
     PlayerLoaded, PlayerLoaded;
     AcceptTeleportation, AcceptTeleportation;
     MovePlayerPosRot, MovePlayerPosRot;

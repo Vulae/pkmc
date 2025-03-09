@@ -3,15 +3,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use chunk_loader::ChunkLoader;
-use pkmc_defs::{
-    block::{Block, BlockEntity},
-    packet,
-};
-use pkmc_util::{
-    packet::{ConnectionError, ConnectionSender},
-    Position, Vec3,
-};
+use pkmc_defs::block::{Block, BlockEntity};
+use pkmc_util::{packet::ConnectionSender, Position};
 
 pub mod anvil;
 pub mod chunk_loader;
@@ -21,29 +14,6 @@ pub const SECTION_SIZE: usize = 16;
 pub const SECTION_BLOCKS: usize = 4096;
 pub const SECTION_BIOMES_SIZE: usize = 4;
 pub const SECTION_BIOMES: usize = 64;
-
-#[derive(Debug)]
-pub struct WorldViewer {
-    connection: ConnectionSender,
-    pub loader: ChunkLoader,
-    pub position: Vec3<f64>,
-}
-
-impl WorldViewer {
-    pub fn connection(&self) -> &ConnectionSender {
-        &self.connection
-    }
-
-    pub fn unload_all_chunks(&mut self) -> Result<(), ConnectionError> {
-        for chunk in self.loader.unload_all() {
-            self.connection().send(&packet::play::ForgetLevelChunk {
-                chunk_x: chunk.chunk_x,
-                chunk_z: chunk.chunk_z,
-            })?;
-        }
-        Ok(())
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WorldBlock {
@@ -76,10 +46,12 @@ impl WorldBlock {
 
 pub trait World: Debug {
     type Error: std::error::Error;
+    type Viewer;
 
-    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<WorldViewer>>;
-    fn update_viewers(&mut self) -> Result<(), Self::Error>;
+    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<Self::Viewer>>;
 
     fn get_block(&mut self, position: Position) -> Result<Option<WorldBlock>, Self::Error>;
     fn set_block(&mut self, position: Position, block: WorldBlock) -> Result<(), Self::Error>;
+
+    fn update(&mut self) -> Result<(), Self::Error>;
 }

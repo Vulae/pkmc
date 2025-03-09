@@ -10,7 +10,10 @@ use pkmc_generated::registry::EntityType;
 use pkmc_server::{
     entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
     tab_list::{TabListPlayer, TabListViewer},
-    world::{anvil::AnvilError, World as _, WorldBlock, WorldViewer},
+    world::{
+        anvil::{AnvilError, AnvilWorldViewer},
+        World as _, WorldBlock,
+    },
 };
 use pkmc_util::{
     packet::{Connection, ConnectionError},
@@ -47,7 +50,7 @@ impl Entity for PlayerEntity {
 pub struct Player {
     connection: Connection,
     server_state: ServerState,
-    world_viewer: Arc<Mutex<WorldViewer>>,
+    world_viewer: Arc<Mutex<AnvilWorldViewer>>,
     entity_viewer: Arc<Mutex<EntityViewer>>,
     player_entity: EntityBase<PlayerEntity>,
     _tab_list_viewer: Arc<Mutex<TabListViewer>>,
@@ -283,6 +286,9 @@ impl Player {
                     // Either responded to invalid keepalive, or keepalive id is wrong.
                     _ => return Err(PlayerError::BadKeepAliveResponse),
                 },
+                packet::play::PlayPacket::PingRequest(ping_request) => {
+                    self.connection.send(&ping_request)?
+                }
                 packet::play::PlayPacket::PlayerLoaded(_player_loaded) => {
                     println!("Player {} loaded!", self.player_name());
                 }

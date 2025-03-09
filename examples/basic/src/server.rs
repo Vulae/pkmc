@@ -9,7 +9,7 @@ use pkmc_defs::registry::Registries;
 use pkmc_server::{
     entity_manager::EntityManager,
     tab_list::TabList,
-    world::{anvil::AnvilWorld, World},
+    world::{anvil::AnvilWorld, World as _},
     ClientHandler,
 };
 use pkmc_util::{normalize_identifier, packet::Connection, retain_returned_vec, UUID};
@@ -90,16 +90,6 @@ impl Server {
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        std::thread::spawn({
-            let world = self.state.world.clone();
-            move || loop {
-                std::thread::sleep(std::time::Duration::from_nanos(100));
-                if let Err(err) = world.lock().unwrap().update_viewers() {
-                    println!("{:?}", err);
-                }
-            }
-        });
-
         let mut last_tick = std::time::Instant::now();
         let mut num_ticks: u64 = 0;
 
@@ -118,6 +108,7 @@ impl Server {
                     .lock()
                     .unwrap()
                     .update_viewers((num_ticks % 60) == 0)?;
+                self.state.world.lock().unwrap().update()?;
 
                 num_ticks += 1;
             }

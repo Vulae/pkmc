@@ -83,25 +83,26 @@ impl ToTokens for ReportRegistryEnum {
             .collect::<Vec<_>>();
 
         tokens.extend(quote! {
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             #enum_vis enum #enum_name {
                 #(#keys,)*
             }
 
             impl #enum_name {
-                #enum_vis fn to_id(&self) -> i32 {
+                #enum_vis const fn to_id(&self) -> i32 {
                     match self {
                         #(Self::#keys => #values,)*
                     }
                 }
 
-                #enum_vis fn from_id(id: i32) -> Option<Self> {
+                #enum_vis const fn from_id(id: i32) -> Option<Self> {
                     match id {
                         #(#values => Some(Self::#keys),)*
                         _ => None,
                     }
                 }
 
-                #enum_vis fn to_str(&self) -> &str {
+                #enum_vis const fn to_str(&self) -> &str {
                     match self {
                         #(Self::#keys => #keys_raw,)*
                     }

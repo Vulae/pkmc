@@ -14,9 +14,12 @@ use pkmc_defs::{
     block::{Block, BlockEntity},
     packet,
 };
-use pkmc_generated::consts::{
-    PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT, PALETTED_DATA_BLOCKS_DIRECT,
-    PALETTED_DATA_BLOCKS_INDIRECT,
+use pkmc_generated::{
+    consts::{
+        PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT, PALETTED_DATA_BLOCKS_DIRECT,
+        PALETTED_DATA_BLOCKS_INDIRECT,
+    },
+    registry::BlockEntityType,
 };
 use pkmc_util::{
     nbt::{from_nbt, NBTError, NBT},
@@ -56,6 +59,8 @@ pub enum AnvilError {
     RegionUnsupportedCompression(String),
     #[error(transparent)]
     NBTError(#[from] NBTError),
+    #[error("Invalid block entity type \"{0}\"")]
+    InvalidBlockEntityType(String),
 }
 
 fn default_paletted_data<T: Default>() -> Box<[T]> {
@@ -320,7 +325,10 @@ pub struct AnvilChunk {
 }
 
 impl AnvilChunk {
-    fn initialize(&mut self, section_y_range: std::ops::RangeInclusive<i8>) {
+    fn initialize(
+        &mut self,
+        section_y_range: std::ops::RangeInclusive<i8>,
+    ) -> Result<(), AnvilError> {
         if let Some(y_pos) = self.y_pos {
             assert!(*section_y_range.start() == y_pos);
         }
@@ -348,16 +356,19 @@ impl AnvilChunk {
             .map(|b| {
                 let bx = b.x.rem_euclid(CHUNK_SIZE as i32) as u8;
                 let bz = b.z.rem_euclid(CHUNK_SIZE as i32) as u8;
-                (
+                Ok::<_, AnvilError>((
                     (bx, b.y, bz),
                     BlockEntity::new(
                         self.get_tile_block(bx, b.y, bz).unwrap(),
-                        b.id.clone(),
+                        BlockEntityType::from_str(&b.id)
+                            .ok_or_else(|| AnvilError::InvalidBlockEntityType(b.id.clone()))?,
                         NBT::try_from(serde_json::Value::from_iter(b.data.clone())).unwrap(),
                     ),
-                )
+                ))
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
+
+        Ok(())
     }
 
     fn get_section(&self, section_y: i8) -> Option<&ChunkSection> {
@@ -470,11 +481,12 @@ impl AnvilChunk {
                 block_entities: self
                     .block_entities()
                     .iter()
+                    .filter(|(_, b)| b.r#type.nbt_visible())
                     .map(|((x, y, z), b)| packet::play::BlockEntity {
                         x: *x,
                         z: *z,
                         y: *y,
-                        r#type: b.block_entity_id().unwrap(),
+                        r#type: b.r#type.to_id(),
                         data: b.data.clone(),
                     })
                     .collect(),
@@ -669,7 +681,7 @@ impl AnvilWorld {
             chunk_x.rem_euclid(REGION_SIZE as i32) as u8,
             chunk_z.rem_euclid(REGION_SIZE as i32) as u8,
         )? {
-            chunk.initialize(self.section_y_range());
+            chunk.initialize(self.section_y_range())?;
             self.chunks.insert((chunk_x, chunk_z), Some(chunk));
         }
 

@@ -105,25 +105,21 @@ impl Default for Block {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockEntity {
     pub block: Block,
-    pub r#type: String,
+    pub r#type: BlockEntityType,
     pub data: NBT,
 }
 
 impl BlockEntity {
-    pub fn new<T: ToString>(block: Block, r#type: T, data: NBT) -> Self {
+    pub fn new(block: Block, r#type: BlockEntityType, data: NBT) -> Self {
         Self {
             block,
-            r#type: r#type.to_string(),
+            r#type,
             data,
         }
     }
 
     pub fn into_block(self) -> Block {
         self.block
-    }
-
-    pub fn block_entity_id(&self) -> Option<i32> {
-        BlockEntityType::from_str(&self.r#type).map(|r#type| r#type.to_id())
     }
 }
 

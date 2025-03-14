@@ -34,6 +34,11 @@ pub fn report_packets_generate_consts(input: proc_macro::TokenStream) -> proc_ma
     reports::packets::report_packets_generate_consts(input)
 }
 
+#[proc_macro]
+pub fn report_packets_blocks_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    reports::blocks::report_blocks_generate_enum(input)
+}
+
 struct CachedCompressedJson {
     input: LitStr,
     output: LitStr,

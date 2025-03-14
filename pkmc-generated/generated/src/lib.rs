@@ -43,7 +43,7 @@ pub mod block {
 
     use serde::Deserialize;
 
-    use pkmc_generated_proc::include_cached_json_compressed_bytes;
+    use pkmc_generated_proc::{include_cached_json_compressed_bytes, report_packets_blocks_enum};
 
     #[derive(Deserialize)]
     pub struct ReportBlockState {
@@ -77,6 +77,8 @@ pub mod block {
     pub const fn is_air(id: i32) -> bool {
         matches!(id, 0 | 13971 | 13972)
     }
+
+    report_packets_blocks_enum!("assets/reports/blocks.json");
 }
 
 pub mod consts {

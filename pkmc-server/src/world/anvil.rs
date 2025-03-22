@@ -22,11 +22,14 @@ use pkmc_generated::{
     registry::BlockEntityType,
 };
 use pkmc_util::{
-    nbt::{from_nbt, NBTError, NBT},
-    packet::{
-        calculate_bpe, to_paletted_data, to_paletted_data_precomputed, to_paletted_data_singular,
+    connection::{
+        paletted_container::{
+            calculate_bpe, to_paletted_data, to_paletted_data_precomputed,
+            to_paletted_data_singular,
+        },
         ConnectionError, ConnectionSender,
     },
+    nbt::{from_nbt, NBTError, NBT},
     IdTable, PackedArray, Position, ReadExt, Transmutable, Vec3, WeakList,
 };
 use serde::Deserialize;

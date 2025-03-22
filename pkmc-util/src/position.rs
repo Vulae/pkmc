@@ -1,5 +1,5 @@
 use crate::{
-    packet::{PacketDecodable, PacketEncodable},
+    connection::{PacketDecodable, PacketEncodable},
     ReadExt as _, Transmutable, Vec3,
 };
 

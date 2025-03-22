@@ -13,7 +13,7 @@ use pkmc_server::{
     world::{anvil::AnvilError, World as _, WorldBlock, WorldViewer},
 };
 use pkmc_util::{
-    packet::{Connection, ConnectionError},
+    connection::{Connection, ConnectionError},
     Color, Position, Vec3, UUID,
 };
 use thiserror::Error;

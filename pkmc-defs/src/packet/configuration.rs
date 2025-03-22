@@ -4,11 +4,11 @@ use std::{
 };
 
 use pkmc_util::{
-    nbt::NBT,
-    packet::{
+    connection::{
         ClientboundPacket, ConnectionError, PacketDecoder as _, PacketEncoder as _,
         ServerboundPacket,
     },
+    nbt::NBT,
     serverbound_packet_enum, ReadExt as _,
 };
 

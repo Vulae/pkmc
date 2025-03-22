@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    packet::{PacketDecodable, PacketEncodable},
+    connection::{PacketDecodable, PacketEncodable},
     ReadExt,
 };
 

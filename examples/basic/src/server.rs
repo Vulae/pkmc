@@ -12,7 +12,7 @@ use pkmc_server::{
     world::{anvil::AnvilWorld, World},
     ClientHandler,
 };
-use pkmc_util::{normalize_identifier, packet::Connection, retain_returned_vec, UUID};
+use pkmc_util::{connection::Connection, normalize_identifier, retain_returned_vec, UUID};
 
 use crate::{config::Config, player::Player};
 

@@ -9,7 +9,7 @@ use pkmc_defs::{
     packet,
 };
 use pkmc_util::{
-    packet::{ConnectionError, ConnectionSender},
+    connection::{ConnectionError, ConnectionSender},
     Position, Vec3,
 };
 

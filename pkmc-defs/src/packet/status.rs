@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
 use pkmc_util::{
-    packet::{ClientboundPacket, ConnectionError, PacketEncoder as _, ServerboundPacket},
+    connection::{ClientboundPacket, ConnectionError, PacketEncoder as _, ServerboundPacket},
     serverbound_packet_enum, ReadExt as _,
 };
 use serde::Serialize;

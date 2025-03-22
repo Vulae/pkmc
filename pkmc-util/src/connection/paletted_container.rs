@@ -1,6 +1,6 @@
 use itertools::Itertools as _;
 
-use crate::{packet::PacketEncoder as _, PackedArray};
+use crate::{connection::PacketEncoder as _, PackedArray};
 use std::{collections::HashMap, io::Write};
 
 pub const fn calculate_bpe(num_unique_values: usize) -> u8 {
@@ -207,7 +207,7 @@ pub fn to_paletted_data_precomputed(
 
 #[cfg(test)]
 mod test {
-    use crate::packet::to_paletted_data;
+    use crate::connection::paletted_container::to_paletted_data;
 
     #[test]
     fn test() -> std::io::Result<()> {

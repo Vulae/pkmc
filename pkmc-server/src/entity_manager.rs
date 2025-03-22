@@ -10,7 +10,7 @@ use pkmc_defs::packet::{
 };
 use pkmc_generated::registry::EntityType;
 use pkmc_util::{
-    packet::{ConnectionError, ConnectionSender},
+    connection::{ConnectionError, ConnectionSender},
     Vec3, WeakList, WeakMap, UUID,
 };
 

@@ -5,7 +5,7 @@ use std::{
 
 use super::{tag::NBTTag, NBTError, NBTList, NBT};
 use crate::{
-    packet::{PacketDecodable, PacketEncodable},
+    connection::{PacketDecodable, PacketEncodable},
     ReadExt as _, Transmutable,
 };
 

@@ -4,11 +4,11 @@ use std::{
 };
 
 use pkmc_util::{
-    nbt::NBT,
-    packet::{
-        to_paletted_data_singular, ClientboundPacket, ConnectionError, PacketDecoder as _,
-        PacketEncoder as _, ServerboundPacket,
+    connection::{
+        paletted_container::to_paletted_data_singular, ClientboundPacket, ConnectionError,
+        PacketDecoder as _, PacketEncoder as _, ServerboundPacket,
     },
+    nbt::NBT,
     serverbound_packet_enum, BitSet, FixedBitSet, Position, ReadExt as _, Transmutable, Vec3, UUID,
 };
 

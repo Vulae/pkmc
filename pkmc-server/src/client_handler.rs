@@ -2,24 +2,17 @@ use std::collections::HashMap;
 
 use pkmc_defs::{packet, registry::Registries};
 use pkmc_util::{
-    nbt::{NBTError, NBT},
-    packet::{
-        handler::{PacketHandler, ZlibPacketHandler},
-        Connection, ConnectionError, ServerboundPacket,
+    connection::{
+        Connection, ConnectionEncryption, ConnectionError, PacketHandler, ServerboundPacket,
     },
+    nbt::{NBTError, NBT},
     IdTable, UUID,
 };
 use thiserror::Error;
 
 const PROTOCOL_VERSION: i32 = 769;
 // NOTE: This whole timeout thing is probably dumb, and not the proper way to do this.
-const CONFIGURATION_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(
-    // NOTE: Probably only running locally, so save us some time :)
-    #[cfg(debug_assertions)]
-    100,
-    #[cfg(not(debug_assertions))]
-    1000,
-);
+const CONFIGURATION_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[derive(Error, Debug)]
 pub enum ClientHandlerError {
@@ -33,15 +26,22 @@ pub enum ClientHandlerError {
     InvalidLoginPlayer,
     #[error("Invalid configuration finalization")]
     InvalidConfigurationFinalization,
+    #[error(transparent)]
+    RsaError(#[from] rsa::Error),
+    #[error("RSA Verify token mismatch")]
+    VerifyTokenMismatch,
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum ClientHandlerState {
     Closed,
     Handshake,
     Status,
     Login {
         player: Option<(UUID, String)>,
+        private_key: rsa::RsaPrivateKey,
+        verify_token: [u8; 64],
     },
     Configuration {
         player: (UUID, String),
@@ -160,7 +160,11 @@ impl ClientHandler {
                         self.state = ClientHandlerState::Status;
                     }
                     packet::handshake::IntentionNextState::Login => {
-                        self.state = ClientHandlerState::Login { player: None };
+                        self.state = ClientHandlerState::Login {
+                            player: None,
+                            private_key: rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 1024)?,
+                            verify_token: rand::random(),
+                        };
                     }
                     packet::handshake::IntentionNextState::Transfer => unimplemented!(),
                 }
@@ -193,7 +197,11 @@ impl ClientHandler {
                     }
                 }
             }
-            ClientHandlerState::Login { ref mut player } => {
+            ClientHandlerState::Login {
+                ref mut player,
+                ref private_key,
+                ref verify_token,
+            } => {
                 // TODO: Make this use while loop instead.
                 if let Some(packet) = self
                     .connection
@@ -201,20 +209,49 @@ impl ClientHandler {
                 {
                     match packet {
                         packet::login::LoginPacket::Hello(hello) => {
-                            *player = Some((hello.uuid, hello.name.clone()));
+                            *player = Some((hello.uuid, hello.name));
 
-                            if let Some((threshold, level)) = self.compression {
+                            self.connection.send(&packet::login::EncryptionRequest {
+                                server_id: "".to_string(),
+                                public_key: pkmc_util::crypto::rsa_encode_public_key(
+                                    &private_key.to_public_key(),
+                                ),
+                                verify_token: verify_token.to_vec().into_boxed_slice(),
+                                should_authenticate: false,
+                            })?;
+                        }
+                        packet::login::LoginPacket::EncryptionResponse(encryption_response) => {
+                            let shared_secret = private_key.decrypt(
+                                rsa::Pkcs1v15Encrypt,
+                                &encryption_response.shared_secret,
+                            )?;
+
+                            if private_key
+                                .decrypt(rsa::Pkcs1v15Encrypt, &encryption_response.verify_token)?
+                                != verify_token
+                            {
+                                return Err(ClientHandlerError::VerifyTokenMismatch);
+                            }
+
+                            self.connection.set_connection_encryption(
+                                ConnectionEncryption::new_aes(&shared_secret.try_into().unwrap())
+                                    .map_err(ConnectionError::EncryptionError)?,
+                            );
+
+                            if let Some((threshold, compression_level)) = self.compression {
                                 self.connection.send(&packet::login::Compression {
                                     threshold: threshold as i32,
                                 })?;
-                                self.connection.set_packet_handler(PacketHandler::Zlib(
-                                    ZlibPacketHandler::new(threshold, level),
-                                ));
+                                self.connection.set_packet_handler(
+                                    PacketHandler::new_zlib(threshold, compression_level)
+                                        .map_err(ConnectionError::HandlerError)?,
+                                );
                             }
 
+                            let (uuid, name) = player.clone().unwrap();
                             self.connection.send(&packet::login::Finished {
-                                uuid: hello.uuid,
-                                name: hello.name,
+                                uuid,
+                                name,
                                 properties: Vec::new(),
                             })?;
                         }

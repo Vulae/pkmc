@@ -1,28 +1,6 @@
-mod codec;
-mod connection;
-pub mod handler;
-mod paletted_container;
-pub mod varint;
-
 use std::io::{Read, Write};
 
-pub use codec::*;
-pub use connection::*;
-pub use paletted_container::*;
-
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum ConnectionError {
-    #[error(transparent)]
-    IoError(#[from] std::io::Error),
-    #[error(transparent)]
-    Other(Box<dyn std::error::Error + Send + Sync>),
-    #[error("Unsupported packet {0}: {1:#X}")]
-    UnsupportedPacket(String, i32),
-    #[error("Invalid raw packet ID for parser (expected: {0}, found: {1})")]
-    InvalidRawPacketIDForParser(i32, i32),
-}
+use super::{ConnectionError, PacketEncoder as _};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RawPacket {
@@ -98,11 +76,11 @@ macro_rules! serverbound_packet_enum {
             )*
         }
 
-        impl TryFrom<$crate::packet::RawPacket> for $enum_name {
-            type Error = $crate::packet::ConnectionError;
+        impl TryFrom<$crate::connection::RawPacket> for $enum_name {
+            type Error = $crate::connection::ConnectionError;
 
-            fn try_from(value: $crate::packet::RawPacket) -> std::result::Result<Self, Self::Error> {
-                use $crate::packet::ServerboundPacket as _;
+            fn try_from(value: $crate::connection::RawPacket) -> std::result::Result<Self, Self::Error> {
+                use $crate::connection::ServerboundPacket as _;
                 let mut reader = std::io::Cursor::new(&value.data);
                 match value.id {
                     $(

@@ -14,7 +14,7 @@ compression-level = 3
 # As Minecraft is extremely slow at doing this, and probably will be IO-limited (For some stupid reason, IDK)
 world = "/home/vulae/.local/share/PrismLauncher/instances/Fabulously Optimized 1.21.4/.minecraft/saves/Greenfield v0.5.4/"
 
-view-distance = 43
+view-distance = 64
 entity-distance = 256.0
 
 motd-text = "https://github.com/Vulae/pkmc"

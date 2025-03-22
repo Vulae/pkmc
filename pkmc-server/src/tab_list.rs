@@ -5,7 +5,7 @@ use std::{
 
 use pkmc_defs::{packet, text_component::TextComponent};
 use pkmc_util::{
-    packet::{ConnectionError, ConnectionSender},
+    connection::{ConnectionError, ConnectionSender},
     WeakList, WeakMap, UUID,
 };
 

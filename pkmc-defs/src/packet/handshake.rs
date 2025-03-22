@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use pkmc_util::{
-    packet::{ConnectionError, PacketDecoder as _, ServerboundPacket},
+    connection::{ConnectionError, PacketDecoder as _, ServerboundPacket},
     ReadExt as _,
 };
 

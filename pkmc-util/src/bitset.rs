@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
 use crate::{
-    packet::{PacketDecodable, PacketDecoder as _, PacketEncodable, PacketEncoder as _},
+    connection::{PacketDecodable, PacketDecoder as _, PacketEncodable, PacketEncoder as _},
     ReadExt as _,
 };
 

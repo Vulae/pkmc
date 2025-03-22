@@ -1,20 +1,48 @@
+mod codec;
+mod encryption;
+mod handler;
+mod packet;
+pub mod paletted_container;
+pub mod varint;
+
+use encryption::ConnectionEncryptionError;
+use handler::PacketHandlerError;
 use std::{
     collections::VecDeque,
-    io::{Read, Write},
+    io::{Read as _, Write as _},
     net::TcpStream,
     sync::{Arc, Mutex},
 };
+use thiserror::Error;
 
-use crate::{packet::varint::try_read_varint_ret_bytes, ReadExt as _};
+pub use codec::*;
+pub use encryption::ConnectionEncryption;
+pub use handler::PacketHandler;
+pub use packet::*;
+use varint::try_read_varint_ret_bytes;
 
-use super::{
-    handler::{PacketHandler, UncompressedPacketHandler},
-    ClientboundPacket, ConnectionError, PacketDecoder as _, PacketEncoder as _, RawPacket,
-};
+use crate::ReadExt as _;
+
+#[derive(Error, Debug)]
+pub enum ConnectionError {
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    Other(Box<dyn std::error::Error + Send + Sync>),
+    #[error("Unsupported packet {0}: {1:#X}")]
+    UnsupportedPacket(String, i32),
+    #[error("Invalid raw packet ID for parser (expected: {0}, found: {1})")]
+    InvalidRawPacketIDForParser(i32, i32),
+    #[error(transparent)]
+    HandlerError(#[from] PacketHandlerError),
+    #[error(transparent)]
+    EncryptionError(#[from] ConnectionEncryptionError),
+}
 
 #[derive(Debug)]
 struct ConnectionInner {
     stream: Option<TcpStream>,
+    encryption: ConnectionEncryption,
     handler: PacketHandler,
 }
 
@@ -44,10 +72,16 @@ impl ConnectionSender {
         with_size.write_all(&encoded)?;
 
         let mut inner = self.inner.lock().unwrap();
+
+        let encrypted = {
+            inner.encryption.encrypt(&mut with_size)?;
+            with_size
+        };
+
         let Some(stream) = inner.stream.as_mut() else {
             return Ok(());
         };
-        match stream.write_all(&with_size) {
+        match stream.write_all(&encrypted) {
             Err(err)
                 if err.kind() == std::io::ErrorKind::BrokenPipe
                     || err.kind() == std::io::ErrorKind::ConnectionReset =>
@@ -78,7 +112,8 @@ impl Connection {
         Ok(Self {
             inner: Arc::new(Mutex::new(ConnectionInner {
                 stream: Some(stream),
-                handler: PacketHandler::Uncompressed(UncompressedPacketHandler),
+                encryption: ConnectionEncryption::Unencrypted,
+                handler: PacketHandler::Uncompressed,
             })),
             bytes: VecDeque::new(),
         })
@@ -89,6 +124,10 @@ impl Connection {
         ConnectionSender {
             inner: self.inner.clone(),
         }
+    }
+
+    pub fn set_connection_encryption(&self, encryption: ConnectionEncryption) {
+        self.inner.lock().unwrap().encryption = encryption;
     }
 
     /// Set packet handler to use, see [`PacketHandler`]
@@ -115,16 +154,24 @@ impl Connection {
         // TODO: What is best size for this?
         let mut buf = [0u8; 1024];
         let mut inner = self.inner.lock().unwrap();
-        let Some(stream) = inner.stream.as_mut() else {
-            return Ok(());
-        };
         loop {
-            match stream.read(&mut buf) {
+            match if let Some(stream) = inner.stream.as_mut() {
+                stream
+            } else {
+                return Ok(());
+            }
+            .read(&mut buf)
+            {
                 Ok(0) => {
                     inner.stream = None;
                     break;
                 }
-                Ok(n) => self.bytes.extend(&buf[..n]),
+                Ok(n) => {
+                    // Clippy trippin
+                    #[allow(clippy::unnecessary_mut_passed)]
+                    inner.encryption.decrypt(&mut buf[..n])?;
+                    self.bytes.extend(&buf[..n])
+                }
                 Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
                     break;
                 }

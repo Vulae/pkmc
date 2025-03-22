@@ -2,10 +2,11 @@ use std::collections::HashMap;
 
 mod bitset;
 mod color;
+pub mod connection;
+pub mod crypto;
 mod iter_retain;
 pub mod nbt;
 mod packed_array;
-pub mod packet;
 mod position;
 mod read_ext;
 mod transmutable;

@@ -12,7 +12,10 @@ use pkmc_server::{
     world::{anvil::AnvilWorld, World},
     ClientHandler,
 };
-use pkmc_util::{connection::Connection, normalize_identifier, retain_returned_vec, UUID};
+use pkmc_util::{
+    connection::Connection, convert_ampersand_formatting_codes, normalize_identifier,
+    retain_returned_vec, UUID,
+};
 
 use crate::{config::Config, player::Player};
 
@@ -135,7 +138,9 @@ impl Server {
                 )
                 .with_registies(REGISTRIES.clone());
             if let Some(status_description) = &self.config.motd_text {
-                client = client.with_status_description(status_description);
+                client = client.with_status_description(convert_ampersand_formatting_codes(
+                    status_description,
+                ));
             }
             if let Some(status_favicon) = &self.config_favicon {
                 client = client.with_status_favicon(status_favicon);

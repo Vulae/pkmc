@@ -31,6 +31,10 @@ fn config_default_brand() -> String {
     "Vulae/pkmc".to_owned()
 }
 
+fn config_default_online() -> bool {
+    true
+}
+
 fn config_default_view_distance() -> u8 {
     12
 }
@@ -44,6 +48,8 @@ pub struct Config {
     pub address: String,
     #[serde(default = "config_default_brand")]
     pub brand: String,
+    #[serde(default = "config_default_online")]
+    pub online: bool,
     #[serde(default, rename = "compression-threshold")]
     pub compression_threshold: usize,
     #[serde(default, rename = "compression-level")]

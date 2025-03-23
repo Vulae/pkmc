@@ -1492,6 +1492,7 @@ dependencies = [
  "pkmc-generated",
  "pkmc-util",
  "rand 0.9.0",
+ "reqwest",
  "rsa",
  "serde",
  "serde_json",

@@ -5,9 +5,11 @@ use pkmc_util::{
     connection::{
         Connection, ConnectionEncryption, ConnectionError, PacketHandler, ServerboundPacket,
     },
+    crypto::{rsa_encode_public_key, MinecraftSha1},
     nbt::{NBTError, NBT},
     IdTable, UUID,
 };
+use serde::Deserialize;
 use thiserror::Error;
 
 const PROTOCOL_VERSION: i32 = 769;
@@ -30,6 +32,8 @@ pub enum ClientHandlerError {
     RsaError(#[from] rsa::Error),
     #[error("RSA Verify token mismatch")]
     VerifyTokenMismatch,
+    #[error("Authentication information doesn't match")]
+    AuthMismatch,
 }
 
 #[derive(Debug)]
@@ -68,6 +72,7 @@ pub struct ClientHandler {
     state: ClientHandlerState,
 
     brand: Option<String>,
+    online: bool,
     compression: Option<(usize, u32)>,
     status_description: Option<String>,
     status_favicon: Option<String>,
@@ -81,6 +86,7 @@ impl ClientHandler {
             connection,
             state: ClientHandlerState::Handshake,
             brand: None,
+            online: false,
             compression: None,
             status_description: None,
             status_favicon: None,
@@ -91,6 +97,11 @@ impl ClientHandler {
 
     pub fn with_brand(mut self, brand: impl Into<String>) -> Self {
         self.brand = Some(brand.into());
+        self
+    }
+
+    pub fn with_online(mut self, online: bool) -> Self {
+        self.online = online;
         self
     }
 
@@ -217,7 +228,7 @@ impl ClientHandler {
                                     &private_key.to_public_key(),
                                 ),
                                 verify_token: verify_token.to_vec().into_boxed_slice(),
-                                should_authenticate: false,
+                                should_authenticate: self.online,
                             })?;
                         }
                         packet::login::LoginPacket::EncryptionResponse(encryption_response) => {
@@ -234,9 +245,73 @@ impl ClientHandler {
                             }
 
                             self.connection.set_connection_encryption(
-                                ConnectionEncryption::new_aes(&shared_secret.try_into().unwrap())
-                                    .map_err(ConnectionError::EncryptionError)?,
+                                ConnectionEncryption::new_aes(
+                                    &shared_secret.clone().try_into().unwrap(),
+                                )
+                                .map_err(ConnectionError::EncryptionError)?,
                             );
+
+                            // TODO: Non-blocking.
+                            let (uuid, name, properties) = if self.online {
+                                #[derive(Debug, Deserialize)]
+                                struct SessionMinecraftJoinedProperty {
+                                    name: String,
+                                    value: String,
+                                    signature: String,
+                                }
+
+                                #[derive(Debug, Deserialize)]
+                                struct SessionMinecraftJoined {
+                                    id: String,
+                                    name: String,
+                                    #[serde(default)]
+                                    properties: Vec<SessionMinecraftJoinedProperty>,
+                                }
+
+                                let (uuid, name) = player.clone().unwrap();
+
+                                let server_id = {
+                                    let mut hasher = MinecraftSha1::default();
+                                    hasher.update(""); // Minecraft server ID
+                                    hasher.update(&shared_secret);
+                                    hasher.update(rsa_encode_public_key(
+                                        &private_key.to_public_key(),
+                                    ));
+                                    hasher.finalize()
+                                };
+
+                                let auth: SessionMinecraftJoined =
+                                    reqwest::blocking::get(reqwest::Url::parse_with_params(
+                                    "https://sessionserver.mojang.com/session/minecraft/hasJoined",
+                                    &[("username", &name), ("serverId", &server_id)],
+                                )
+                                .unwrap()).unwrap().json().unwrap();
+
+                                let parsed_uuid = UUID::try_from(auth.id.as_ref()).unwrap();
+
+                                if parsed_uuid != uuid || name != auth.name {
+                                    return Err(ClientHandlerError::AuthMismatch);
+                                }
+
+                                println!("Auth from: {} {}", auth.name, parsed_uuid);
+
+                                (
+                                    parsed_uuid,
+                                    auth.name,
+                                    // FIXME: Skins dont work :(
+                                    auth.properties
+                                        .into_iter()
+                                        .map(|prop| packet::login::FinishedProperty {
+                                            name: prop.name,
+                                            value: prop.value,
+                                            signature: Some(prop.signature),
+                                        })
+                                        .collect(),
+                                )
+                            } else {
+                                let (uuid, name) = player.clone().unwrap();
+                                (uuid, name, Vec::new())
+                            };
 
                             if let Some((threshold, compression_level)) = self.compression {
                                 self.connection.send(&packet::login::Compression {
@@ -248,11 +323,10 @@ impl ClientHandler {
                                 );
                             }
 
-                            let (uuid, name) = player.clone().unwrap();
                             self.connection.send(&packet::login::Finished {
                                 uuid,
                                 name,
-                                properties: Vec::new(),
+                                properties,
                             })?;
                         }
                         packet::login::LoginPacket::Acknowledged(_acknowledged) => {

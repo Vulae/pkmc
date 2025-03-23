@@ -4,6 +4,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use thiserror::Error;
+
 use crate::{
     connection::{PacketDecodable, PacketEncodable},
     ReadExt,
@@ -36,6 +38,34 @@ impl fmt::Display for UUID {
             self.0[8], self.0[9],
             self.0[10], self.0[11], self.0[12], self.0[13], self.0[14], self.0[15],
         )
+    }
+}
+
+impl From<u128> for UUID {
+    fn from(value: u128) -> Self {
+        Self(value.to_be_bytes())
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("UUIDTryFromError")]
+pub struct UUIDTryFromStrError;
+
+impl TryFrom<&str> for UUID {
+    type Error = UUIDTryFromStrError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let without_dashes = value.replacen('-', "", 4);
+        if without_dashes.len() != 32
+            || without_dashes
+                .chars()
+                .any(|char| !"0123456789abcdefABCDEF".contains(char))
+        {
+            return Err(UUIDTryFromStrError);
+        }
+        u128::from_str_radix(value, 16)
+            .map_err(|_| UUIDTryFromStrError)
+            .map(|v| v.into())
     }
 }
 

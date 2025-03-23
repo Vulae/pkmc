@@ -34,7 +34,7 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 | Entities              | ❌          |                                            |
 | Inventories           | ❌          |                                            |
 | Resource Pack         | ❌          |                                            |
-| Online Mode           | ❌          |                                            |
+| Online Mode           | ✅          |                                            |
 | Packet Compression    | ✅          |                                            |
 | Players & Chat        | ❌          |                                            |
 | Commands Definitions  | ❌          |                                            |

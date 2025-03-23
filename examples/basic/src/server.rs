@@ -132,6 +132,7 @@ impl Server {
             let connection = Connection::new(stream)?;
             let mut client = ClientHandler::new(connection)
                 .with_brand(&self.config.brand)
+                .with_online(self.config.online)
                 .with_compression(
                     self.config.compression_threshold,
                     self.config.compression_level,

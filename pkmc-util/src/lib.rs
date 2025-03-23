@@ -47,13 +47,42 @@ pub fn convert_ampersand_formatting_codes(text: &str) -> String {
         'l', 'm', 'n', 'o', 'r',
     ];
 
+    // I have absolutely no idea on how to properly escape this to actually make sense.
+    // Like, it would probably be best not to mess with other escapes in the string.
+    // Currently it does something like: b"\\ \&r \\&r" -> b"\ &r \§r", which doesn't make much sense that
+    // it's doing to the first escape sequence.
+    // Probably should just only mess with the escapes that are near the formatting codes: b"\\ &r \§r"
+    let mut escape = false;
     text.chars()
         .tuple_windows()
-        .map(|(c, n)| match c {
-            '\\' if n == SECTION_REPLACEMENT_SYMBOL => SECTION_REPLACEMENT_SYMBOL,
-            SECTION_REPLACEMENT_SYMBOL if VALID_CODES.contains(&n) => SECTION_SYMBOL,
-            c => c,
+        .flat_map(|(c, n)| {
+            if escape {
+                escape = false;
+                return Some(c);
+            }
+            match c {
+                '\\' if matches!(n, '\\' | SECTION_REPLACEMENT_SYMBOL) => {
+                    escape = true;
+                    None
+                }
+                SECTION_REPLACEMENT_SYMBOL if VALID_CODES.contains(&n) => Some(SECTION_SYMBOL),
+                c => Some(c),
+            }
         })
         .chain(text.chars().last())
         .collect::<String>()
+}
+
+#[cfg(test)]
+mod test {
+    use crate::convert_ampersand_formatting_codes;
+
+    #[test]
+    fn minecraft_formatting_codes() {
+        assert_eq!(&convert_ampersand_formatting_codes(r"&r"), r"§r");
+        assert_eq!(&convert_ampersand_formatting_codes(r"&z"), r"&z");
+        assert_eq!(&convert_ampersand_formatting_codes(r"\&r"), r"&r");
+        assert_eq!(&convert_ampersand_formatting_codes(r"\\&r"), r"\§r");
+        //assert_eq!(&convert_ampersand_formatting_codes(r"\\ \\&r"), r"\\ \§r");
+    }
 }

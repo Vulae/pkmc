@@ -54,8 +54,8 @@ pub enum WorldBlock {
 impl WorldBlock {
     pub fn as_block(&self) -> &Block {
         match self {
-            WorldBlock::Block(ref block) => block,
-            WorldBlock::BlockEntity(ref block_entity) => &block_entity.block,
+            WorldBlock::Block(block) => block,
+            WorldBlock::BlockEntity(block_entity) => &block_entity.block,
         }
     }
 
@@ -69,7 +69,7 @@ impl WorldBlock {
     pub fn as_block_entity(&self) -> Option<&BlockEntity> {
         match self {
             WorldBlock::Block(..) => None,
-            WorldBlock::BlockEntity(ref block_entity) => Some(block_entity),
+            WorldBlock::BlockEntity(block_entity) => Some(block_entity),
         }
     }
 }

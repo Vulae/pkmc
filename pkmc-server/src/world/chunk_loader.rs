@@ -33,6 +33,16 @@ pub struct ChunkLoader {
 // For some reason needed?
 const EXTRA_RADIUS: i32 = 4;
 
+fn iter_radius(center: ChunkPosition, radius: i32) -> impl Iterator<Item = ChunkPosition> {
+    (-radius..=radius)
+        .flat_map(move |dx| (-radius..=radius).map(move |dz| (dx, dz)))
+        .map(move |(dx, dz)| ChunkPosition {
+            chunk_x: center.chunk_x + dx,
+            chunk_z: center.chunk_z + dz,
+        })
+        .filter(move |chunk| center.distance(chunk) < radius as f32)
+}
+
 impl ChunkLoader {
     pub fn new(radius: i32) -> Self {
         Self {
@@ -42,18 +52,6 @@ impl ChunkLoader {
             loaded: HashSet::new(),
             to_unload: Vec::new(),
         }
-    }
-
-    fn iter_radius(&self) -> impl Iterator<Item = ChunkPosition> {
-        let center = self.center.unwrap();
-        let radius = self.radius + EXTRA_RADIUS;
-        (-radius..=radius)
-            .flat_map(move |dx| (-radius..=radius).map(move |dz| (dx, dz)))
-            .map(move |(dx, dz)| ChunkPosition {
-                chunk_x: center.chunk_x + dx,
-                chunk_z: center.chunk_z + dz,
-            })
-            .filter(move |chunk| center.distance(chunk) < radius as f32)
     }
 
     fn force_update(&mut self) {
@@ -69,7 +67,7 @@ impl ChunkLoader {
             .append(&mut retain_returned_hashset(&mut self.loaded, |chunk| {
                 center.distance(chunk) < (self.radius + EXTRA_RADIUS) as f32
             }));
-        self.iter_radius().for_each(|chunk| {
+        iter_radius(center, self.radius + EXTRA_RADIUS).for_each(|chunk| {
             if self.to_load.contains(&chunk) || self.loaded.contains(&chunk) {
                 return;
             }

@@ -9,9 +9,9 @@ members = [
     # Examples on this type of project layout *seem* impossible, so we just include it as a member instead.
     "examples/basic",
 ]
-resolver = "2"
+resolver = "3"
 package.version = "0.1.0"
-package.edition = "2021"
+package.edition = "2024"
 
 [workspace.dependencies]
 thiserror = "2.0.11"

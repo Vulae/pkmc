@@ -8,17 +8,17 @@ use pkmc_defs::{
 };
 use pkmc_generated::registry::EntityType;
 use pkmc_server::{
-    entity_manager::{Entity, EntityBase, EntityViewer, new_entity_id},
+    entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
     tab_list::{TabListPlayer, TabListViewer},
-    world::{World as _, WorldBlock, WorldViewer, anvil::AnvilError},
+    world::{anvil::AnvilError, World as _, WorldBlock, WorldViewer},
 };
 use pkmc_util::{
-    Color, Position, UUID, Vec3,
     connection::{Connection, ConnectionError},
+    Color, Position, Vec3, UUID,
 };
 use thiserror::Error;
 
-use crate::server::{REGISTRIES, ServerState};
+use crate::server::{ServerState, REGISTRIES};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
 
@@ -283,6 +283,7 @@ impl Player {
                     // Either responded to invalid keepalive, or keepalive id is wrong.
                     _ => return Err(PlayerError::BadKeepAliveResponse),
                 },
+                packet::play::PlayPacket::Ping(ping) => self.connection.send(&ping)?,
                 packet::play::PlayPacket::PlayerLoaded(_player_loaded) => {
                     println!("Player {} loaded!", self.player_name());
                 }

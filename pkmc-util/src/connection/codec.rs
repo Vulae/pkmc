@@ -111,6 +111,8 @@ impl PacketDecodable for i64 {
     }
 }
 
+// FIXME: Fix using non-Minecraft string lengths
+// https://minecraft.wiki/w/Java_Edition_protocol#Type:String
 impl PacketEncodable for &str {
     fn packet_encode(self, mut writer: impl Write) -> std::io::Result<()> {
         writer.encode(self.len() as i32)?;

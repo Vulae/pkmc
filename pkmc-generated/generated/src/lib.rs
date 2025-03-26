@@ -2,6 +2,8 @@ pub mod packet {
     use pkmc_generated_proc::report_packets_generate_consts;
 
     report_packets_generate_consts!("assets/reports/packets.json");
+
+    pub const PROTOCOL_VERSION: i32 = 770;
 }
 
 pub mod registry {
@@ -81,6 +83,8 @@ pub mod block {
 
 pub mod consts {
     use std::ops::RangeInclusive;
+
+    pub const VERSION_STR: &str = "1.21.5";
 
     pub const PALETTED_DATA_BLOCKS_INDIRECT: RangeInclusive<u8> = 4..=8;
     // TODO: Autogenerate this value.

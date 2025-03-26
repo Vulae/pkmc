@@ -456,7 +456,7 @@ impl AnvilChunk {
             chunk_x: self.x_pos,
             chunk_z: self.z_pos,
             chunk_data: packet::play::LevelChunkData {
-                heightmaps: NBT::Compound(HashMap::new()),
+                heightmaps: HashMap::new(),
                 data: {
                     let mut writer = Vec::new();
 
@@ -847,7 +847,7 @@ mod test {
 
     #[test]
     fn test_debug_mode_world() -> Result<(), AnvilError> {
-        // 1.21.4 debug world
+        // 1.21.5 debug world
         // https://minecraft.wiki/w/Debug_mode
         const WORLD_PATH: &str = "./src/world/anvil-test-server/world/";
         println!(

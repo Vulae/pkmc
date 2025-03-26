@@ -8,17 +8,17 @@ use pkmc_defs::{
 };
 use pkmc_generated::registry::EntityType;
 use pkmc_server::{
-    entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
+    entity_manager::{Entity, EntityBase, EntityViewer, new_entity_id},
     tab_list::{TabListPlayer, TabListViewer},
-    world::{anvil::AnvilError, World as _, WorldBlock, WorldViewer},
+    world::{World as _, WorldBlock, WorldViewer, anvil::AnvilError},
 };
 use pkmc_util::{
+    Color, Position, UUID, Vec3,
     connection::{Connection, ConnectionError},
-    Color, Position, Vec3, UUID,
 };
 use thiserror::Error;
 
-use crate::server::{ServerState, REGISTRIES};
+use crate::server::{REGISTRIES, ServerState};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
 

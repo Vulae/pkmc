@@ -2,17 +2,17 @@ use std::collections::HashMap;
 
 use pkmc_defs::{packet, registry::Registries};
 use pkmc_util::{
+    IdTable, UUID,
     connection::{
         Connection, ConnectionEncryption, ConnectionError, PacketHandler, ServerboundPacket,
     },
-    crypto::{rsa_encode_public_key, MinecraftSha1},
-    nbt::{NBTError, NBT},
-    IdTable, UUID,
+    crypto::{MinecraftSha1, rsa_encode_public_key},
+    nbt::{NBT, NBTError},
 };
 use serde::Deserialize;
 use thiserror::Error;
 
-const PROTOCOL_VERSION: i32 = 769;
+const PROTOCOL_VERSION: i32 = pkmc_generated::packet::PROTOCOL_VERSION;
 // NOTE: This whole timeout thing is probably dumb, and not the proper way to do this.
 const CONFIGURATION_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
 
@@ -189,7 +189,7 @@ impl ClientHandler {
                         packet::status::StatusPacket::Request(_request) => {
                             self.connection.send(&packet::status::Response {
                                 version: packet::status::ResponseVersion {
-                                    name: "1.21.4".to_owned(),
+                                    name: pkmc_generated::consts::VERSION_STR.to_owned(),
                                     protocol: PROTOCOL_VERSION,
                                 },
                                 players: None,

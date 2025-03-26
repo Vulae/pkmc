@@ -9,7 +9,8 @@ use pkmc_util::{
         PacketDecoder as _, PacketEncoder as _, ServerboundPacket,
     },
     nbt::NBT,
-    serverbound_packet_enum, BitSet, FixedBitSet, Position, ReadExt as _, Transmutable, Vec3, UUID,
+    serverbound_packet_enum, BitSet, FixedBitSet, PackedArray, Position, ReadExt as _,
+    Transmutable, Vec3, UUID,
 };
 
 use crate::{
@@ -374,16 +375,74 @@ pub struct BlockEntity {
     pub data: NBT,
 }
 
+pub struct LevelChunkHeightmaps {}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum LevelChunkHeightmapType {
+    WorldSurfaceWorldgen,
+    WorldSurface,
+    OceanFloorWorldgen,
+    OceanFloor,
+    MotionBlocking,
+    MotionBlockingNoLeaves,
+}
+
+impl LevelChunkHeightmapType {
+    fn to_id(&self) -> i32 {
+        match self {
+            LevelChunkHeightmapType::WorldSurfaceWorldgen => 0,
+            LevelChunkHeightmapType::WorldSurface => 1,
+            LevelChunkHeightmapType::OceanFloorWorldgen => 2,
+            LevelChunkHeightmapType::OceanFloor => 3,
+            LevelChunkHeightmapType::MotionBlocking => 4,
+            LevelChunkHeightmapType::MotionBlockingNoLeaves => 5,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LevelChunkHeightmap {
+    world_height: u16,
+    packed: PackedArray<Vec<u64>>,
+}
+
+impl LevelChunkHeightmap {
+    pub fn new(world_height: u16) -> Self {
+        Self {
+            world_height,
+            packed: PackedArray::new(PackedArray::bits_per_entry(world_height as u64), 256),
+        }
+    }
+
+    pub fn set_height(&mut self, x: u8, z: u8, height: u16) {
+        assert!(x < 16);
+        assert!(z < 16);
+        assert!(height < self.world_height);
+        self.packed
+            .set((x as usize) * 16 + (z as usize), height as u64);
+    }
+}
+
 #[derive(Debug)]
 pub struct LevelChunkData {
-    pub heightmaps: NBT,
+    // TODO: Is this entirely correct?
+    pub heightmaps: HashMap<LevelChunkHeightmapType, LevelChunkHeightmap>,
     pub data: Box<[u8]>,
     pub block_entities: Vec<BlockEntity>,
 }
 
 impl LevelChunkData {
     fn write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        writer.encode(&self.heightmaps)?;
+        // TODO: Heightmaps
+        writer.encode(self.heightmaps.len() as i32)?;
+        for (r#type, heightmap) in self.heightmaps.iter() {
+            writer.encode(r#type.to_id())?;
+            let encoded = heightmap.packed.inner();
+            writer.encode(encoded.len() as i32)?;
+            encoded
+                .iter()
+                .try_for_each(|v| writer.write_all(&v.to_be_bytes()))?;
+        }
         writer.encode(self.data.len() as i32)?;
         writer.write_all(&self.data)?;
         writer.encode(self.block_entities.len() as i32)?;
@@ -476,7 +535,7 @@ impl LevelChunkWithLight {
             chunk_x,
             chunk_z,
             chunk_data: LevelChunkData {
-                heightmaps: NBT::Compound(HashMap::new()),
+                heightmaps: HashMap::new(),
                 data: {
                     let mut writer = Vec::new();
 

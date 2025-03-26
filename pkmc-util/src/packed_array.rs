@@ -39,6 +39,11 @@ impl<T> PackedArray<T> {
     pub fn into_inner(self) -> T {
         self.packed
     }
+
+    /// Inner u64 array.
+    pub fn inner(&self) -> &T {
+        &self.packed
+    }
 }
 
 impl PackedArray<Vec<u64>> {

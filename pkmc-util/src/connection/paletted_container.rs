@@ -20,7 +20,6 @@ impl SinglePalettedContainer {
     fn write(&self, mut writer: impl Write) -> std::io::Result<()> {
         writer.write_all(&0u8.to_be_bytes())?;
         writer.encode(self.value)?;
-        writer.encode(0)?;
         Ok(())
     }
 }
@@ -51,7 +50,6 @@ impl IndirectPalettedContainer<'_> {
         debug_assert!(remaining.count() == 0);
         let packed = packed.into_inner();
 
-        writer.encode(packed.len() as i32)?;
         packed.iter().try_for_each(|v| {
             writer.write_all(&v.to_be_bytes())?;
             Ok::<_, std::io::Error>(())
@@ -78,7 +76,6 @@ impl DirectPalettedContainer<'_> {
         debug_assert!(remaining.count() == 0);
         let packed = packed.into_inner();
 
-        writer.encode(packed.len() as i32)?;
         packed.iter().try_for_each(|v| {
             writer.write_all(&v.to_be_bytes())?;
             Ok::<_, std::io::Error>(())
@@ -182,7 +179,6 @@ pub fn to_paletted_data_precomputed(
             writer.encode(palette.len() as i32)?;
             palette.iter().try_for_each(|v| writer.encode(*v))?;
 
-            writer.encode(packed_indices.len() as i32)?;
             packed_indices
                 .iter()
                 .try_for_each(|v| writer.write_all(&v.to_be_bytes()))?;
@@ -194,7 +190,6 @@ pub fn to_paletted_data_precomputed(
 
             writer.write_all(&direct_size.to_be_bytes())?;
 
-            writer.encode(packed_indices.len() as i32)?;
             packed_indices
                 .iter()
                 .try_for_each(|v| writer.write_all(&v.to_be_bytes()))?;

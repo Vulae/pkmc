@@ -15,6 +15,8 @@ use crate::{
 pub struct UUID(pub [u8; 16]);
 
 impl UUID {
+    pub const NULL: UUID = UUID([0u8; 16]);
+
     pub fn new_v7() -> Self {
         let time_since_epoch = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let mut value: u128 = rand::random();
@@ -47,7 +49,7 @@ impl From<u128> for UUID {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 #[error("UUIDTryFromError")]
 pub struct UUIDTryFromStrError;
 
@@ -55,15 +57,26 @@ impl TryFrom<&str> for UUID {
     type Error = UUIDTryFromStrError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let without_dashes = value.replacen('-', "", 4);
-        if without_dashes.len() != 32
-            || without_dashes
+        let dashless = match (
+            value.chars().nth(8).ok_or(UUIDTryFromStrError)? == '-',
+            value.chars().nth(13).ok_or(UUIDTryFromStrError)? == '-',
+            value.chars().nth(18).ok_or(UUIDTryFromStrError)? == '-',
+            value.chars().nth(23).ok_or(UUIDTryFromStrError)? == '-',
+        ) {
+            (true, true, true, true) => value.replacen('-', "", 4),
+            (false, false, false, false) => value.to_owned(),
+            _ => {
+                return Err(UUIDTryFromStrError);
+            }
+        };
+        if dashless.len() != 32
+            || dashless
                 .chars()
-                .any(|char| !"0123456789abcdefABCDEF".contains(char))
+                .any(|char| !("0123456789abcdefABCDEF".contains(char)))
         {
             return Err(UUIDTryFromStrError);
         }
-        u128::from_str_radix(value, 16)
+        u128::from_str_radix(&dashless, 16)
             .map_err(|_| UUIDTryFromStrError)
             .map(|v| v.into())
     }
@@ -78,5 +91,37 @@ impl PacketEncodable for &UUID {
 impl PacketDecodable for UUID {
     fn packet_decode(mut reader: impl Read) -> std::io::Result<Self> {
         Ok(UUID(reader.read_const()?))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{UUIDTryFromStrError, UUID};
+
+    #[test]
+    fn test() {
+        let uuid = UUID([
+            248, 29, 79, 174, 125, 236, 17, 208, 167, 101, 0, 160, 201, 30, 107, 246,
+        ]);
+        assert_eq!(
+            UUID::try_from("f81d4fae-7dec-11d0-a765-00a0c91e6bf6"),
+            Ok(uuid),
+        );
+        assert_eq!(UUID::try_from("f81d4fae7dec11d0a76500a0c91e6bf6"), Ok(uuid));
+        // Hello inserted in middle of UUID
+        assert_eq!(
+            UUID::try_from("f81d4fae7HELLOd0a76500a0c91e6bf6"),
+            Err(UUIDTryFromStrError),
+        );
+        // Invalid dash position
+        assert_eq!(
+            UUID::try_from("f81d4fa-e7dec-11d0-a765-00a0c91e6bf6"),
+            Err(UUIDTryFromStrError),
+        );
+        // UUID is too big
+        assert_eq!(
+            UUID::try_from("f81d4fae-7dec-11d0-a765-00a0c901e6bf6"),
+            Err(UUIDTryFromStrError),
+        );
     }
 }

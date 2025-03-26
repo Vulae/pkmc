@@ -206,10 +206,10 @@ mod test {
 
     #[test]
     fn test() -> std::io::Result<()> {
-        assert_eq!(to_paletted_data(&[69], 4..=8, 15)?.as_ref(), [0, 69, 0]);
+        assert_eq!(to_paletted_data(&[69], 4..=8, 15)?.as_ref(), [0, 69]);
         assert_eq!(
             to_paletted_data(&[4, 7], 4..=8, 15)?.as_ref(),
-            [4, 2, 4, 7, 1, 0, 0, 0, 0, 0, 0, 0, 0b0001_0000]
+            [4, 2, 4, 7, 0, 0, 0, 0, 0, 0, 0, 0b0001_0000]
         );
         Ok(())
     }

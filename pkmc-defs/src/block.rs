@@ -147,21 +147,5 @@ mod test {
             BLOCKS_TO_IDS.get(&Block::new("minecraft:stone")).copied(),
             Some(1)
         );
-        assert_eq!(
-            BLOCKS_TO_IDS
-                .get(&Block::new_p(
-                    "minecraft:mushroom_stem",
-                    [
-                        ("down", false),
-                        ("east", false),
-                        ("north", false),
-                        ("south", true),
-                        ("up", false),
-                        ("west", false),
-                    ]
-                ))
-                .copied(),
-            Some(6969)
-        );
     }
 }

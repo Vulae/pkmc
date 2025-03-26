@@ -11,24 +11,32 @@ pub mod registry {
 
     report_registry_generate_enum!("assets/reports/registries.json", "minecraft:block_entity_type", pub BlockEntityType);
     impl BlockEntityType {
-        /// If NBT contents of this block entity type reflect a visible change in the block.
+        /// If NBT contents is required to render this block, or NBT contents reflect a visible change in the block.
         pub const fn nbt_visible(&self) -> bool {
-            // Note that some block entity types (like beehive) do have visible changes, but that is
-            // in the normal block state instead, so this returns false for those.
             matches!(
                 self,
-                BlockEntityType::Sign // Required to render sign text
-                    | BlockEntityType::HangingSign // Required to render sign text
-                    | BlockEntityType::Skull // Required to render mob heads & custom heads
-                    | BlockEntityType::Banner // Required to render banner pattern
-                    | BlockEntityType::DecoratedPot // Required to render sherds on sides
-                    | BlockEntityType::Campfire // Required to render cooking items
-                    | BlockEntityType::MobSpawner // Required to render containing entity
-                    | BlockEntityType::TrialSpawner // Required to render containing entity
-                    | BlockEntityType::Vault // Required to render containing item
-                                             //| BlockEntityType::Piston // ???
-                                             //| BlockEntityType::SuspiciousGravel // Doesn't exist???
-                                             //| BlockEntityType::SuspiciousSand // Doesn't exist???
+                BlockEntityType::Banner
+                    | BlockEntityType::Beacon
+                    | BlockEntityType::Bed
+                    | BlockEntityType::Bell
+                    | BlockEntityType::BrewingStand
+                    | BlockEntityType::BrushableBlock
+                    | BlockEntityType::Campfire
+                    | BlockEntityType::Chest
+                    | BlockEntityType::ChiseledBookshelf
+                    | BlockEntityType::Conduit
+                    | BlockEntityType::DecoratedPot
+                    | BlockEntityType::EndGateway
+                    | BlockEntityType::EndPortal
+                    | BlockEntityType::EnderChest
+                    | BlockEntityType::HangingSign
+                    | BlockEntityType::MobSpawner
+                    | BlockEntityType::Piston
+                    | BlockEntityType::ShulkerBox
+                    | BlockEntityType::Sign
+                    | BlockEntityType::Skull
+                    | BlockEntityType::TrappedChest
+                    | BlockEntityType::TrialSpawner
             )
         }
     }

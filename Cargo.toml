@@ -8,6 +8,7 @@ members = [
     "pkmc-server",
     # Examples on this type of project layout *seem* impossible, so we just include it as a member instead.
     "examples/basic",
+    "examples/nbt-editor",
 ]
 resolver = "3"
 package.version = "0.1.0"

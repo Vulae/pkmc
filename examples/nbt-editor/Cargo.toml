@@ -1,0 +1,11 @@
+[package]
+name = "nbt-editor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pkmc-util = { path = "../../pkmc-util" }
+clap = { version = "4.5.23", features = ["derive"] }
+egui = "0.31.1"
+eframe = "0.31.1"
+rfd = "0.15.3"

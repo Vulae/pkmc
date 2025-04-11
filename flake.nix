@@ -26,6 +26,12 @@
             pkgs.jdk21
           ];
 
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (with pkgs; [
+            wayland
+            libGL
+            libxkbcommon
+          ]);
+
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
         };
       }

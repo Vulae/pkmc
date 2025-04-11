@@ -89,6 +89,10 @@ impl NBTList {
     pub fn iter(&self) -> impl Iterator<Item = &NBT> {
         self.list.iter()
     }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut NBT> {
+        self.list.iter_mut()
+    }
 }
 
 impl IntoIterator for NBTList {
@@ -96,6 +100,16 @@ impl IntoIterator for NBTList {
     type IntoIter = std::vec::IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         self.list.into_iter()
+    }
+}
+
+impl TryFrom<Vec<NBT>> for NBTList {
+    type Error = NBTError;
+
+    fn try_from(value: Vec<NBT>) -> Result<Self, Self::Error> {
+        let mut list = Self::new();
+        value.into_iter().try_for_each(|v| list.push(v))?;
+        Ok(list)
     }
 }
 

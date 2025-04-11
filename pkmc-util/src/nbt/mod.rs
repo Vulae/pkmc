@@ -35,6 +35,9 @@ pub enum NBTError {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
+/// NBTList contains NBT values that MUST be the same type.
+/// The list initially doesn't have a type, pushing to an empty list will set its type and any
+/// subsequent new items will be required to be the same type.
 pub struct NBTList {
     tag: Option<NBTTag>,
     list: Vec<NBT>,
@@ -65,6 +68,7 @@ impl NBTList {
         self.list.len()
     }
 
+    /// Returns error if new item has mismatching type from already containing items.
     pub fn push(&mut self, v: NBT) -> Result<(), NBTError> {
         if let Some(tag) = self.tag() {
             if tag != v.tag() {
@@ -90,8 +94,23 @@ impl NBTList {
         self.list.iter()
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut NBT> {
-        self.list.iter_mut()
+    /// NBTList::iter_mut cannot exist due to the way NBTList works.
+    /// So each element will have to be mapped instead while also returning an error on mismatch.
+    /// if there is a type mishmatch, it will be skipped & continue, while returning an error at
+    /// the end of the map.
+    pub fn try_map<F>(&mut self, mut mapper: F) -> Result<(), NBTError>
+    where
+        F: FnMut(NBT) -> NBT,
+    {
+        let mut new = NBTList::new();
+        let result = self
+            .list
+            .drain(..)
+            .map(|v| new.push(mapper(v)))
+            .collect::<Vec<_>>();
+        *self = new;
+        result.into_iter().collect::<Result<Vec<_>, _>>()?;
+        Ok(())
     }
 }
 

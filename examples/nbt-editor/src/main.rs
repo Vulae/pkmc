@@ -377,20 +377,18 @@ impl EditableNBTWrapper {
 
                 match &mut self.value {
                     EditableNBT::Byte(byte) => {
-                        egui::DragValue::new(byte).range(i8::MIN..=i8::MAX).ui(ui);
+                        egui::DragValue::new(byte).ui(ui);
                     }
                     EditableNBT::Short(short) => {
-                        egui::DragValue::new(short)
-                            .range(i16::MIN..=i16::MAX)
-                            .ui(ui);
+                        egui::DragValue::new(short).ui(ui);
                     }
                     EditableNBT::Int(int) => {
-                        egui::DragValue::new(int).range(i32::MIN..=i32::MAX).ui(ui);
+                        egui::DragValue::new(int).ui(ui);
                     }
                     EditableNBT::Long(long) => {
                         // FIXME: The underlying egui type for the drag value seems to be f64.
                         // So converting to f64, then back to i64, causes some precision loss.
-                        egui::DragValue::new(long).range(i64::MIN..=i64::MAX).ui(ui);
+                        egui::DragValue::new(long).ui(ui);
                     }
                     EditableNBT::Float(float) => {
                         egui::DragValue::new(float).speed(0.1).ui(ui);
@@ -496,7 +494,7 @@ impl EditableNBTWrapper {
                                 ui.add_space(16.0);
                                 ui.horizontal_wrapped(|ui| {
                                     for byte in byte_array {
-                                        egui::DragValue::new(byte).range(i8::MIN..=i8::MAX).ui(ui);
+                                        egui::DragValue::new(byte).ui(ui);
                                     }
                                 });
                             });
@@ -521,7 +519,7 @@ impl EditableNBTWrapper {
                                 ui.add_space(16.0);
                                 ui.horizontal_wrapped(|ui| {
                                     for int in int_array {
-                                        egui::DragValue::new(int).range(i32::MIN..=i32::MAX).ui(ui);
+                                        egui::DragValue::new(int).ui(ui);
                                     }
                                 });
                             });
@@ -548,9 +546,7 @@ impl EditableNBTWrapper {
                                     for long in long_array {
                                         // FIXME: The underlying egui type for the drag value seems to be f64.
                                         // So converting to f64, then back to i64, causes some precision loss.
-                                        egui::DragValue::new(long)
-                                            .range(i64::MIN..=i64::MAX)
-                                            .ui(ui);
+                                        egui::DragValue::new(long).ui(ui);
                                     }
                                 });
                             });

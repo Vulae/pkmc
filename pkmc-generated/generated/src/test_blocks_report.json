@@ -1,0 +1,199 @@
+{
+    "minecraft:air": {
+        "definition": {
+            "type": "minecraft:air",
+            "properties": {}
+        },
+        "states": [
+            {
+                "default": true,
+                "id": 0
+            }
+        ]
+    },
+    "minecraft:stone": {
+        "definition": {
+            "type": "minecraft:block",
+            "properties": {}
+        },
+        "states": [
+            {
+                "default": true,
+                "id": 1
+            }
+        ]
+    },
+    "minecraft:barrier": {
+        "definition": {
+            "type": "minecraft:barrier",
+            "properties": {}
+        },
+        "properties": {
+            "waterlogged": [
+                "true",
+                "false"
+            ]
+        },
+        "states": [
+            {
+                "id": 2,
+                "properties": {
+                    "waterlogged": "true"
+                }
+            },
+            {
+                "default": true,
+                "id": 3,
+                "properties": {
+                    "waterlogged": "false"
+                }
+            }
+        ]
+    },
+    "minecraft:redstone_wall_torch": {
+        "definition": {
+            "type": "minecraft:redstone_wall_torch",
+            "properties": {}
+        },
+        "properties": {
+            "facing": [
+                "north",
+                "south",
+                "west",
+                "east"
+            ],
+            "lit": [
+                "true",
+                "false"
+            ]
+        },
+        "states": [
+            {
+                "default": true,
+                "id": 4,
+                "properties": {
+                    "facing": "north",
+                    "lit": "true"
+                }
+            },
+            {
+                "id": 5,
+                "properties": {
+                    "facing": "north",
+                    "lit": "false"
+                }
+            },
+            {
+                "id": 6,
+                "properties": {
+                    "facing": "south",
+                    "lit": "true"
+                }
+            },
+            {
+                "id": 7,
+                "properties": {
+                    "facing": "south",
+                    "lit": "false"
+                }
+            },
+            {
+                "id": 8,
+                "properties": {
+                    "facing": "west",
+                    "lit": "true"
+                }
+            },
+            {
+                "id": 9,
+                "properties": {
+                    "facing": "west",
+                    "lit": "false"
+                }
+            },
+            {
+                "id": 10,
+                "properties": {
+                    "facing": "east",
+                    "lit": "true"
+                }
+            },
+            {
+                "id": 11,
+                "properties": {
+                    "facing": "east",
+                    "lit": "false"
+                }
+            }
+        ]
+    },
+    "minecraft:wheat": {
+        "definition": {
+            "type": "minecraft:crop",
+            "properties": {}
+        },
+        "properties": {
+            "age": [
+                "0",
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7"
+            ]
+        },
+        "states": [
+            {
+                "default": true,
+                "id": 12,
+                "properties": {
+                    "age": "0"
+                }
+            },
+            {
+                "id": 13,
+                "properties": {
+                    "age": "1"
+                }
+            },
+            {
+                "id": 14,
+                "properties": {
+                    "age": "2"
+                }
+            },
+            {
+                "id": 15,
+                "properties": {
+                    "age": "3"
+                }
+            },
+            {
+                "id": 16,
+                "properties": {
+                    "age": "4"
+                }
+            },
+            {
+                "id": 17,
+                "properties": {
+                    "age": "5"
+                }
+            },
+            {
+                "id": 18,
+                "properties": {
+                    "age": "6"
+                }
+            },
+            {
+                "id": 19,
+                "properties": {
+                    "age": "7"
+                }
+            }
+        ]
+    }
+}

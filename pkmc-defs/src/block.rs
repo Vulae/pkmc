@@ -131,7 +131,12 @@ mod test {
 
     #[test]
     fn test_blocks_to_ids() {
-        assert_eq!(BLOCKS_TO_IDS.get(&DynamicBlock::air()).copied(), Some(0));
+        assert_eq!(
+            BLOCKS_TO_IDS
+                .get(&DynamicBlock::new("minecraft:air"))
+                .copied(),
+            Some(0)
+        );
         assert_eq!(
             BLOCKS_TO_IDS
                 .get(&DynamicBlock::new("minecraft:stone"))

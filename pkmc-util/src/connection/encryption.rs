@@ -1,4 +1,4 @@
-use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -8,6 +8,7 @@ pub enum ConnectionEncryptionError {
 }
 
 #[derive(Default, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ConnectionEncryption {
     #[default]
     Unencrypted,

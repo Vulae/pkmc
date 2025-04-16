@@ -1,8 +1,8 @@
 use std::io::{Read, Write};
 
 use crate::{
-    connection::{PacketDecodable, PacketDecoder as _, PacketEncodable, PacketEncoder as _},
     ReadExt as _,
+    connection::{PacketDecodable, PacketDecoder as _, PacketEncodable, PacketEncoder as _},
 };
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -119,7 +119,7 @@ impl<const N: usize> FixedBitSet<N> {
         if set {
             self.data[index >> 3] |= 1 << (index & 0b111);
         } else {
-            self.data[index >> 3] &= !(1 << index & 0b111);
+            self.data[index >> 3] &= !((1 << index) & 0b111);
         }
     }
 }

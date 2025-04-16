@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, sync::LazyLock};
 
 use pkmc_generated::{
-    block::{BLOCKS_REPORT, Block},
+    block::{Block, BLOCKS_REPORT},
     registry::BlockEntityType,
 };
-use pkmc_util::{IdTable, nbt::NBT};
+use pkmc_util::{nbt::NBT, IdTable};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -76,36 +76,18 @@ impl DynamicBlock {
         Self::new(&self.name)
     }
 
-    pub fn air() -> Self {
-        Self::new("minecraft:air")
-    }
-
-    pub fn is_air(&self) -> bool {
-        //matches!(
-        //    self.name.as_ref(),
-        //    "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
-        //)
-        self.id()
-            .map(pkmc_generated::block::is_air)
-            .unwrap_or(false)
-    }
-
-    pub fn id(&self) -> Option<i32> {
-        BLOCKS_TO_IDS.get(self).copied()
-    }
-
-    pub fn id_with_default_fallback(&self) -> Option<i32> {
-        self.id().or_else(|| self.without_properties().id())
-    }
-
     pub fn to_block(&self) -> Option<Block> {
-        self.id_with_default_fallback().and_then(Block::from_id)
+        BLOCKS_TO_IDS
+            .get(self)
+            .or_else(|| BLOCKS_TO_IDS.get(&self.without_properties()))
+            .copied()
+            .and_then(Block::from_id)
     }
 }
 
 impl Default for DynamicBlock {
     fn default() -> Self {
-        Self::air()
+        Self::new("minecraft:air")
     }
 }
 
@@ -145,7 +127,7 @@ pub static BLOCKS_TO_IDS: LazyLock<IdTable<DynamicBlock>> = LazyLock::new(|| {
 
 #[cfg(test)]
 mod test {
-    use crate::block::{BLOCKS_TO_IDS, DynamicBlock};
+    use crate::block::{DynamicBlock, BLOCKS_TO_IDS};
 
     #[test]
     fn test_blocks_to_ids() {

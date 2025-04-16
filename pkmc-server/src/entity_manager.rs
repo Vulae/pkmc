@@ -109,7 +109,7 @@ impl EntityVisibility {
 pub struct EntityHandler {
     id: i32,
     uuid: UUID,
-    r#type: i32,
+    r#type: EntityType,
     pub position: Vec3<f64>,
     last_position: Vec3<f64>,
     pub velocity: Vec3<f64>,
@@ -125,7 +125,7 @@ pub struct EntityHandler {
 }
 
 impl EntityHandler {
-    fn new(id: i32, uuid: UUID, r#type: i32) -> Self {
+    fn new(id: i32, uuid: UUID, r#type: EntityType) -> Self {
         Self {
             id,
             uuid,
@@ -386,7 +386,7 @@ impl EntityManager {
         EntityBase {
             handler: self.entities.insert_ignored(
                 id,
-                Mutex::new(EntityHandler::new(id, uuid, entity.r#type().to_id())),
+                Mutex::new(EntityHandler::new(id, uuid, entity.r#type())),
             ),
             inner: entity,
             uuid,

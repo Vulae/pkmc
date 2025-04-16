@@ -26,7 +26,7 @@ pub mod registry {
                     | BlockEntityType::ChiseledBookshelf
                     | BlockEntityType::Conduit
                     | BlockEntityType::DecoratedPot
-                    // | BlockEntityType::EndGateway
+                    | BlockEntityType::EndGateway
                     | BlockEntityType::EndPortal
                     | BlockEntityType::EnderChest
                     | BlockEntityType::HangingSign
@@ -82,11 +82,6 @@ pub mod block {
         ))
         .unwrap()
     });
-
-    // TODO: Autogenerate this
-    pub const fn is_air(id: i32) -> bool {
-        matches!(id, 0 | 13971 | 13972)
-    }
 
     pub trait IdIndexable {
         const MAX_INDEX: u32;

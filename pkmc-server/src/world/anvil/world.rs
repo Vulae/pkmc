@@ -28,7 +28,8 @@ use pkmc_util::{
 
 use crate::world::{
     chunk_loader::{ChunkLoader, ChunkPosition},
-    World, WorldViewer, CHUNK_SIZE, SECTION_BIOMES, SECTION_BLOCKS, SECTION_SIZE,
+    section_get_block_index, World, WorldViewer, CHUNK_SIZE, SECTION_BIOMES, SECTION_BLOCKS,
+    SECTION_BLOCKS_SIZE,
 };
 
 use super::{chunk_format, AnvilError};
@@ -37,7 +38,7 @@ pub const REGION_SIZE: usize = 32;
 pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
 
 // Each time the world updates & sends new data to client, we either send sections or chunks.
-// NOTE: When sending sections, the client calculates lighting instead of server.
+// Note that when sending sections, the client calculates lighting instead of server.
 pub const UPDATE_SECTION_CHUNK_SWITCH_NUM_SECTIONS: usize = 4;
 pub const UPDATE_SECTION_CHUNK_SWITCH_NUM_BLOCKS: usize = 1024;
 
@@ -63,7 +64,7 @@ impl<T: Debug, const N: usize, const I_S: u8, const I_E: u8> PalettedData<T, N, 
         match palette_count {
             0 => panic!(),
             1 => 0,
-            // NOTE: Data stored inside the world files doesn't have direct paletting.
+            // Data stored inside the world files doesn't have direct paletting.
             palette_count => PackedArray::bits_per_entry(palette_count as u64 - 1).max(I_S),
         }
     }
@@ -156,13 +157,6 @@ type ChunkSectionBlockStates = PalettedData<
 >;
 
 impl ChunkSectionBlockStates {
-    fn get_block_index(x: u8, y: u8, z: u8) -> usize {
-        debug_assert!((x as usize) < SECTION_SIZE);
-        debug_assert!((y as usize) < SECTION_SIZE);
-        debug_assert!((z as usize) < SECTION_SIZE);
-        (y as usize) * SECTION_SIZE * SECTION_SIZE + (z as usize) * SECTION_SIZE + (x as usize)
-    }
-
     fn write(&self, mut writer: impl Write) -> Result<(), AnvilError> {
         // TODO: Special case for if there's only 1 block state.
 
@@ -173,7 +167,7 @@ impl ChunkSectionBlockStates {
             .collect::<Box<[i32]>>();
 
         let block_count = (0..SECTION_BLOCKS)
-            .filter(|i| !pkmc_generated::block::is_air(block_ids[self.palette_index(*i)]))
+            .filter(|i| !self.palette[self.palette_index(*i)].is_air())
             .count();
 
         writer.write_all(&(block_count as u16).to_be_bytes())?;
@@ -318,31 +312,28 @@ impl Chunk {
     }
 
     fn get_block(&self, x: u8, y: i16, z: u8) -> Option<Block> {
-        debug_assert!((x as usize) < SECTION_SIZE);
-        debug_assert!((z as usize) < SECTION_SIZE);
-        let section = self
-            .sections
-            .get((y.div_euclid(SECTION_SIZE as i16) - (self.sections_y_start as i16)) as usize)?;
-        Some(
-            *section.blocks.get(ChunkSectionBlockStates::get_block_index(
-                x,
-                y.rem_euclid(SECTION_SIZE as i16) as u8,
-                z,
-            )),
-        )
+        debug_assert!((x as usize) < SECTION_BLOCKS_SIZE);
+        debug_assert!((z as usize) < SECTION_BLOCKS_SIZE);
+        let section = self.sections.get(
+            (y.div_euclid(SECTION_BLOCKS_SIZE as i16) - (self.sections_y_start as i16)) as usize,
+        )?;
+        Some(*section.blocks.get(section_get_block_index(
+            x,
+            y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8,
+            z,
+        )))
     }
 
     fn set_block(&mut self, x: u8, y: i16, z: u8, block: Block) -> bool {
-        debug_assert!((x as usize) < SECTION_SIZE);
-        debug_assert!((z as usize) < SECTION_SIZE);
-        let Some(section) = self
-            .sections
-            .get_mut((y.div_euclid(SECTION_SIZE as i16) - (self.sections_y_start as i16)) as usize)
-        else {
+        debug_assert!((x as usize) < SECTION_BLOCKS_SIZE);
+        debug_assert!((z as usize) < SECTION_BLOCKS_SIZE);
+        let Some(section) = self.sections.get_mut(
+            (y.div_euclid(SECTION_BLOCKS_SIZE as i16) - (self.sections_y_start as i16)) as usize,
+        ) else {
             return false;
         };
         section.blocks.set(
-            ChunkSectionBlockStates::get_block_index(x, y.rem_euclid(SECTION_SIZE as i16) as u8, z),
+            section_get_block_index(x, y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8, z),
             block,
         )
     }
@@ -463,9 +454,9 @@ struct SectionDiff {
 
 impl SectionDiff {
     fn set(&mut self, x: u8, y: u8, z: u8, block: Block) {
-        assert!((x as usize) < SECTION_SIZE);
-        assert!((y as usize) < SECTION_SIZE);
-        assert!((z as usize) < SECTION_SIZE);
+        assert!((x as usize) < SECTION_BLOCKS_SIZE);
+        assert!((y as usize) < SECTION_BLOCKS_SIZE);
+        assert!((z as usize) < SECTION_BLOCKS_SIZE);
         self.change.insert((x, y, z), block.into_id());
     }
 
@@ -698,16 +689,16 @@ impl World for AnvilWorld {
         ) {
             self.diffs
                 .entry((
-                    position.x.div_euclid(SECTION_SIZE as i32),
-                    position.z.div_euclid(SECTION_SIZE as i32),
+                    position.x.div_euclid(SECTION_BLOCKS_SIZE as i32),
+                    position.z.div_euclid(SECTION_BLOCKS_SIZE as i32),
                 ))
                 .or_default()
-                .entry(position.y.div_euclid(SECTION_SIZE as i16))
+                .entry(position.y.div_euclid(SECTION_BLOCKS_SIZE as i16))
                 .or_default()
                 .set(
-                    position.x.rem_euclid(SECTION_SIZE as i32) as u8,
-                    position.y.rem_euclid(SECTION_SIZE as i16) as u8,
-                    position.z.rem_euclid(SECTION_SIZE as i32) as u8,
+                    position.x.rem_euclid(SECTION_BLOCKS_SIZE as i32) as u8,
+                    position.y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8,
+                    position.z.rem_euclid(SECTION_BLOCKS_SIZE as i32) as u8,
                     block,
                 );
         }

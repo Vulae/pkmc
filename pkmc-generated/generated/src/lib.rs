@@ -26,7 +26,7 @@ pub mod registry {
                     | BlockEntityType::ChiseledBookshelf
                     | BlockEntityType::Conduit
                     | BlockEntityType::DecoratedPot
-                    | BlockEntityType::EndGateway
+                    // | BlockEntityType::EndGateway
                     | BlockEntityType::EndPortal
                     | BlockEntityType::EnderChest
                     | BlockEntityType::HangingSign
@@ -97,7 +97,7 @@ pub mod block {
     }
 
     #[repr(transparent)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct PropertyUint<const MAX: u32>(u32);
 
     impl<const MAX: u32> PropertyUint<MAX> {
@@ -122,6 +122,12 @@ pub mod block {
     }
 
     report_blocks_enum!("assets/reports/blocks.json");
+
+    impl Default for Block {
+        fn default() -> Self {
+            Self::Air
+        }
+    }
 
     impl Block {
         pub fn is_air(&self) -> bool {
@@ -150,7 +156,7 @@ mod simple_test {
 
     report_blocks_enum!("generated/src/test_blocks_report.json");
 
-    fn do_test(block: Block, id: u32) {
+    fn do_test(block: Block, id: i32) {
         if id != block.into_id() {
             panic!(
                 "Block::into_id test failed for block {:?}, expected {} but got {}",
@@ -199,7 +205,7 @@ mod simple_test {
 mod complex_test {
     use crate::block::{self, Block, PropertyUint};
 
-    fn do_test(block: Block, id: u32) {
+    fn do_test(block: Block, id: i32) {
         if id != block.into_id() {
             panic!(
                 "Block::into_id test failed for block {:?}, expected {} but got {}",

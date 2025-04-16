@@ -10,9 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use convert_case::Casing;
 use proc_macro2::TokenStream;
-use quote::{ToTokens, quote};
+use quote::{quote, ToTokens};
 use serde::Deserialize;
-use syn::{Ident, LitStr, parse::Parse, parse_macro_input, spanned::Spanned as _};
+use syn::{parse::Parse, parse_macro_input, spanned::Spanned as _, Ident, LitStr};
 
 use crate::{file_path, fix_identifier};
 
@@ -65,7 +65,7 @@ impl From<Vec<String>> for PropertyType {
                         .iter()
                         .enumerate()
                         .all(|(i, v)| (i as u32 + 1) == *v)
-                        .then_some(nums.len()),
+                        .then_some(nums.len() - 1),
                     _ => panic!(),
                 }
             })
@@ -124,7 +124,7 @@ impl ReportBlocksGenerator {
                         let max_value = vec.len() as u32 - 1;
                         let enum_indices = (0..vec.len()).map(|v| v as u32).collect::<Vec<_>>();
                         tokens.extend(quote! {
-                            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+                            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
                             pub enum #enum_name {
                                 #(#enum_values,)*
                             }
@@ -317,19 +317,21 @@ impl ReportBlocksGenerator {
         });
 
         tokens.extend(quote! {
-            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
             pub enum Block {
                 #blocks_tokens
             }
 
             impl Block {
-                pub fn into_id(self) -> u32 {
-                    match self {
+                pub fn into_id(self) -> i32 {
+                    let v: u32 = match self {
                         #blocks_to_id_tokens
-                    }
+                    };
+                    v as i32
                 }
 
-                pub fn from_id(id: u32) -> Option<Self> {
+                pub fn from_id(id: i32) -> Option<Self> {
+                    let id = id as u32;
                     Some(match id {
                         #blocks_from_id_tokens
                         _ => return None,

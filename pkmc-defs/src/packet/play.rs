@@ -1623,10 +1623,10 @@ impl ClientboundPacket for LevelParticles {
         writer.encode(self.particle.r#type().to_id())?;
         match &self.particle {
             Particle::Block(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             Particle::BlockMarker(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             Particle::Dust { color, scale } => {
                 writer.write_all(&color.to_argb8888(0).to_be_bytes())?;
@@ -1641,7 +1641,7 @@ impl ClientboundPacket for LevelParticles {
                 writer.write_all(&color.to_argb8888(*alpha).to_be_bytes())?;
             }
             Particle::FallingDust(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             Particle::SculkCharge { roll } => {
                 writer.write_all(&roll.to_be_bytes())?;
@@ -1676,10 +1676,10 @@ impl ClientboundPacket for LevelParticles {
                 writer.encode(*delay)?;
             }
             Particle::DustPillar(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             Particle::BlockCrumble(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             _ => {}
         }

@@ -1,14 +1,17 @@
 use std::{collections::BTreeMap, sync::LazyLock};
 
-use pkmc_generated::{block::BLOCKS_REPORT, registry::BlockEntityType};
-use pkmc_util::{nbt::NBT, IdTable};
+use pkmc_generated::{
+    block::{BLOCKS_REPORT, Block},
+    registry::BlockEntityType,
+};
+use pkmc_util::{IdTable, nbt::NBT};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[serde(transparent)]
-pub struct BlockProperties(BTreeMap<String, String>);
+pub struct DynamicBlockProperties(BTreeMap<String, String>);
 
-impl BlockProperties {
+impl DynamicBlockProperties {
     pub fn new() -> Self {
         Self(BTreeMap::new())
     }
@@ -38,9 +41,9 @@ impl BlockProperties {
     }
 }
 
-impl<K: ToString, V: ToString, I: IntoIterator<Item = (K, V)>> From<I> for BlockProperties {
+impl<K: ToString, V: ToString, I: IntoIterator<Item = (K, V)>> From<I> for DynamicBlockProperties {
     fn from(value: I) -> Self {
-        BlockProperties(
+        DynamicBlockProperties(
             value
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -50,15 +53,15 @@ impl<K: ToString, V: ToString, I: IntoIterator<Item = (K, V)>> From<I> for Block
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Block {
+pub struct DynamicBlock {
     #[serde(alias = "Name")]
     pub name: String,
     #[serde(alias = "Properties", default)]
-    pub properties: BlockProperties,
+    pub properties: DynamicBlockProperties,
 }
 
-impl Block {
-    pub fn new_p<N: ToString, P: Into<BlockProperties>>(name: N, properties: P) -> Self {
+impl DynamicBlock {
+    pub fn new_p<N: ToString, P: Into<DynamicBlockProperties>>(name: N, properties: P) -> Self {
         Self {
             name: name.to_string(),
             properties: properties.into(),
@@ -94,9 +97,13 @@ impl Block {
     pub fn id_with_default_fallback(&self) -> Option<i32> {
         self.id().or_else(|| self.without_properties().id())
     }
+
+    pub fn to_block(&self) -> Option<Block> {
+        self.id_with_default_fallback().and_then(Block::from_id)
+    }
 }
 
-impl Default for Block {
+impl Default for DynamicBlock {
     fn default() -> Self {
         Self::air()
     }
@@ -104,13 +111,13 @@ impl Default for Block {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockEntity {
-    pub block: Block,
+    pub block: DynamicBlock,
     pub r#type: BlockEntityType,
     pub data: NBT,
 }
 
 impl BlockEntity {
-    pub fn new(block: Block, r#type: BlockEntityType, data: NBT) -> Self {
+    pub fn new(block: DynamicBlock, r#type: BlockEntityType, data: NBT) -> Self {
         Self {
             block,
             r#type,
@@ -118,19 +125,19 @@ impl BlockEntity {
         }
     }
 
-    pub fn into_block(self) -> Block {
+    pub fn into_block(self) -> DynamicBlock {
         self.block
     }
 }
 
-pub static BLOCKS_TO_IDS: LazyLock<IdTable<Block>> = LazyLock::new(|| {
+pub static BLOCKS_TO_IDS: LazyLock<IdTable<DynamicBlock>> = LazyLock::new(|| {
     let mut blocks_to_ids = IdTable::new();
     BLOCKS_REPORT.0.iter().for_each(|(name, block)| {
         block.states.iter().for_each(|state| {
             if state.default {
-                blocks_to_ids.insert(Block::new(name), state.id);
+                blocks_to_ids.insert(DynamicBlock::new(name), state.id);
             }
-            blocks_to_ids.insert(Block::new_p(name, state.properties.iter()), state.id);
+            blocks_to_ids.insert(DynamicBlock::new_p(name, state.properties.iter()), state.id);
         });
     });
     blocks_to_ids
@@ -138,13 +145,15 @@ pub static BLOCKS_TO_IDS: LazyLock<IdTable<Block>> = LazyLock::new(|| {
 
 #[cfg(test)]
 mod test {
-    use crate::block::{Block, BLOCKS_TO_IDS};
+    use crate::block::{BLOCKS_TO_IDS, DynamicBlock};
 
     #[test]
     fn test_blocks_to_ids() {
-        assert_eq!(BLOCKS_TO_IDS.get(&Block::air()).copied(), Some(0));
+        assert_eq!(BLOCKS_TO_IDS.get(&DynamicBlock::air()).copied(), Some(0));
         assert_eq!(
-            BLOCKS_TO_IDS.get(&Block::new("minecraft:stone")).copied(),
+            BLOCKS_TO_IDS
+                .get(&DynamicBlock::new("minecraft:stone"))
+                .copied(),
             Some(1)
         );
     }

@@ -3,89 +3,68 @@ use std::{
     fmt::Debug,
     fs::File,
     hash::Hash,
-    io::{Seek, Write},
+    io::{Seek as _, Write},
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 
-use itertools::Itertools;
-use pkmc_defs::{
-    biome::Biome,
-    block::{Block, BlockEntity},
-    packet,
-};
+use itertools::Itertools as _;
+use pkmc_defs::{biome::Biome, packet};
 use pkmc_generated::{
+    block::Block,
     consts::{
         PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT, PALETTED_DATA_BLOCKS_DIRECT,
         PALETTED_DATA_BLOCKS_INDIRECT,
     },
-    registry::BlockEntityType,
 };
 use pkmc_util::{
     connection::{
-        paletted_container::{
-            calculate_bpe, to_paletted_data, to_paletted_data_precomputed,
-            to_paletted_data_singular,
-        },
-        ConnectionError, ConnectionSender,
+        paletted_container::{calculate_bpe, to_paletted_data, to_paletted_data_precomputed},
+        ConnectionSender,
     },
-    nbt::{from_nbt, NBTError, NBT},
-    IdTable, PackedArray, Position, ReadExt, Transmutable, Vec3, WeakList,
+    nbt::{from_nbt, NBT},
+    IdTable, PackedArray, Position, ReadExt as _, Transmutable as _, Vec3, WeakList,
 };
-use serde::Deserialize;
-use thiserror::Error;
 
-use crate::world::{chunk_loader::ChunkPosition, SECTION_SIZE};
-
-use super::{
-    chunk_loader::ChunkLoader, World, WorldBlock, WorldViewer, CHUNK_SIZE, SECTION_BIOMES,
-    SECTION_BLOCKS,
+use crate::world::{
+    chunk_loader::{ChunkLoader, ChunkPosition},
+    section_get_block_index, World, WorldViewer, CHUNK_SIZE, SECTION_BIOMES, SECTION_BLOCKS,
+    SECTION_BLOCKS_SIZE,
 };
+
+use super::{chunk_format, AnvilError};
 
 pub const REGION_SIZE: usize = 32;
 pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
 
 // Each time the world updates & sends new data to client, we either send sections or chunks.
-// NOTE: When sending sections, the client calculates lighting instead of server.
+// Note that when sending sections, the client calculates lighting instead of server.
 pub const UPDATE_SECTION_CHUNK_SWITCH_NUM_SECTIONS: usize = 4;
 pub const UPDATE_SECTION_CHUNK_SWITCH_NUM_BLOCKS: usize = 1024;
 
-#[derive(Error, Debug)]
-pub enum AnvilError {
-    #[error(transparent)]
-    IoError(#[from] std::io::Error),
-    #[error(transparent)]
-    ConnectionError(#[from] ConnectionError),
-    #[error("Region chunk unknown compression \"{0}\"")]
-    RegionUnknownCompression(u8),
-    #[error("Region chunk unsupported compression \"{0}\"")]
-    RegionUnsupportedCompression(String),
-    #[error(transparent)]
-    NBTError(#[from] NBTError),
-    #[error("Invalid block entity type \"{0}\"")]
-    InvalidBlockEntityType(String),
-}
-
-fn default_paletted_data<T: Default>() -> Box<[T]> {
-    vec![T::default()].into_boxed_slice()
-}
-
-#[derive(Debug, Deserialize)]
-struct PalettedData<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8> {
-    #[serde(default = "default_paletted_data")]
+#[derive(Debug)]
+struct PalettedData<T: Debug, const N: usize, const I_S: u8, const I_E: u8> {
     palette: Box<[T]>,
-    #[serde(default)]
     data: Box<[i64]>,
 }
 
-impl<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8>
-    PalettedData<T, N, I_S, I_E>
+impl<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8> Default
+    for PalettedData<T, N, I_S, I_E>
 {
+    fn default() -> Self {
+        Self {
+            palette: vec![T::default()].into_boxed_slice(),
+            data: vec![].into_boxed_slice(),
+        }
+    }
+}
+
+impl<T: Debug, const N: usize, const I_S: u8, const I_E: u8> PalettedData<T, N, I_S, I_E> {
     fn bpe(palette_count: usize) -> u8 {
         match palette_count {
             0 => panic!(),
             1 => 0,
-            // NOTE: Data stored inside the world files doesn't have direct paletting.
+            // Data stored inside the world files doesn't have direct paletting.
             palette_count => PackedArray::bits_per_entry(palette_count as u64 - 1).max(I_S),
         }
     }
@@ -107,7 +86,7 @@ impl<T: Debug + Default, const N: usize, const I_S: u8, const I_E: u8>
     }
 }
 
-impl<T: Debug + Default + Eq + Clone + Hash, const N: usize, const I_S: u8, const I_E: u8>
+impl<T: Debug + Clone + Eq + Hash, const N: usize, const I_S: u8, const I_E: u8>
     PalettedData<T, N, I_S, I_E>
 {
     fn set(&mut self, index: usize, value: T) -> bool {
@@ -178,57 +157,25 @@ type ChunkSectionBlockStates = PalettedData<
 >;
 
 impl ChunkSectionBlockStates {
-    fn get_block_index(x: u8, y: u8, z: u8) -> usize {
-        debug_assert!((x as usize) < SECTION_SIZE);
-        debug_assert!((y as usize) < SECTION_SIZE);
-        debug_assert!((z as usize) < SECTION_SIZE);
-        (y as usize) * SECTION_SIZE * SECTION_SIZE + (z as usize) * SECTION_SIZE + (x as usize)
-    }
-
-    fn get_block(&self, x: u8, y: u8, z: u8) -> &Block {
-        self.get(Self::get_block_index(x, y, z))
-    }
-
-    fn set_block(&mut self, x: u8, y: u8, z: u8, block: Block) -> bool {
-        self.set(Self::get_block_index(x, y, z), block)
-    }
-
     fn write(&self, mut writer: impl Write) -> Result<(), AnvilError> {
-        //if self.palette.len() == 1 {
-        //    let id = self.palette[0]
-        //        .id_with_default_fallback()
-        //        .unwrap_or_else(|| Block::air().id().unwrap());
-        //    writer.write_all(
-        //        &if generated::block::is_air(id) {
-        //            0u16
-        //        } else {
-        //            4096
-        //        }
-        //        .to_be_bytes(),
-        //    )?;
-        //    writer.write_all(&to_paletted_data_singular(id)?)?;
-        //    return Ok(());
-        //}
+        // TODO: Special case for if there's only 1 block state.
 
         let block_ids = self
             .palette
             .iter()
-            .map(|b| {
-                b.id_with_default_fallback()
-                    .unwrap_or_else(|| Block::air().id().unwrap())
-            })
+            .map(|b| b.into_id())
             .collect::<Box<[i32]>>();
 
         let block_count = (0..SECTION_BLOCKS)
-            .filter(|i| !pkmc_generated::block::is_air(block_ids[self.palette_index(*i)]))
+            .filter(|i| !self.palette[self.palette_index(*i)].is_air())
             .count();
 
         writer.write_all(&(block_count as u16).to_be_bytes())?;
 
-        const FORCE_CHUNK_REENCODE: bool = false;
+        const FORCE_SECTION_REENCODE: bool = false;
 
-        if !FORCE_CHUNK_REENCODE
-            // NOTE: Data stored in the anvil format doesn't have direct paletting.
+        if !FORCE_SECTION_REENCODE
+            // Data stored in the anvil format doesn't have direct paletting.
             // So we need to re-encode the data if there's too many palette values.
             && calculate_bpe(block_ids.len()) <= PALETTED_DATA_BLOCKS_INDIRECT_END
         {
@@ -266,186 +213,129 @@ impl ChunkSectionBiomes {
         let biome_ids = self
             .palette
             .iter()
-            .map(|b| {
-                b.id(mapper)
-                    .unwrap_or_else(|| Biome::default().id(mapper).unwrap())
-            })
-            .collect::<Box<[_]>>();
+            .map(|b| b.id(mapper).unwrap_or_default())
+            .collect::<Box<[i32]>>();
 
-        writer.write_all(&to_paletted_data(
-            &(0..SECTION_BIOMES)
-                .map(|i| biome_ids[self.palette_index(i)])
-                .collect::<Box<[_]>>(),
-            PALETTED_DATA_BIOMES_INDIRECT,
-            PALETTED_DATA_BIOMES_DIRECT,
-        )?)?;
+        const FORCE_SECTION_REENCODE: bool = false;
 
-        Ok(())
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct ChunkSection {
-    #[serde(rename = "Y")]
-    y: i8,
-    block_states: Option<ChunkSectionBlockStates>,
-    biomes: Option<ChunkSectionBiomes>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-struct AnvilBlockEntity {
-    id: String,
-    #[allow(unused)]
-    #[serde(rename = "keepPacked", default)]
-    keep_packed: bool,
-    x: i32,
-    y: i16,
-    z: i32,
-    #[serde(flatten)]
-    data: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AnvilChunk {
-    //#[serde(rename = "DataVersion")]
-    //data_version: i32,
-    #[serde(rename = "xPos")]
-    x_pos: i32,
-    #[serde(rename = "zPos")]
-    z_pos: i32,
-    #[serde(rename = "yPos")]
-    y_pos: Option<i8>,
-    #[serde(skip, default)]
-    section_y_pos: i8,
-    //#[serde(rename = "Status")]
-    //status: String,
-    //#[serde(rename = "LastUpdate")]
-    //last_update: i64,
-    sections: Vec<ChunkSection>,
-    block_entities: Vec<AnvilBlockEntity>,
-    #[serde(skip, default)]
-    parsed_block_entities: HashMap<(u8, i16, u8), BlockEntity>,
-}
-
-impl AnvilChunk {
-    fn initialize(
-        &mut self,
-        section_y_range: std::ops::RangeInclusive<i8>,
-    ) -> Result<(), AnvilError> {
-        if let Some(y_pos) = self.y_pos {
-            assert!(*section_y_range.start() == y_pos);
+        if !FORCE_SECTION_REENCODE
+            // Data stored in the anvil format doesn't have direct paletting.
+            // So we need to re-encode the data if there's too many palette values.
+            && calculate_bpe(biome_ids.len()) <= PALETTED_DATA_BIOMES_INDIRECT_END
+        {
+            writer.write_all(&to_paletted_data_precomputed(
+                &biome_ids,
+                &self.data,
+                PALETTED_DATA_BIOMES_INDIRECT,
+                PALETTED_DATA_BIOMES_DIRECT,
+            )?)?;
+        } else {
+            writer.write_all(&to_paletted_data(
+                &(0..SECTION_BIOMES)
+                    .map(|i| biome_ids[self.palette_index(i)])
+                    .collect::<Box<[_]>>(),
+                PALETTED_DATA_BIOMES_INDIRECT,
+                PALETTED_DATA_BIOMES_DIRECT,
+            )?)?;
         }
-        self.section_y_pos = *section_y_range.start();
-
-        // Insert missing sections
-        section_y_range.for_each(|section_y| {
-            if self.sections.iter().any(|section| section.y == section_y) {
-                return;
-            }
-            self.sections.push(ChunkSection {
-                y: section_y,
-                block_states: None,
-                biomes: None,
-            })
-        });
-
-        // Sometimes sections are unsorted.
-        // And also the inserting of sections in the above code may also cause it to become unsorted.
-        self.sections.sort_by(|a, b| a.y.cmp(&b.y));
-
-        self.parsed_block_entities = self
-            .block_entities
-            .iter()
-            .map(|b| {
-                let bx = b.x.rem_euclid(CHUNK_SIZE as i32) as u8;
-                let bz = b.z.rem_euclid(CHUNK_SIZE as i32) as u8;
-                Ok::<_, AnvilError>((
-                    (bx, b.y, bz),
-                    BlockEntity::new(
-                        self.get_tile_block(bx, b.y, bz).unwrap(),
-                        BlockEntityType::from_str(&b.id)
-                            .ok_or_else(|| AnvilError::InvalidBlockEntityType(b.id.clone()))?,
-                        NBT::try_from(serde_json::Value::from_iter(b.data.clone())).unwrap(),
-                    ),
-                ))
-            })
-            .collect::<Result<_, _>>()?;
 
         Ok(())
     }
+}
 
-    fn get_section(&self, section_y: i8) -> Option<&ChunkSection> {
-        self.sections.iter().find(|section| section.y == section_y)
+#[derive(Debug, Default)]
+struct ChunkSection {
+    blocks: ChunkSectionBlockStates,
+    biomes: ChunkSectionBiomes,
+}
+
+#[derive(Debug)]
+struct Chunk {
+    chunk_x: i32,
+    chunk_z: i32,
+    sections_y_start: i8,
+    sections: Box<[ChunkSection]>,
+}
+
+impl Chunk {
+    fn new(parsed: chunk_format::Chunk, section_y_range: std::ops::RangeInclusive<i8>) -> Self {
+        if let Some(y_pos) = parsed.y_pos {
+            assert_eq!(*section_y_range.start(), y_pos);
+        }
+
+        Chunk {
+            chunk_x: parsed.x_pos,
+            chunk_z: parsed.z_pos,
+            sections_y_start: *section_y_range.start(),
+            sections: section_y_range
+                .map(|section_y| {
+                    let Some(section) = parsed
+                        .sections
+                        .iter()
+                        .find(|section| section.y == section_y)
+                    else {
+                        return ChunkSection::default();
+                    };
+                    ChunkSection {
+                        blocks: section
+                            .block_states
+                            .as_ref()
+                            .map(|i| PalettedData {
+                                palette: i
+                                    .palette
+                                    .iter()
+                                    .map(|v| {
+                                        v.to_block().unwrap_or_else(|| {
+                                            println!(
+                                                "Invalid block in chunk {} {}: {:#?}",
+                                                parsed.x_pos, parsed.z_pos, v,
+                                            );
+                                            Block::Air
+                                        })
+                                    })
+                                    .collect(),
+                                data: i.data.clone(),
+                            })
+                            .unwrap_or_default(),
+                        biomes: section
+                            .biomes
+                            .as_ref()
+                            .map(|i| PalettedData {
+                                palette: i.palette.clone(),
+                                data: i.data.clone(),
+                            })
+                            .unwrap_or_default(),
+                    }
+                })
+                .collect(),
+        }
     }
 
-    fn get_section_mut(&mut self, section_y: i8) -> Option<&mut ChunkSection> {
-        //self.sections
-        //    .iter_mut()
-        //    .find(|section| section.y == section_y)
-        self.sections
-            .get_mut((section_y - self.section_y_pos) as usize)
+    fn get_block(&self, x: u8, y: i16, z: u8) -> Option<Block> {
+        debug_assert!((x as usize) < SECTION_BLOCKS_SIZE);
+        debug_assert!((z as usize) < SECTION_BLOCKS_SIZE);
+        let section = self.sections.get(
+            (y.div_euclid(SECTION_BLOCKS_SIZE as i16) - (self.sections_y_start as i16)) as usize,
+        )?;
+        Some(*section.blocks.get(section_get_block_index(
+            x,
+            y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8,
+            z,
+        )))
     }
 
-    fn get_tile_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<Block> {
-        debug_assert!((block_x as usize) < SECTION_SIZE);
-        debug_assert!((block_z as usize) < SECTION_SIZE);
-        Some(
-            self.get_section(block_y.div_euclid(SECTION_SIZE as i16) as i8)?
-                .block_states
-                .as_ref()?
-                .get_block(
-                    block_x,
-                    (block_y.rem_euclid(SECTION_SIZE as i16)) as u8,
-                    block_z,
-                )
-                .clone(),
-        )
-    }
-
-    fn get_block(&self, block_x: u8, block_y: i16, block_z: u8) -> Option<WorldBlock> {
-        // TODO: WorldBlock::BlockEntity
-        self.get_tile_block(block_x, block_y, block_z)
-            .map(WorldBlock::Block)
-    }
-
-    fn set_block(&mut self, block_x: u8, block_y: i16, block_z: u8, block: WorldBlock) -> bool {
-        debug_assert!((block_x as usize) < SECTION_SIZE);
-        debug_assert!((block_z as usize) < SECTION_SIZE);
-
-        let block = match block {
-            WorldBlock::Block(block) => {
-                self.parsed_block_entities
-                    .remove(&(block_x, block_y, block_z));
-                block
-            }
-            WorldBlock::BlockEntity(block_entity) => {
-                let block = block_entity.block.clone();
-
-                self.parsed_block_entities
-                    .insert((block_x, block_y, block_z), block_entity);
-
-                block
-            }
-        };
-
-        let Some(section) = self.get_section_mut(block_y.div_euclid(SECTION_SIZE as i16) as i8)
-        else {
+    fn set_block(&mut self, x: u8, y: i16, z: u8, block: Block) -> bool {
+        debug_assert!((x as usize) < SECTION_BLOCKS_SIZE);
+        debug_assert!((z as usize) < SECTION_BLOCKS_SIZE);
+        let Some(section) = self.sections.get_mut(
+            (y.div_euclid(SECTION_BLOCKS_SIZE as i16) - (self.sections_y_start as i16)) as usize,
+        ) else {
             return false;
         };
-        let Some(block_states) = section.block_states.as_mut() else {
-            return false;
-        };
-
-        block_states.set_block(
-            block_x,
-            (block_y.rem_euclid(SECTION_SIZE as i16)) as u8,
-            block_z,
+        section.blocks.set(
+            section_get_block_index(x, y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8, z),
             block,
         )
-    }
-
-    fn block_entities(&self) -> &HashMap<(u8, i16, u8), BlockEntity> {
-        &self.parsed_block_entities
     }
 
     fn to_packet(
@@ -453,48 +343,23 @@ impl AnvilChunk {
         biome_mapper: &IdTable<Biome>,
     ) -> Result<packet::play::LevelChunkWithLight, AnvilError> {
         Ok(packet::play::LevelChunkWithLight {
-            chunk_x: self.x_pos,
-            chunk_z: self.z_pos,
+            chunk_x: self.chunk_x,
+            chunk_z: self.chunk_z,
             chunk_data: packet::play::LevelChunkData {
                 heightmaps: HashMap::new(),
                 data: {
                     let mut writer = Vec::new();
 
                     self.sections.iter().try_for_each(|section| {
-                        if let Some(block_states) = &section.block_states {
-                            block_states.write(&mut writer)?;
-                        } else {
-                            writer.write_all(&0u16.to_be_bytes())?;
-                            writer.write_all(&to_paletted_data_singular(
-                                Block::air().id().unwrap(),
-                            )?)?;
-                        }
-                        if let Some(biomes) = &section.biomes {
-                            biomes.write(&mut writer, biome_mapper)?;
-                        } else {
-                            writer.write_all(&to_paletted_data_singular(
-                                Biome::default().id(biome_mapper).unwrap(),
-                            )?)?;
-                        }
+                        section.blocks.write(&mut writer)?;
+                        section.biomes.write(&mut writer, biome_mapper)?;
                         Ok::<_, AnvilError>(())
                     })?;
 
                     writer.into_boxed_slice()
                 },
-                block_entities: self
-                    .block_entities()
-                    .iter()
-                    .filter(|(_, b)| b.r#type.nbt_visible())
-                    .map(|((x, y, z), b)| packet::play::BlockEntity {
-                        x: *x,
-                        z: *z,
-                        y: *y,
-                        r#type: b.r#type.to_id(),
-                        data: b.data.clone(),
-                    })
-                    .collect(),
+                block_entities: Vec::new(),
             },
-            // TODO: Light data
             light_data: packet::play::LevelLightData::full_bright(self.sections.len()),
         })
     }
@@ -567,11 +432,17 @@ impl Region {
             .transpose()?)
     }
 
-    fn load_chunk(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<AnvilChunk>, AnvilError> {
+    fn load_chunk(
+        &mut self,
+        chunk_x: u8,
+        chunk_z: u8,
+        section_y_range: std::ops::RangeInclusive<i8>,
+    ) -> Result<Option<Chunk>, AnvilError> {
         Ok(self
             .read_nbt(chunk_x, chunk_z)?
-            .map(|(_, nbt)| from_nbt::<AnvilChunk>(nbt))
-            .transpose()?)
+            .map(|(_, nbt)| from_nbt::<chunk_format::Chunk>(nbt))
+            .transpose()?
+            .map(|parsed| Chunk::new(parsed, section_y_range)))
     }
 }
 
@@ -582,11 +453,11 @@ struct SectionDiff {
 }
 
 impl SectionDiff {
-    fn set(&mut self, x: u8, y: u8, z: u8, id: i32) {
-        assert!((x as usize) < SECTION_SIZE);
-        assert!((y as usize) < SECTION_SIZE);
-        assert!((z as usize) < SECTION_SIZE);
-        self.change.insert((x, y, z), id);
+    fn set(&mut self, x: u8, y: u8, z: u8, block: Block) {
+        assert!((x as usize) < SECTION_BLOCKS_SIZE);
+        assert!((y as usize) < SECTION_BLOCKS_SIZE);
+        assert!((z as usize) < SECTION_BLOCKS_SIZE);
+        self.change.insert((x, y, z), block.into_id());
     }
 
     fn num_blocks(&self) -> usize {
@@ -606,7 +477,7 @@ pub struct AnvilWorld {
     root: PathBuf,
     identifier: String,
     regions: HashMap<(i32, i32), Option<Region>>,
-    chunks: HashMap<(i32, i32), Option<AnvilChunk>>,
+    chunks: HashMap<(i32, i32), Option<Chunk>>,
     section_y_range: std::ops::RangeInclusive<i8>,
     biome_mapper: IdTable<Biome>,
     viewers: WeakList<Mutex<WorldViewer>>,
@@ -676,15 +547,17 @@ impl AnvilWorld {
 
         self.prepare_region(region_x, region_z)?;
 
+        let range = self.section_y_range();
+
         let Some(Some(region)) = self.regions.get_mut(&(region_x, region_z)) else {
             return Ok(());
         };
 
-        if let Some(mut chunk) = region.load_chunk(
+        if let Some(chunk) = region.load_chunk(
             chunk_x.rem_euclid(REGION_SIZE as i32) as u8,
             chunk_z.rem_euclid(REGION_SIZE as i32) as u8,
+            range,
         )? {
-            chunk.initialize(self.section_y_range())?;
             self.chunks.insert((chunk_x, chunk_z), Some(chunk));
         }
 
@@ -781,7 +654,7 @@ impl World for AnvilWorld {
         Ok(())
     }
 
-    fn get_block(&mut self, position: Position) -> Result<Option<WorldBlock>, Self::Error> {
+    fn get_block(&mut self, position: Position) -> Result<Option<Block>, Self::Error> {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
         self.prepare_chunk(chunk_x, chunk_z)?;
@@ -798,7 +671,7 @@ impl World for AnvilWorld {
         ))
     }
 
-    fn set_block(&mut self, position: Position, block: WorldBlock) -> Result<(), Self::Error> {
+    fn set_block(&mut self, position: Position, block: Block) -> Result<(), Self::Error> {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
         self.prepare_chunk(chunk_x, chunk_z)?;
@@ -812,24 +685,21 @@ impl World for AnvilWorld {
             (position.x.rem_euclid(CHUNK_SIZE as i32)) as u8,
             position.y,
             (position.z.rem_euclid(CHUNK_SIZE as i32)) as u8,
-            block.clone(),
+            block,
         ) {
             self.diffs
                 .entry((
-                    position.x.div_euclid(SECTION_SIZE as i32),
-                    position.z.div_euclid(SECTION_SIZE as i32),
+                    position.x.div_euclid(SECTION_BLOCKS_SIZE as i32),
+                    position.z.div_euclid(SECTION_BLOCKS_SIZE as i32),
                 ))
                 .or_default()
-                .entry(position.y.div_euclid(SECTION_SIZE as i16))
+                .entry(position.y.div_euclid(SECTION_BLOCKS_SIZE as i16))
                 .or_default()
                 .set(
-                    position.x.rem_euclid(SECTION_SIZE as i32) as u8,
-                    position.y.rem_euclid(SECTION_SIZE as i16) as u8,
-                    position.z.rem_euclid(SECTION_SIZE as i32) as u8,
-                    block
-                        .as_block()
-                        .id_with_default_fallback()
-                        .unwrap_or_else(|| Block::air().id().unwrap()),
+                    position.x.rem_euclid(SECTION_BLOCKS_SIZE as i32) as u8,
+                    position.y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8,
+                    position.z.rem_euclid(SECTION_BLOCKS_SIZE as i32) as u8,
+                    block,
                 );
         }
         Ok(())
@@ -880,17 +750,17 @@ mod test {
 
             let position = Position::new(1 + grid_z * 2, 70, 1 + grid_x * 2);
 
-            let Some(block) = world.get_block(position)?.map(|b| b.into_block()) else {
+            let Some(block) = world.get_block(position)? else {
                 panic!("Expected loaded block at {:?}", position);
             };
 
-            if block.id() != Some(block_id) {
+            if block.into_id() != block_id {
                 panic!(
                     "Block at {:?} is {:?} with ID {:?}, but our ID is {}",
                     position,
                     block,
-                    block.id(),
-                    block_id
+                    block.into_id(),
+                    block_id,
                 );
             }
         }

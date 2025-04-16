@@ -1,24 +1,23 @@
 use std::sync::{Arc, Mutex};
 
 use pkmc_defs::{
-    block::Block,
     packet::{self, play::EntityAnimationType},
     particle::Particle,
     text_component::TextComponent,
 };
-use pkmc_generated::registry::EntityType;
+use pkmc_generated::{block::Block, registry::EntityType};
 use pkmc_server::{
-    entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
+    entity_manager::{Entity, EntityBase, EntityViewer, new_entity_id},
     tab_list::{TabListPlayer, TabListViewer},
-    world::{anvil::AnvilError, World as _, WorldBlock, WorldViewer},
+    world::{World as _, WorldViewer, anvil::AnvilError},
 };
 use pkmc_util::{
+    Color, Position, UUID, Vec3,
     connection::{Connection, ConnectionError},
-    Color, Position, Vec3, UUID,
 };
 use thiserror::Error;
 
-use crate::server::{ServerState, REGISTRIES};
+use crate::server::{REGISTRIES, ServerState};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
 
@@ -352,7 +351,7 @@ impl Player {
                             .get_block(*p)
                             .ok()
                             .flatten()
-                            .map(|b| !b.as_block().is_air())
+                            .map(|b| !b.is_air())
                             .unwrap_or(false)
                     }) {
                         //self.connection.send(&packet::play::LevelParticles {
@@ -368,9 +367,8 @@ impl Player {
                         //    particle_count: 64,
                         //    particle: Particle::ExplosionEmitter,
                         //})?;
-                        Position::iter_offset(Position::iter_sphere(32.0), position).try_for_each(
-                            |p| world.set_block(p, WorldBlock::Block(Block::air())),
-                        )?;
+                        Position::iter_offset(Position::iter_sphere(48.0), position)
+                            .try_for_each(|p| world.set_block(p, Block::Air))?;
                     }
                 }
                 packet::play::PlayPacket::ChatMessage(chat_message) => {

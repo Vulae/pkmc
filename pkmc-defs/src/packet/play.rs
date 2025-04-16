@@ -3,6 +3,10 @@ use std::{
     io::{Read, Write},
 };
 
+use pkmc_generated::{
+    block::Block,
+    registry::{BlockEntityType, EntityType},
+};
 use pkmc_util::{
     connection::{
         paletted_container::to_paletted_data_singular, ClientboundPacket, ConnectionError,
@@ -395,7 +399,7 @@ pub struct BlockEntity {
     /// u4
     pub z: u8,
     pub y: i16,
-    pub r#type: i32,
+    pub r#type: BlockEntityType,
     pub data: NBT,
 }
 
@@ -412,7 +416,7 @@ pub enum LevelChunkHeightmapType {
 }
 
 impl LevelChunkHeightmapType {
-    fn to_id(&self) -> i32 {
+    fn to_id(self) -> i32 {
         match self {
             LevelChunkHeightmapType::WorldSurfaceWorldgen => 0,
             LevelChunkHeightmapType::WorldSurface => 1,
@@ -475,7 +479,7 @@ impl LevelChunkData {
             debug_assert!(block_entity.z <= 15);
             writer.write_all(&((block_entity.x << 4) | block_entity.z).to_be_bytes())?;
             writer.write_all(&block_entity.y.to_be_bytes())?;
-            writer.encode(block_entity.r#type)?;
+            writer.encode(block_entity.r#type.to_id())?;
             writer.encode(&block_entity.data)?;
         }
         //println!("{:#?}", self.block_entities);
@@ -564,19 +568,21 @@ impl LevelChunkWithLight {
                     let mut writer = Vec::new();
 
                     for i in 0..num_sections {
-                        let block_id = if i == 0 { 1 } else { 0 };
-                        // Num non-air blocks
-                        writer.write_all(
-                            &if pkmc_generated::block::is_air(block_id) {
-                                0i16
-                            } else {
-                                4096i16
+                        let block = match i {
+                            0 => {
+                                if (chunk_x + chunk_z) % 2 == 0 {
+                                    Block::PinkConcrete
+                                } else {
+                                    Block::LightBlueConcrete
+                                }
                             }
-                            .to_be_bytes(),
-                        )?;
+                            _ => Block::Air,
+                        };
+                        // Num non-air blocks
+                        writer.write_all(&(!block.is_air() as i16 * 4096).to_be_bytes())?;
 
                         // Blocks
-                        writer.write_all(&to_paletted_data_singular(block_id)?)?;
+                        writer.write_all(&to_paletted_data_singular(block.into_id())?)?;
                         // Biome
                         writer.write_all(&to_paletted_data_singular(0)?)?;
                     }
@@ -885,7 +891,7 @@ impl ClientboundPacket for UpdateSectionBlocks {
 pub struct AddEntity {
     pub id: i32,
     pub uuid: UUID,
-    pub r#type: i32,
+    pub r#type: EntityType,
     pub position: Vec3<f64>,
     pub pitch: u8,
     pub yaw: u8,
@@ -902,7 +908,7 @@ impl ClientboundPacket for AddEntity {
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.encode(self.id)?;
         writer.encode(&self.uuid)?;
-        writer.encode(self.r#type)?;
+        writer.encode(self.r#type.to_id())?;
         writer.write_all(&self.position.x.to_be_bytes())?;
         writer.write_all(&self.position.y.to_be_bytes())?;
         writer.write_all(&self.position.z.to_be_bytes())?;
@@ -935,8 +941,8 @@ pub enum EntityMetadata {
     // TODO: Implement enum
     Direction(i32),
     OptionalUUID(Option<UUID>),
-    BlockState(i32),
-    OptionalBlockState(Option<i32>),
+    BlockState(Block),
+    OptionalBlockState(Option<Block>),
     NBT(NBT),
     Particle(i32),
     Particles(Vec<i32>),
@@ -1020,16 +1026,11 @@ impl EntityMetadata {
             }
             EntityMetadata::BlockState(block_state) => {
                 writer.encode(14)?;
-                writer.encode(*block_state)?;
+                writer.encode(block_state.into_id())?;
             }
             EntityMetadata::OptionalBlockState(block_state) => {
                 writer.encode(15)?;
-                if let Some(block_state) = block_state {
-                    assert_ne!(*block_state, 0);
-                    writer.encode(*block_state)?;
-                } else {
-                    writer.encode(0)?;
-                }
+                writer.encode(block_state.unwrap_or(Block::Air).into_id())?;
             }
             EntityMetadata::NBT(nbt) => {
                 writer.encode(16)?;
@@ -1623,10 +1624,10 @@ impl ClientboundPacket for LevelParticles {
         writer.encode(self.particle.r#type().to_id())?;
         match &self.particle {
             Particle::Block(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             Particle::BlockMarker(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             Particle::Dust { color, scale } => {
                 writer.write_all(&color.to_argb8888(0).to_be_bytes())?;
@@ -1641,7 +1642,7 @@ impl ClientboundPacket for LevelParticles {
                 writer.write_all(&color.to_argb8888(*alpha).to_be_bytes())?;
             }
             Particle::FallingDust(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             Particle::SculkCharge { roll } => {
                 writer.write_all(&roll.to_be_bytes())?;
@@ -1676,10 +1677,10 @@ impl ClientboundPacket for LevelParticles {
                 writer.encode(*delay)?;
             }
             Particle::DustPillar(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             Particle::BlockCrumble(block) => {
-                writer.encode(block.id_with_default_fallback().unwrap())?;
+                writer.encode(block.into_id())?;
             }
             _ => {}
         }

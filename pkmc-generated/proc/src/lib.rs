@@ -1,8 +1,8 @@
 use std::{env, io::Write as _, path::PathBuf};
 
 use convert_case::Casing as _;
-use quote::{quote, ToTokens};
-use syn::{parse::Parse, parse_macro_input, spanned::Spanned as _, LitStr, Token};
+use quote::{ToTokens, quote};
+use syn::{LitStr, Token, parse::Parse, parse_macro_input, spanned::Spanned as _};
 
 mod reports;
 
@@ -32,6 +32,11 @@ pub fn report_registry_generate_enum(input: proc_macro::TokenStream) -> proc_mac
 #[proc_macro]
 pub fn report_packets_generate_consts(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     reports::packets::report_packets_generate_consts(input)
+}
+
+#[proc_macro]
+pub fn report_blocks_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    reports::blocks::report_blocks_generate_enum(input)
 }
 
 struct CachedCompressedJson {

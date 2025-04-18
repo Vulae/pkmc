@@ -18,3 +18,4 @@ rand.workspace = true
 toml = "0.8.20"
 image = { version = "0.25.5", default-features = false, features = ["png"] }
 base64 = "0.22.1"
+sysinfo = "0.34.2"

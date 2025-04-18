@@ -2,22 +2,21 @@ use std::sync::{Arc, Mutex};
 
 use pkmc_defs::{
     packet::{self, play::EntityAnimationType},
-    particle::Particle,
     text_component::TextComponent,
 };
 use pkmc_generated::{block::Block, registry::EntityType};
 use pkmc_server::{
-    entity_manager::{Entity, EntityBase, EntityViewer, new_entity_id},
+    entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
     tab_list::{TabListPlayer, TabListViewer},
-    world::{World as _, WorldViewer, anvil::AnvilError},
+    world::{anvil::AnvilError, World as _, WorldViewer},
 };
 use pkmc_util::{
-    Color, Position, UUID, Vec3,
-    connection::{Connection, ConnectionError},
+    connection::{Connection, ConnectionError, ConnectionSender},
+    Position, Vec3, UUID,
 };
 use thiserror::Error;
 
-use crate::server::{REGISTRIES, ServerState};
+use crate::server::{ServerState, REGISTRIES};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
 
@@ -51,6 +50,7 @@ pub struct Player {
     player_entity: EntityBase<PlayerEntity>,
     _tab_list_viewer: Arc<Mutex<TabListViewer>>,
     _tab_list_player: Arc<Mutex<TabListPlayer>>,
+    _server_tab_list_info_viewer: Arc<Mutex<ConnectionSender>>,
     player_name: String,
     _player_uuid: UUID,
     _uuid: UUID,
@@ -181,6 +181,12 @@ impl Player {
             .unwrap()
             .insert(uuid, player_name.clone());
 
+        let server_tab_list_info_viewer = server_state
+            .server_tab_info
+            .lock()
+            .unwrap()
+            .add_viewer(connection.sender());
+
         let mut player = Self {
             connection,
             server_state,
@@ -189,6 +195,7 @@ impl Player {
             player_entity,
             _tab_list_viewer: tab_list_viewer,
             _tab_list_player: tab_list_player,
+            _server_tab_list_info_viewer: server_tab_list_info_viewer,
             player_name,
             _player_uuid: player_uuid,
             _uuid: uuid,
@@ -390,20 +397,6 @@ impl Player {
         player_entity_handler.yaw = self.yaw;
         player_entity_handler.pitch = self.pitch;
         player_entity_handler.head_yaw = self.yaw;
-
-        self.connection.send(&packet::play::LevelParticles {
-            long_distance: false,
-            always_visible: false,
-            position: self.position,
-            offset: Vec3::all(0.1),
-            max_speed: 1.0,
-            particle_count: 1,
-            particle: Particle::DustColorTransition {
-                from: Color::hue(rand::random()),
-                to: Color::WHITE,
-                scale: 1.0,
-            },
-        })?;
 
         Ok(())
     }

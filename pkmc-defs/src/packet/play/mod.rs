@@ -29,9 +29,8 @@ serverbound_packet_enum!(pub PlayPacket;
 );
 
 use pkmc_util::{
-    ReadExt as _,
     connection::{ClientboundPacket, ConnectionError, PacketEncoder as _, ServerboundPacket},
-    serverbound_packet_enum,
+    serverbound_packet_enum, ReadExt as _,
 };
 use std::io::{Read, Write};
 
@@ -163,6 +162,34 @@ impl ClientboundPacket for ServerLinks {
             link.write(&mut writer)?;
             writer.encode(url)?;
         }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct SetTabListHeaderAndFooter {
+    pub header: Option<TextComponent>,
+    pub footer: Option<TextComponent>,
+}
+
+impl ClientboundPacket for SetTabListHeaderAndFooter {
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_TAB_LIST;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.encode(
+            &self
+                .header
+                .as_ref()
+                .unwrap_or(&TextComponent::empty())
+                .to_nbt(),
+        )?;
+        writer.encode(
+            &self
+                .footer
+                .as_ref()
+                .unwrap_or(&TextComponent::empty())
+                .to_nbt(),
+        )?;
         Ok(())
     }
 }

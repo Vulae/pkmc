@@ -4,11 +4,11 @@ use std::{
 };
 
 use pkmc_util::{
-    Position, ReadExt as _, UUID,
     connection::{
         ClientboundPacket, ConnectionError, PacketDecoder as _, PacketEncoder as _,
         ServerboundPacket,
     },
+    Position, ReadExt as _, UUID,
 };
 
 use crate::text_component::TextComponent;

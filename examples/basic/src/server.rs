@@ -5,7 +5,7 @@ use std::{
 };
 
 use base64::Engine as _;
-use pkmc_defs::registry::Registries;
+use pkmc_defs::{packet, registry::Registries, text_component::TextComponent};
 use pkmc_server::{
     entity_manager::EntityManager,
     tab_list::TabList,
@@ -13,22 +13,84 @@ use pkmc_server::{
     ClientHandler,
 };
 use pkmc_util::{
-    connection::Connection, convert_ampersand_formatting_codes, normalize_identifier,
-    retain_returned_vec, UUID,
+    connection::{Connection, ConnectionSender},
+    convert_ampersand_formatting_codes, normalize_identifier, retain_returned_vec, Color, WeakList,
+    UUID,
 };
 
-use crate::{config::Config, player::Player};
+use crate::{
+    config::Config,
+    player::{Player, PlayerError},
+};
 
 const TICK_DURATION: std::time::Duration = std::time::Duration::from_millis(1000 / 20);
 
 pub static REGISTRIES: LazyLock<Registries> =
     LazyLock::new(|| serde_json::from_str(include_str!("./registry.json")).unwrap());
 
+#[derive(Debug)]
+pub struct ServerTabInfo {
+    sys: sysinfo::System,
+    pid: sysinfo::Pid,
+    viewers: WeakList<Mutex<ConnectionSender>>,
+}
+
+impl ServerTabInfo {
+    fn new() -> Self {
+        Self {
+            sys: sysinfo::System::new_with_specifics(
+                sysinfo::RefreshKind::nothing().with_processes(
+                    sysinfo::ProcessRefreshKind::nothing()
+                        .with_cpu()
+                        .with_memory(),
+                ),
+            ),
+            pid: sysinfo::get_current_pid().unwrap(),
+            viewers: WeakList::new(),
+        }
+    }
+
+    pub fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<ConnectionSender>> {
+        self.viewers.push(Mutex::new(connection))
+    }
+
+    fn update(&mut self) -> Result<(), PlayerError> {
+        self.sys
+            .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[self.pid]), true);
+        let process = self.sys.process(self.pid).unwrap();
+        self.viewers.iter().try_for_each(|viewer| {
+            viewer.send(&packet::play::SetTabListHeaderAndFooter {
+                header: None,
+                footer: Some(
+                    TextComponent::empty()
+                        .with_child(|child| child.with_content("CPU: ").with_color(Color::GOLD))
+                        .with_child(|child| {
+                            child
+                                .with_content(format!("{:.1}%", process.cpu_usage()))
+                                .with_color(Color::YELLOW)
+                        })
+                        .with_child(|child| child.with_content(" - ").with_color(Color::DARK_GRAY))
+                        .with_child(|child| {
+                            child.with_content("MEM: ").with_color(Color::DARK_PURPLE)
+                        })
+                        .with_child(|child| {
+                            child
+                                .with_content(format!("{}MiB", process.memory() / 1048576))
+                                .with_color(Color::LIGHT_PURPLE)
+                        }),
+                ),
+            })
+        })?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ServerState {
     pub world: Arc<Mutex<AnvilWorld>>,
     pub entities: Arc<Mutex<EntityManager>>,
     pub tab_list: Arc<Mutex<TabList>>,
+    pub server_tab_info: Arc<Mutex<ServerTabInfo>>,
 }
 
 #[derive(Debug)]
@@ -80,6 +142,7 @@ impl Server {
                 ))),
                 entities: Arc::new(Mutex::new(EntityManager::default())),
                 tab_list: Arc::new(Mutex::new(TabList::default())),
+                server_tab_info: Arc::new(Mutex::new(ServerTabInfo::new())),
             },
             config,
             tcp_listener,
@@ -93,6 +156,16 @@ impl Server {
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        std::thread::spawn({
+            let server_tab_info = self.state.server_tab_info.clone();
+            move || loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if let Err(err) = server_tab_info.lock().unwrap().update() {
+                    println!("{:?}", err);
+                }
+            }
+        });
+
         std::thread::spawn({
             let world = self.state.world.clone();
             move || loop {

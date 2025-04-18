@@ -84,7 +84,7 @@ pub mod block {
     });
 
     pub trait IdIndexable {
-        const MAX_INDEX: u32;
+        const NUM_STATES: u32;
         fn into_index(self) -> u32;
         fn from_index(index: u32) -> Option<Self>
         where
@@ -92,7 +92,7 @@ pub mod block {
     }
 
     #[repr(transparent)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, Copy)]
     pub struct PropertyUint<const MAX: u32>(u32);
 
     impl<const MAX: u32> PropertyUint<MAX> {
@@ -105,7 +105,7 @@ pub mod block {
     }
 
     impl<const MAX: u32> IdIndexable for PropertyUint<MAX> {
-        const MAX_INDEX: u32 = MAX;
+        const NUM_STATES: u32 = MAX + 1;
 
         fn into_index(self) -> u32 {
             self.0
@@ -116,11 +116,76 @@ pub mod block {
         }
     }
 
-    report_blocks_enum!("assets/reports/blocks.json");
+    report_blocks_enum!("assets/reports/blocks.json", [
+        Axis0 => Axis,
+        Axis1 => AxisHor,
+        Facing1 => Facing,
+        Facing2 => FacingHor,
+        Facing0 => FacingDownHor,
+        Half1 => TopBottomHalf,
+        Hinge0 => DoorHinge,
+        Attachment0 => BellAttachment,
+        Type2 => SlabType,
+        Half0 => StairHalf,
+        Shape2 => StairShape,
+        North1 => WallShape,
+        East1 => WallShape,
+        South1 => WallShape,
+        West1 => WallShape,
+        Leaves0 => BambooLeaves,
+        Tilt0 => DripleafTilt,
+        Type1 => ChestType,
+        Part0 => BedPart,
+        Thickness0 => PointedDripstoneThickness,
+        VerticalDirection0 => PointedDripstoneVerticalDirection,
+        North2 => RedstoneWireShape,
+        East2 => RedstoneWireShape,
+        South2 => RedstoneWireShape,
+        West2 => RedstoneWireShape,
+        Mode0 => ComparatorMode,
+        Face0 => ButtonFacing,
+        Shape0 => NonturnableRailShape,
+        Shape1 => TurnableRailShape,
+        Type0 => PistonType,
+        Instrument0 => Instrument,
+        Orientation0 => Orientation,
+        SculkSensorPhase => SculkSensorPhase,
+        TrialSpawnerState0 => TrialSpawnerState,
+        VaultState0 => VaultState,
+        CreakingHeartState0 => CreakingHeartState,
+        Mode1 => StructureBlockMode,
+        Mode2 => TestBlockMode,
+    ]);
 
     impl Default for Block {
         fn default() -> Self {
             Self::Air
+        }
+    }
+
+    impl std::cmp::PartialEq for Block {
+        fn eq(&self, other: &Self) -> bool {
+            self.into_id() == other.into_id()
+        }
+    }
+
+    impl std::cmp::Eq for Block {}
+
+    impl std::cmp::Ord for Block {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.into_id().cmp(&other.into_id())
+        }
+    }
+
+    impl std::cmp::PartialOrd for Block {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl std::hash::Hash for Block {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            self.into_id().hash(state);
         }
     }
 
@@ -149,7 +214,20 @@ mod simple_test {
     use crate::block::{IdIndexable, PropertyUint};
     use pkmc_generated_proc::report_blocks_enum;
 
-    report_blocks_enum!("generated/src/test_blocks_report.json");
+    report_blocks_enum!(
+        "generated/src/test_blocks_report.json",
+        [
+            Facing0 => Facing,
+        ]
+    );
+
+    impl std::cmp::PartialEq for Block {
+        fn eq(&self, other: &Self) -> bool {
+            self.into_id() == other.into_id()
+        }
+    }
+
+    impl std::cmp::Eq for Block {}
 
     fn do_test(block: Block, id: i32) {
         if id != block.into_id() {
@@ -172,19 +250,19 @@ mod simple_test {
 
     #[rustfmt::skip]
     #[test]
-    fn test_simple_blocks_ids() {
+    fn test_blocks_ids() {
         do_test(Block::Air, 0);
         do_test(Block::Stone, 1);
         do_test(Block::Barrier { waterlogged: true }, 2);
         do_test(Block::Barrier { waterlogged: false }, 3);
-        do_test(Block::RedstoneWallTorch { facing: Facing0::North, lit: true }, 4);
-        do_test(Block::RedstoneWallTorch { facing: Facing0::North, lit: false }, 5);
-        do_test(Block::RedstoneWallTorch { facing: Facing0::South, lit: true }, 6);
-        do_test(Block::RedstoneWallTorch { facing: Facing0::South, lit: false }, 7);
-        do_test(Block::RedstoneWallTorch { facing: Facing0::West, lit: true }, 8);
-        do_test(Block::RedstoneWallTorch { facing: Facing0::West, lit: false }, 9);
-        do_test(Block::RedstoneWallTorch { facing: Facing0::East, lit: true }, 10);
-        do_test(Block::RedstoneWallTorch { facing: Facing0::East, lit: false }, 11);
+        do_test(Block::RedstoneWallTorch { facing: Facing::North, lit: true }, 4);
+        do_test(Block::RedstoneWallTorch { facing: Facing::North, lit: false }, 5);
+        do_test(Block::RedstoneWallTorch { facing: Facing::South, lit: true }, 6);
+        do_test(Block::RedstoneWallTorch { facing: Facing::South, lit: false }, 7);
+        do_test(Block::RedstoneWallTorch { facing: Facing::West, lit: true }, 8);
+        do_test(Block::RedstoneWallTorch { facing: Facing::West, lit: false }, 9);
+        do_test(Block::RedstoneWallTorch { facing: Facing::East, lit: true }, 10);
+        do_test(Block::RedstoneWallTorch { facing: Facing::East, lit: false }, 11);
         do_test(Block::Wheat { age: PropertyUint::new(0) }, 12);
         do_test(Block::Wheat { age: PropertyUint::new(1) }, 13);
         do_test(Block::Wheat { age: PropertyUint::new(2) }, 14);
@@ -220,7 +298,7 @@ mod complex_test {
     }
 
     #[test]
-    fn test_simple_blocks_ids() {
+    fn test_blocks_ids() {
         do_test(Block::Air, 0);
         do_test(Block::Stone, 1);
         // Just some random block states to test, not anything special to them.
@@ -236,11 +314,11 @@ mod complex_test {
         );
         do_test(
             Block::RedstoneWire {
-                east: block::East2::Up,
-                north: block::North2::Up,
+                east: block::RedstoneWireShape::Up,
+                north: block::RedstoneWireShape::Up,
                 power: PropertyUint::new(14),
-                south: block::South2::Up,
-                west: block::West2::None,
+                south: block::RedstoneWireShape::Up,
+                west: block::RedstoneWireShape::None,
             },
             3170,
         );

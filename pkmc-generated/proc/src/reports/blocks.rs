@@ -1,18 +1,19 @@
 /*
     TODO:
         Cleanup all of this! I know it's very bad right now, I'm very sorry for that.
-        Actually use IdIndexable::MAX for calculating IDs.
-        Add ability to rename placeholder property enum types.
         Add ability to group certain block types (Eg. Woods & colored blocks with an extra property with enum) to reduce code & enum size.
 */
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use convert_case::Casing;
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use serde::Deserialize;
-use syn::{parse::Parse, parse_macro_input, spanned::Spanned as _, Ident, LitStr};
+use syn::{
+    Ident, LitStr, Token, parse::Parse, parse_macro_input, punctuated::Punctuated,
+    spanned::Spanned as _,
+};
 
 use crate::{file_path, fix_identifier};
 
@@ -81,6 +82,7 @@ type PropertiesMap = BTreeMap<String, BTreeSet<PropertyType>>;
 
 struct ReportBlocksGenerator {
     blocks_report: ReportBlocks,
+    mapper: HashMap<Ident, Ident>,
 }
 
 impl ReportBlocksGenerator {
@@ -104,33 +106,40 @@ impl ReportBlocksGenerator {
         properties
     }
 
-    fn generate_properties_code(map: &PropertiesMap, tokens: &mut proc_macro2::TokenStream) {
+    fn generate_properties_code(&self, map: &PropertiesMap, tokens: &mut proc_macro2::TokenStream) {
+        let mut already_generated: HashSet<Ident> = HashSet::new();
         map.iter().for_each(|(property_name, property_types)| {
             property_types
                 .iter()
                 .enumerate()
                 .for_each(|(i, property_type)| {
                     if let PropertyType::Enum(vec) = property_type {
-                        let enum_name = Ident::new(
+                        let mut enum_name = Ident::new(
                             &format!("{}{}", property_name, i).to_case(convert_case::Case::Pascal),
                             tokens.span(),
                         );
+                        if let Some(mapped_name) = self.mapper.get(&enum_name) {
+                            enum_name = mapped_name.clone();
+                        }
+                        if !already_generated.insert(enum_name.clone()) {
+                            return;
+                        }
                         let enum_values = vec
                             .iter()
                             .map(|v| {
                                 Ident::new(&v.to_case(convert_case::Case::Pascal), tokens.span())
                             })
                             .collect::<Vec<_>>();
-                        let max_value = vec.len() as u32 - 1;
+                        let num_values = vec.len() as u32;
                         let enum_indices = (0..vec.len()).map(|v| v as u32).collect::<Vec<_>>();
                         tokens.extend(quote! {
-                            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+                            #[derive(Debug, Clone, Copy)]
                             pub enum #enum_name {
                                 #(#enum_values,)*
                             }
 
                             impl IdIndexable for #enum_name {
-                                const MAX_INDEX: u32 = #max_value;
+                                const NUM_STATES: u32 = #num_values;
 
                                 fn into_index(self) -> u32 {
                                     match self {
@@ -204,14 +213,17 @@ impl ReportBlocksGenerator {
                         },
                         ident_type: match r#type {
                             PropertyType::Boolean => quote! { bool },
-                            PropertyType::Number(max) => quote! { PropertyUint<#max> },
+                            PropertyType::Number(max) => quote! { PropertyUint::<#max> },
                             PropertyType::Enum(_) => {
-                                let property_type = Ident::new(
+                                let mut enum_name = Ident::new(
                                     &format!("{}{}", property_name, i)
                                         .to_case(convert_case::Case::Pascal),
                                     tokens.span(),
                                 );
-                                quote! { #property_type }
+                                if let Some(mapped_name) = self.mapper.get(&enum_name) {
+                                    enum_name = mapped_name.clone();
+                                }
+                                quote! { #enum_name }
                             }
                         },
                         r#type,
@@ -233,45 +245,37 @@ impl ReportBlocksGenerator {
                 },
             });
 
-            let mut mul: u32 = 1;
-            let property_index_calcs = parsed_props
-                .iter()
-                .rev()
-                .map(|parsed| {
-                    let name = &parsed.ident_name;
+            let test = parsed_props.iter().enumerate().fold(quote! { }, |inner, (i, parsed)| {
+                let name = &parsed.ident_name;
+                let r#type = &parsed.ident_type;
+                if i == 0 {
                     match parsed.r#type {
                         PropertyType::Boolean => {
-                            let v = quote! {
-                                (!#name as u32) * #mul
-                            };
-                            mul *= 2;
-                            v
-                        }
-                        PropertyType::Number(max) => {
-                            let v = quote! {
-                                #name.into_index() * #mul
-                            };
-                            mul *= max + 1;
-                            v
-                        }
-                        PropertyType::Enum(items) => {
-                            let v = quote! {
-                                #name.into_index() * #mul
-                            };
-                            mul *= items.len() as u32;
-                            v
-                        }
+                            quote! { (!#name as u32) }
+                        },
+                        PropertyType::Number(_) | PropertyType::Enum(_) => {
+                            quote! { #name.into_index() }
+                        },
                     }
-                })
-                .collect::<Vec<_>>();
+                } else {
+                    match parsed.r#type {
+                        PropertyType::Boolean => {
+                            quote! { (#inner * 2 + (!#name as u32)) }
+                        },
+                        PropertyType::Number(_) | PropertyType::Enum(_) => {
+                            quote! { (#inner * #r#type::NUM_STATES + #name.into_index()) }
+                        },
+                    }
+                }
+            });
 
             blocks_to_id_tokens.extend(quote! {
                 Self::#name {
                     #(#property_names,)*
-                } => #id #(+ #property_index_calcs)*,
+                } => #id + #test,
             });
 
-            let res = parsed_props
+            let res1 = parsed_props
                 .iter()
                 .rev()
                 .map(|parsed| {
@@ -281,43 +285,56 @@ impl ReportBlocksGenerator {
                         PropertyType::Boolean => {
                             quote! {
                                 let #name = v % 2 == 0;
-                                let v = v / 2;
                             }
                         }
-                        PropertyType::Number(max) => {
-                            let max = max + 1;
+                        PropertyType::Number(_) => {
                             quote! {
-                                let #name = PropertyUint::from_index(v % #max).unwrap();
-                                let v = v / #max;
+                                let #name = PropertyUint::from_index(v % #r#type::NUM_STATES).unwrap();
                             }
                         }
-                        PropertyType::Enum(items) => {
-                            let max = items.len() as u32;
+                        PropertyType::Enum(_) => {
                             quote! {
-                                let #name = #r#type::from_index(v % #max).unwrap();
-                                let v = v / #max;
+                                let #name = #r#type::from_index(v % #r#type::NUM_STATES).unwrap();
                             }
                         }
                     }
                 })
                 .collect::<Vec<_>>();
-            let res2 = parsed_props.iter().map(|parsed| &parsed.ident_name);
+            let res2 = parsed_props.iter().skip(1).rev().map(|parsed| {
+                let r#type = &parsed.ident_type;
+                match parsed.r#type {
+                    PropertyType::Boolean => {
+                        quote! {
+                            let v = v / 2;
+                        }
+                    }
+                    PropertyType::Number(_) | PropertyType::Enum(_) => {
+                        quote! {
+                            let v = v / #r#type::NUM_STATES;
+                        }
+                    }
+                }
+            }).chain(std::iter::once(quote! {})).collect::<Vec<_>>();
+            let res3 = parsed_props.iter().map(|parsed| &parsed.ident_name).collect::<Vec<_>>();
 
             let max_id = def.states.last().unwrap().id as u32;
 
             blocks_from_id_tokens.extend(quote! {
                 #id..=#max_id => {
                     let v = id - #id;
-                    #(#res)*
+                    #(
+                        #res1
+                        #res2
+                    )*
                     Self::#name {
-                        #(#res2,)*
+                        #(#res3,)*
                     }
                 },
             });
         });
 
         tokens.extend(quote! {
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+            #[derive(Debug, Clone, Copy)]
             pub enum Block {
                 #blocks_tokens
             }
@@ -342,14 +359,38 @@ impl ReportBlocksGenerator {
     }
 }
 
+struct ReportBlocksMapping {
+    from: Ident,
+    to: Ident,
+}
+
+impl Parse for ReportBlocksMapping {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        Ok(Self {
+            from: input.parse()?,
+            to: {
+                input.parse::<Token![=>]>()?;
+                input.parse()?
+            },
+        })
+    }
+}
+
 struct ReportBlocksEnum {
     file: LitStr,
+    enums_mapper: Punctuated<ReportBlocksMapping, Token![,]>,
 }
 
 impl Parse for ReportBlocksEnum {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         Ok(Self {
             file: input.parse()?,
+            enums_mapper: {
+                input.parse::<syn::Token![,]>()?;
+                let content;
+                syn::bracketed!(content in input);
+                Punctuated::parse_terminated(&content)?
+            },
         })
     }
 }
@@ -362,10 +403,17 @@ impl ToTokens for ReportBlocksEnum {
             serde_json::from_reader(std::fs::File::open(&file).expect("Failed to open file"))
                 .expect("Failed to parse JSON");
 
-        let generator = ReportBlocksGenerator { blocks_report };
+        let generator = ReportBlocksGenerator {
+            blocks_report,
+            mapper: self
+                .enums_mapper
+                .iter()
+                .map(|v| (v.from.clone(), v.to.clone()))
+                .collect(),
+        };
 
         let properties = generator.generate_properties();
-        ReportBlocksGenerator::generate_properties_code(&properties, tokens);
+        generator.generate_properties_code(&properties, tokens);
         generator.generate_blocks_code(&properties, tokens);
     }
 }

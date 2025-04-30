@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 use pkmc_defs::{biome::Biome, block::DynamicBlock};
+use pkmc_util::nbt::NBT;
 use serde::Deserialize;
 use std::{collections::HashMap, fmt::Debug};
 
@@ -28,8 +29,10 @@ pub struct BlockEntity {
     pub x: i32,
     pub y: i16,
     pub z: i32,
+    #[serde(default)]
+    pub components: HashMap<String, NBT>,
     #[serde(flatten)]
-    pub data: HashMap<String, serde_json::Value>,
+    pub data: HashMap<String, NBT>,
 }
 
 #[derive(Deserialize)]

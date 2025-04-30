@@ -77,11 +77,10 @@ impl DynamicBlock {
     }
 
     pub fn to_block(&self) -> Option<Block> {
-        BLOCKS_TO_IDS
+        let id = *BLOCKS_TO_IDS
             .get(self)
-            .or_else(|| BLOCKS_TO_IDS.get(&self.without_properties()))
-            .copied()
-            .and_then(Block::from_id)
+            .or_else(|| BLOCKS_TO_IDS.get(&self.without_properties()))?;
+        Block::from_id(id)
     }
 }
 
@@ -92,13 +91,13 @@ impl Default for DynamicBlock {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BlockEntity {
+pub struct DynamicBlockEntity {
     pub block: DynamicBlock,
     pub r#type: BlockEntityType,
     pub data: NBT,
 }
 
-impl BlockEntity {
+impl DynamicBlockEntity {
     pub fn new(block: DynamicBlock, r#type: BlockEntityType, data: NBT) -> Self {
         Self {
             block,

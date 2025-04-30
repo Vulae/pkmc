@@ -9,6 +9,8 @@ pub mod packet {
 pub mod registry {
     use pkmc_generated_proc::report_registry_generate_enum;
 
+    report_registry_generate_enum!("assets/reports/registries.json", "minecraft:block_type", pub BlockType);
+
     report_registry_generate_enum!("assets/reports/registries.json", "minecraft:block_entity_type", pub BlockEntityType);
     impl BlockEntityType {
         /// If NBT contents is required to render this block, or NBT contents reflect a visible change in the block.
@@ -54,6 +56,8 @@ pub mod block {
     use serde::Deserialize;
 
     use pkmc_generated_proc::{include_cached_json_compressed_bytes, report_blocks_enum};
+
+    use crate::registry::{BlockEntityType, BlockType};
 
     #[derive(Deserialize)]
     pub struct ReportBlockState {
@@ -190,8 +194,63 @@ pub mod block {
     }
 
     impl Block {
-        pub fn is_air(&self) -> bool {
+        pub const fn is_air(&self) -> bool {
             matches!(self, Block::Air | Block::CaveAir | Block::VoidAir)
+        }
+
+        pub const fn block_entity_type(&self) -> Option<BlockEntityType> {
+            Some(match self.definition_type() {
+                BlockType::Banner | BlockType::WallBanner => BlockEntityType::Banner,
+                BlockType::Barrel => BlockEntityType::Barrel,
+                BlockType::Beacon => BlockEntityType::Beacon,
+                BlockType::Bed => BlockEntityType::Bed,
+                BlockType::Beehive => BlockEntityType::Beehive,
+                BlockType::Bell => BlockEntityType::Bell,
+                BlockType::BlastFurnace => BlockEntityType::BlastFurnace,
+                BlockType::BrewingStand => BlockEntityType::BrewingStand,
+                BlockType::Brushable => BlockEntityType::BrushableBlock,
+                BlockType::CalibratedSculkSensor => BlockEntityType::CalibratedSculkSensor,
+                BlockType::Campfire => BlockEntityType::Campfire,
+                BlockType::Chest => BlockEntityType::Chest,
+                BlockType::ChiseledBookShelf => BlockEntityType::ChiseledBookshelf,
+                BlockType::Command => BlockEntityType::CommandBlock,
+                BlockType::Comparator => BlockEntityType::Comparator,
+                BlockType::Conduit => BlockEntityType::Conduit,
+                BlockType::Crafter => BlockEntityType::Crafter,
+                BlockType::CreakingHeart => BlockEntityType::CreakingHeart,
+                BlockType::DaylightDetector => BlockEntityType::DaylightDetector,
+                BlockType::DecoratedPot => BlockEntityType::DecoratedPot,
+                BlockType::Dispenser => BlockEntityType::Dispenser,
+                BlockType::Dropper => BlockEntityType::Dropper,
+                BlockType::EnchantmentTable => BlockEntityType::EnchantingTable,
+                BlockType::EndGateway => BlockEntityType::EndGateway,
+                BlockType::EndPortal => BlockEntityType::EndPortal,
+                BlockType::EnderChest => BlockEntityType::EnderChest,
+                BlockType::Furnace => BlockEntityType::Furnace,
+                BlockType::CeilingHangingSign | BlockType::WallHangingSign => {
+                    BlockEntityType::HangingSign
+                }
+                BlockType::Hopper => BlockEntityType::Hopper,
+                BlockType::Jigsaw => BlockEntityType::Jigsaw,
+                BlockType::Jukebox => BlockEntityType::Jukebox,
+                BlockType::Lectern => BlockEntityType::Lectern,
+                BlockType::Spawner => BlockEntityType::MobSpawner,
+                BlockType::MovingPiston => BlockEntityType::Piston,
+                BlockType::SculkCatalyst => BlockEntityType::SculkCatalyst,
+                BlockType::SculkSensor => BlockEntityType::SculkSensor,
+                BlockType::SculkShrieker => BlockEntityType::SculkShrieker,
+                BlockType::ShulkerBox => BlockEntityType::ShulkerBox,
+                BlockType::StandingSign | BlockType::WallSign => BlockEntityType::Sign,
+                BlockType::PlayerHead | BlockType::PlayerWallHead => BlockEntityType::Skull,
+                BlockType::Smoker => BlockEntityType::Smoker,
+                BlockType::Structure => BlockEntityType::StructureBlock,
+                BlockType::Test => BlockEntityType::TestBlock,
+                BlockType::TestInstance => BlockEntityType::TestInstanceBlock,
+                BlockType::TrappedChest => BlockEntityType::TrappedChest,
+                BlockType::TrialSpawner => BlockEntityType::TrialSpawner,
+                BlockType::Vault => BlockEntityType::Vault,
+                _ => return None,
+            })
         }
     }
 }
@@ -211,7 +270,10 @@ pub mod consts {
 
 #[cfg(test)]
 mod simple_test {
-    use crate::block::{IdIndexable, PropertyUint};
+    use crate::{
+        block::{IdIndexable, PropertyUint},
+        registry::BlockType,
+    };
     use pkmc_generated_proc::report_blocks_enum;
 
     report_blocks_enum!(

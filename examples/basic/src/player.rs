@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::sync::{Arc, Mutex};
 
 use pkmc_defs::{
@@ -8,7 +10,7 @@ use pkmc_generated::{block::Block, registry::EntityType};
 use pkmc_server::{
     entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
     tab_list::{TabListPlayer, TabListViewer},
-    world::{anvil::AnvilError, World as _, WorldViewer},
+    world::{anvil::AnvilError, World, WorldViewer},
 };
 use pkmc_util::{
     connection::{Connection, ConnectionError, ConnectionSender},
@@ -347,35 +349,45 @@ impl Player {
                             EntityAnimationType::SwingOffhand
                         });
 
+                    //let mut world = self.server_state.world.lock().unwrap();
+                    //if let Some(position) = Position::iter_ray(
+                    //    self.position + Vec3::new(0.0, 1.5, 0.0),
+                    //    Vec3::get_vector_for_rotation(self.pitch.into(), self.yaw.into()),
+                    //    5000.0,
+                    //)
+                    //.find(|p| {
+                    //    world
+                    //        .get_block(*p)
+                    //        .ok()
+                    //        .flatten()
+                    //        .map(|b| !b.is_air())
+                    //        .unwrap_or(false)
+                    //}) {
+                    //    //self.connection.send(&packet::play::LevelParticles {
+                    //    //    long_distance: true,
+                    //    //    always_visible: false,
+                    //    //    position: Vec3::new(
+                    //    //        position.x.into(),
+                    //    //        position.y.into(),
+                    //    //        position.z.into(),
+                    //    //    ),
+                    //    //    offset: Vec3::all(12.0),
+                    //    //    max_speed: 0.0,
+                    //    //    particle_count: 64,
+                    //    //    particle: Particle::ExplosionEmitter,
+                    //    //})?;
+                    //    Position::iter_offset(Position::iter_sphere(48.0), position)
+                    //        .try_for_each(|p| world.set_block(p, Block::Air))?;
+                    //}
+                }
+                packet::play::PlayPacket::UseItemOn(use_item_on) => {
                     let mut world = self.server_state.world.lock().unwrap();
-                    if let Some(position) = Position::iter_ray(
-                        self.position + Vec3::new(0.0, 1.5, 0.0),
-                        Vec3::get_vector_for_rotation(self.pitch.into(), self.yaw.into()),
-                        5000.0,
-                    )
-                    .find(|p| {
-                        world
-                            .get_block(*p)
-                            .ok()
-                            .flatten()
-                            .map(|b| !b.is_air())
-                            .unwrap_or(false)
-                    }) {
-                        //self.connection.send(&packet::play::LevelParticles {
-                        //    long_distance: true,
-                        //    always_visible: false,
-                        //    position: Vec3::new(
-                        //        position.x.into(),
-                        //        position.y.into(),
-                        //        position.z.into(),
-                        //    ),
-                        //    offset: Vec3::all(12.0),
-                        //    max_speed: 0.0,
-                        //    particle_count: 64,
-                        //    particle: Particle::ExplosionEmitter,
-                        //})?;
-                        Position::iter_offset(Position::iter_sphere(48.0), position)
-                            .try_for_each(|p| world.set_block(p, Block::Air))?;
+                    if let Some(data) = world.query_block_data(use_item_on.location)? {
+                        println!("{:#?}", data);
+                        self.connection.send(&packet::play::SystemChat {
+                            content: TextComponent::new(format!("{:#?}", data)),
+                            overlay: false,
+                        })?;
                     }
                 }
                 packet::play::PlayPacket::ChatMessage(chat_message) => {

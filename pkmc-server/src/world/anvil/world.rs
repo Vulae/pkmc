@@ -16,6 +16,7 @@ use pkmc_generated::{
         PALETTED_DATA_BIOMES_DIRECT, PALETTED_DATA_BIOMES_INDIRECT, PALETTED_DATA_BLOCKS_DIRECT,
         PALETTED_DATA_BLOCKS_INDIRECT,
     },
+    registry::BlockEntityType,
 };
 use pkmc_util::{
     connection::{
@@ -250,20 +251,46 @@ struct ChunkSection {
 }
 
 #[derive(Debug)]
+pub struct AnvilBlockEntity {
+    // Set every time this block entity is queried.
+    r#type: BlockEntityType,
+    pub components: HashMap<String, NBT>,
+    pub data: HashMap<String, NBT>,
+}
+
+impl AnvilBlockEntity {
+    fn new(r#type: BlockEntityType) -> Self {
+        AnvilBlockEntity {
+            r#type,
+            components: HashMap::new(),
+            data: HashMap::new(),
+        }
+    }
+
+    pub fn r#type(&self) -> BlockEntityType {
+        self.r#type
+    }
+}
+
+#[derive(Debug)]
 struct Chunk {
     chunk_x: i32,
     chunk_z: i32,
     sections_y_start: i8,
     sections: Box<[ChunkSection]>,
+    block_entities: HashMap<(u8, i16, u8), AnvilBlockEntity>,
 }
 
 impl Chunk {
-    fn new(parsed: chunk_format::Chunk, section_y_range: std::ops::RangeInclusive<i8>) -> Self {
+    fn new(
+        parsed: chunk_format::Chunk,
+        section_y_range: std::ops::RangeInclusive<i8>,
+    ) -> Result<Self, AnvilError> {
         if let Some(y_pos) = parsed.y_pos {
             assert_eq!(*section_y_range.start(), y_pos);
         }
 
-        Chunk {
+        Ok(Chunk {
             chunk_x: parsed.x_pos,
             chunk_z: parsed.z_pos,
             sections_y_start: *section_y_range.start(),
@@ -308,7 +335,26 @@ impl Chunk {
                     }
                 })
                 .collect(),
-        }
+            block_entities: parsed
+                .block_entities
+                .into_iter()
+                .map(|b| {
+                    Ok((
+                        (
+                            b.x.rem_euclid(CHUNK_SIZE as i32) as u8,
+                            b.y,
+                            b.z.rem_euclid(CHUNK_SIZE as i32) as u8,
+                        ),
+                        AnvilBlockEntity {
+                            r#type: BlockEntityType::from_str(&b.id)
+                                .ok_or(AnvilError::InvalidBlockEntityType(b.id))?,
+                            components: b.components,
+                            data: b.data,
+                        },
+                    ))
+                })
+                .collect::<Result<_, AnvilError>>()?,
+        })
     }
 
     fn get_block(&self, x: u8, y: i16, z: u8) -> Option<Block> {
@@ -332,10 +378,29 @@ impl Chunk {
         ) else {
             return false;
         };
-        section.blocks.set(
+        if section.blocks.set(
             section_get_block_index(x, y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8, z),
             block,
-        )
+        ) {
+            self.block_entities.remove(&(x, y, z));
+            true
+        } else {
+            false
+        }
+    }
+
+    fn query_block_entity(&mut self, x: u8, y: i16, z: u8) -> Option<&mut AnvilBlockEntity> {
+        let block = self.get_block(x, y, z)?;
+        if let Some(block_entity_type) = block.block_entity_type() {
+            Some(
+                self.block_entities
+                    .entry((x, y, z))
+                    .or_insert_with(|| AnvilBlockEntity::new(block_entity_type)),
+            )
+        } else {
+            self.block_entities.remove(&(x, y, z));
+            None
+        }
     }
 
     fn to_packet(
@@ -358,7 +423,22 @@ impl Chunk {
 
                     writer.into_boxed_slice()
                 },
-                block_entities: Vec::new(),
+                block_entities: self
+                    .block_entities
+                    .iter()
+                    .flat_map(|((x, y, z), block_entity)| {
+                        block_entity
+                            .r#type()
+                            .nbt_visible()
+                            .then(|| packet::play::BlockEntity {
+                                x: *x,
+                                y: *y,
+                                z: *z,
+                                r#type: block_entity.r#type(),
+                                data: NBT::Compound(block_entity.data.clone()),
+                            })
+                    })
+                    .collect(),
             },
             light_data: packet::play::LevelLightData::full_bright(self.sections.len()),
         })
@@ -438,11 +518,11 @@ impl Region {
         chunk_z: u8,
         section_y_range: std::ops::RangeInclusive<i8>,
     ) -> Result<Option<Chunk>, AnvilError> {
-        Ok(self
-            .read_nbt(chunk_x, chunk_z)?
+        self.read_nbt(chunk_x, chunk_z)?
             .map(|(_, nbt)| from_nbt::<chunk_format::Chunk>(nbt))
             .transpose()?
-            .map(|parsed| Chunk::new(parsed, section_y_range)))
+            .map(|parsed| Chunk::new(parsed, section_y_range))
+            .transpose()
     }
 }
 
@@ -703,6 +783,27 @@ impl World for AnvilWorld {
                 );
         }
         Ok(())
+    }
+
+    type BlockData = AnvilBlockEntity;
+    fn query_block_data(
+        &mut self,
+        position: Position,
+    ) -> Result<Option<&mut AnvilBlockEntity>, Self::Error> {
+        let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
+        let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
+        self.prepare_chunk(chunk_x, chunk_z)?;
+        let Some(Some(chunk)) = self.chunks.get_mut(&(
+            position.x.div_euclid(CHUNK_SIZE as i32),
+            position.z.div_euclid(CHUNK_SIZE as i32),
+        )) else {
+            return Ok(None);
+        };
+        Ok(chunk.query_block_entity(
+            (position.x.rem_euclid(CHUNK_SIZE as i32)) as u8,
+            position.y,
+            (position.z.rem_euclid(CHUNK_SIZE as i32)) as u8,
+        ))
     }
 }
 

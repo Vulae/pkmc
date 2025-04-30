@@ -4,8 +4,9 @@
 use std::fmt::Display;
 
 use serde::{
+    Deserializer,
     de::{DeserializeOwned, MapAccess, SeqAccess, Visitor},
-    forward_to_deserialize_any, Deserializer,
+    forward_to_deserialize_any,
 };
 
 use crate::nbt::NBTError;

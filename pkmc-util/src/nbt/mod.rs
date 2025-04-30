@@ -1,12 +1,17 @@
+// TODO: Rewrite NBT serde code, this is all very very yucky.
+
 mod bin;
 mod de;
 mod json;
+mod number_arena;
 mod tag;
 
 use std::collections::HashMap;
 
 pub use de::from_nbt;
 
+use number_arena::BestMatchingNumberType;
+use serde::{de::Visitor, Deserialize};
 use tag::NBTTag;
 use thiserror::Error;
 
@@ -132,7 +137,76 @@ impl TryFrom<Vec<NBT>> for NBTList {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+struct NBTListVisitor;
+
+impl<'de> Visitor<'de> for NBTListVisitor {
+    type Value = NBTList;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a NBTList with all elements being the same type")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut untyped_list: Vec<NBT> = Vec::new();
+        while let Some(next) = seq.next_element()? {
+            untyped_list.push(next);
+        }
+
+        if untyped_list.is_empty()
+            || untyped_list.iter().all(|v| {
+                matches!(
+                    v,
+                    NBT::String(..)
+                        | NBT::Compound(..)
+                        | NBT::List(..)
+                        | NBT::IntArray(..)
+                        | NBT::ByteArray(..)
+                        | NBT::LongArray(..)
+                )
+            })
+        {
+            let mut list = NBTList::new();
+            for v in untyped_list.into_iter() {
+                list.push(v).unwrap();
+            }
+            return Ok(list);
+        }
+
+        let arena = untyped_list
+            .iter()
+            .try_fold(
+                BestMatchingNumberType::try_from(untyped_list.first().unwrap()).unwrap(),
+                |arena, number| {
+                    BestMatchingNumberType::rank(
+                        arena,
+                        BestMatchingNumberType::try_from(number).unwrap(),
+                    )
+                },
+            )
+            .unwrap();
+
+        let mut list = NBTList::new();
+        for v in untyped_list.into_iter() {
+            list.push(arena.convert_nbt(&v).unwrap()).unwrap();
+        }
+        Ok(list)
+    }
+}
+
+impl<'de> Deserialize<'de> for NBTList {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(NBTListVisitor)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
 pub enum NBT {
     Byte(i8),
     Short(i16),

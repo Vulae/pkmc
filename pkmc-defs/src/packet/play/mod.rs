@@ -25,6 +25,7 @@ serverbound_packet_enum!(pub PlayPacket;
     PlayerCommand, PlayerCommand;
     SetCarriedItem, SetHeldItem;
     SwingArm, SwingArm;
+    UseItemOn, UseItemOn;
     ChatMessage, ChatMessage;
 );
 

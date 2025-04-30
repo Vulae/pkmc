@@ -69,4 +69,10 @@ pub trait World: Debug {
 
     fn get_block(&mut self, position: Position) -> Result<Option<Block>, Self::Error>;
     fn set_block(&mut self, position: Position, block: Block) -> Result<(), Self::Error>;
+
+    type BlockData: std::fmt::Debug;
+    fn query_block_data(
+        &mut self,
+        position: Position,
+    ) -> Result<Option<&mut Self::BlockData>, Self::Error>;
 }

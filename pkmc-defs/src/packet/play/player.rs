@@ -426,8 +426,83 @@ impl ServerboundPacket for SwingArm {
         Ok(Self(match reader.decode::<i32>()? {
             0 => false,
             1 => true,
-            _ => return Err(ConnectionError::Other("Invalid swing arm.".into())),
+            _ => return Err(ConnectionError::Other("Invalid swing arm".into())),
         }))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockFace {
+    Bottom,
+    Top,
+    North,
+    South,
+    West,
+    East,
+}
+
+impl BlockFace {
+    pub fn to_id(&self) -> i32 {
+        match self {
+            BlockFace::Bottom => 0,
+            BlockFace::Top => 1,
+            BlockFace::North => 2,
+            BlockFace::South => 3,
+            BlockFace::West => 4,
+            BlockFace::East => 5,
+        }
+    }
+
+    pub fn from_id(id: i32) -> Option<Self> {
+        Some(match id {
+            0 => BlockFace::Bottom,
+            1 => BlockFace::Top,
+            2 => BlockFace::North,
+            3 => BlockFace::South,
+            4 => BlockFace::West,
+            5 => BlockFace::East,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct UseItemOn {
+    pub is_offhand: bool,
+    pub location: Position,
+    pub face: BlockFace,
+    pub cursor_x: f32,
+    pub cursor_y: f32,
+    pub cursor_z: f32,
+    pub inside_block: bool,
+    pub world_border_hit: bool,
+    pub sequence: i32,
+}
+
+impl ServerboundPacket for UseItemOn {
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_USE_ITEM_ON;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            is_offhand: match reader.decode::<i32>()? {
+                0 => false,
+                1 => true,
+                _ => return Err(ConnectionError::Other("Invalid interaction arm".into())),
+            },
+            location: reader.decode()?,
+            face: BlockFace::from_id(reader.decode()?).ok_or(ConnectionError::Other(
+                "Invalid interaction block face".into(),
+            ))?,
+            cursor_x: f32::from_le_bytes(reader.read_const()?),
+            cursor_y: f32::from_le_bytes(reader.read_const()?),
+            cursor_z: f32::from_le_bytes(reader.read_const()?),
+            inside_block: reader.decode()?,
+            world_border_hit: reader.decode()?,
+            sequence: reader.decode()?,
+        })
     }
 }
 

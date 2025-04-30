@@ -29,8 +29,15 @@ struct ReportBlockState {
 
 #[derive(Deserialize)]
 #[allow(unused)]
+struct ReportBlockDefintion {
+    r#type: String,
+    #[serde(flatten)]
+    rest: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Deserialize)]
 struct ReportBlock {
-    definition: serde_json::Value,
+    definition: ReportBlockDefintion,
     #[serde(default)]
     properties: BTreeMap<String, Vec<String>>,
     states: Vec<ReportBlockState>,
@@ -160,7 +167,7 @@ impl ReportBlocksGenerator {
         });
     }
 
-    fn generate_blocks_code(
+    fn generate_blocks_code_enum(
         &self,
         properties_map: &PropertiesMap,
         tokens: &mut proc_macro2::TokenStream,
@@ -357,6 +364,37 @@ impl ReportBlocksGenerator {
             }
         });
     }
+
+    fn generate_blocks_code_extra(&self, tokens: &mut proc_macro2::TokenStream) {
+        let mut blocks_types = proc_macro2::TokenStream::new();
+
+        self.blocks_report.iter().for_each(|(name, def)| {
+            let name = Ident::new(&fix_identifier(name), blocks_types.span());
+            let def_type = Ident::new(&fix_identifier(&def.definition.r#type), blocks_types.span());
+
+            // TODO: Merge same types to single match arm.
+
+            if def.properties.is_empty() {
+                blocks_types.extend(quote! {
+                    Self::#name => BlockType::#def_type,
+                });
+            } else {
+                blocks_types.extend(quote! {
+                    Self::#name { .. } => BlockType::#def_type,
+                });
+            }
+        });
+
+        tokens.extend(quote! {
+            impl Block {
+                pub const fn definition_type(&self) -> BlockType {
+                    match self {
+                        #blocks_types
+                    }
+                }
+            }
+        });
+    }
 }
 
 struct ReportBlocksMapping {
@@ -414,7 +452,8 @@ impl ToTokens for ReportBlocksEnum {
 
         let properties = generator.generate_properties();
         generator.generate_properties_code(&properties, tokens);
-        generator.generate_blocks_code(&properties, tokens);
+        generator.generate_blocks_code_enum(&properties, tokens);
+        generator.generate_blocks_code_extra(tokens);
     }
 }
 

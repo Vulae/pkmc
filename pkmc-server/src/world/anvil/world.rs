@@ -29,8 +29,8 @@ use pkmc_util::{
 
 use crate::world::{
     chunk_loader::{ChunkLoader, ChunkPosition},
-    section_get_block_index, World, WorldViewer, CHUNK_SIZE, SECTION_BIOMES, SECTION_BLOCKS,
-    SECTION_BLOCKS_SIZE,
+    section_index_block_pos, section_pos_block_index, World, WorldViewer, CHUNK_SIZE,
+    SECTION_BIOMES, SECTION_BLOCKS, SECTION_BLOCKS_SIZE,
 };
 
 use super::{chunk_format, AnvilError};
@@ -363,7 +363,7 @@ impl Chunk {
         let section = self.sections.get(
             (y.div_euclid(SECTION_BLOCKS_SIZE as i16) - (self.sections_y_start as i16)) as usize,
         )?;
-        Some(*section.blocks.get(section_get_block_index(
+        Some(*section.blocks.get(section_pos_block_index(
             x,
             y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8,
             z,
@@ -379,7 +379,7 @@ impl Chunk {
             return false;
         };
         if section.blocks.set(
-            section_get_block_index(x, y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8, z),
+            section_pos_block_index(x, y.rem_euclid(SECTION_BLOCKS_SIZE as i16) as u8, z),
             block,
         ) {
             self.block_entities.remove(&(x, y, z));
@@ -526,28 +526,34 @@ impl Region {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct SectionDiff {
-    // TODO: Don't use hashmap for this.
-    change: HashMap<(u8, u8, u8), i32>,
+    change: [Option<Block>; SECTION_BLOCKS],
+}
+
+impl Default for SectionDiff {
+    fn default() -> Self {
+        Self {
+            change: [None; SECTION_BLOCKS],
+        }
+    }
 }
 
 impl SectionDiff {
     fn set(&mut self, x: u8, y: u8, z: u8, block: Block) {
-        assert!((x as usize) < SECTION_BLOCKS_SIZE);
-        assert!((y as usize) < SECTION_BLOCKS_SIZE);
-        assert!((z as usize) < SECTION_BLOCKS_SIZE);
-        self.change.insert((x, y, z), block.into_id());
+        self.change[section_pos_block_index(x, y, z)] = Some(block);
     }
 
     fn num_blocks(&self) -> usize {
-        self.change.len()
+        self.change.iter().flatten().count()
     }
 
-    fn to_packet_data(&self) -> Vec<(u8, u8, u8, i32)> {
+    fn into_packet_data(self) -> Vec<(u8, u8, u8, i32)> {
         self.change
-            .iter()
-            .map(|((x, y, z), v)| (*x, *y, *z, *v))
+            .into_iter()
+            .enumerate()
+            .flat_map(|(i, b)| Some((section_index_block_pos(i), b?)))
+            .map(|((x, y, z), block)| (x, y, z, block.into_id()))
             .collect()
     }
 }
@@ -680,7 +686,7 @@ impl World for AnvilWorld {
                     sections.into_iter().try_for_each(|(section_y, diff)| {
                         let packet = packet::play::UpdateSectionBlocks {
                             section: Position::new(chunk_x, section_y, chunk_z),
-                            blocks: diff.to_packet_data(),
+                            blocks: diff.into_packet_data(),
                         };
                         viewers
                             .iter()

@@ -20,7 +20,7 @@ pub const SECTION_BLOCKS: usize = 4096;
 pub const SECTION_BIOMES_SIZE: usize = 4;
 pub const SECTION_BIOMES: usize = 64;
 
-pub fn section_get_block_index(x: u8, y: u8, z: u8) -> usize {
+pub const fn section_pos_block_index(x: u8, y: u8, z: u8) -> usize {
     debug_assert!((x as usize) < SECTION_BLOCKS_SIZE);
     debug_assert!((y as usize) < SECTION_BLOCKS_SIZE);
     debug_assert!((z as usize) < SECTION_BLOCKS_SIZE);
@@ -29,13 +29,31 @@ pub fn section_get_block_index(x: u8, y: u8, z: u8) -> usize {
         + (x as usize)
 }
 
-pub fn section_get_biome_index(x: u8, y: u8, z: u8) -> usize {
+pub const fn section_index_block_pos(i: usize) -> (u8, u8, u8) {
+    debug_assert!(i < SECTION_BLOCKS_SIZE);
+    (
+        (i % SECTION_BLOCKS_SIZE) as u8,
+        ((i / (SECTION_BLOCKS_SIZE * SECTION_BLOCKS_SIZE)) % SECTION_BLOCKS_SIZE) as u8,
+        ((i / SECTION_BLOCKS_SIZE) % SECTION_BLOCKS_SIZE) as u8,
+    )
+}
+
+pub const fn section_pos_biome_index(x: u8, y: u8, z: u8) -> usize {
     debug_assert!((x as usize) < SECTION_BIOMES_SIZE);
     debug_assert!((y as usize) < SECTION_BIOMES_SIZE);
     debug_assert!((z as usize) < SECTION_BIOMES_SIZE);
     (y as usize) * SECTION_BIOMES_SIZE * SECTION_BIOMES_SIZE
         + (z as usize) * SECTION_BIOMES_SIZE
         + (x as usize)
+}
+
+pub const fn section_index_biome_pos(i: usize) -> (u8, u8, u8) {
+    debug_assert!(i < SECTION_BIOMES_SIZE);
+    (
+        (i % SECTION_BIOMES_SIZE) as u8,
+        ((i / (SECTION_BIOMES_SIZE * SECTION_BIOMES_SIZE)) % SECTION_BIOMES_SIZE) as u8,
+        ((i / SECTION_BIOMES_SIZE) % SECTION_BIOMES_SIZE) as u8,
+    )
 }
 
 #[derive(Debug)]

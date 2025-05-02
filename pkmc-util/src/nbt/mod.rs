@@ -39,13 +39,19 @@ pub enum NBTError {
     JsonMixedIntFloatArray,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Clone, PartialEq, Default)]
 /// NBTList contains NBT values that MUST be the same type.
 /// The list initially doesn't have a type, pushing to an empty list will set its type and any
 /// subsequent new items will be required to be the same type.
 pub struct NBTList {
     tag: Option<NBTTag>,
     list: Vec<NBT>,
+}
+
+impl std::fmt::Debug for NBTList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.list.fmt(f)
+    }
 }
 
 impl NBTList {
@@ -205,7 +211,7 @@ impl<'de> Deserialize<'de> for NBTList {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum NBT {
     Byte(i8),
@@ -220,6 +226,25 @@ pub enum NBT {
     ByteArray(Box<[i8]>),
     IntArray(Box<[i32]>),
     LongArray(Box<[i64]>),
+}
+
+impl std::fmt::Debug for NBT {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Byte(byte) => write!(f, "{}b", byte),
+            Self::Short(short) => write!(f, "{}s", short),
+            Self::Int(int) => write!(f, "{}i", int),
+            Self::Long(long) => write!(f, "{}l", long),
+            Self::Float(float) => write!(f, "{}f", float),
+            Self::Double(double) => write!(f, "{}d", double),
+            Self::String(string) => write!(f, "\"{}\"", string),
+            Self::List(list) => list.fmt(f),
+            Self::Compound(compound) => compound.fmt(f),
+            Self::ByteArray(byte_array) => byte_array.fmt(f),
+            Self::IntArray(int_array) => int_array.fmt(f),
+            Self::LongArray(long_array) => long_array.fmt(f),
+        }
+    }
 }
 
 impl NBT {

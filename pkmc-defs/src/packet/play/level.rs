@@ -2,12 +2,12 @@ use std::{collections::HashMap, io::Write};
 
 use pkmc_generated::{block::Block, registry::BlockEntityType};
 use pkmc_util::{
-    BitSet, PackedArray, Position, Transmutable,
     connection::{
-        ClientboundPacket, ConnectionError, PacketEncoder as _,
-        paletted_container::to_paletted_data_singular,
+        paletted_container::to_paletted_data_singular, ClientboundPacket, ConnectionError,
+        PacketEncoder as _,
     },
     nbt::NBT,
+    BitSet, PackedArray, Position, Transmutable,
 };
 
 #[derive(Debug)]
@@ -269,16 +269,49 @@ impl ClientboundPacket for ForgetLevelChunk {
 }
 
 #[derive(Debug)]
+pub struct BlockUpdate {
+    pub location: Position,
+    pub block: Block,
+}
+
+impl ClientboundPacket for BlockUpdate {
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_BLOCK_UPDATE;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.encode(&self.location)?;
+        writer.encode(self.block.into_id())?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct BlockEntityData {
+    pub location: Position,
+    pub r#type: BlockEntityType,
+    pub data: NBT,
+}
+
+impl ClientboundPacket for BlockEntityData {
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_BLOCK_ENTITY_DATA;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.encode(&self.location)?;
+        writer.encode(self.r#type.to_id())?;
+        writer.encode(&self.data)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct UpdateSectionBlocks {
     pub section: Position,
-    pub blocks: Vec<(u8, u8, u8, i32)>,
+    pub blocks: Vec<(u8, u8, u8, Block)>,
 }
 
 impl ClientboundPacket for UpdateSectionBlocks {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SECTION_BLOCKS_UPDATE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        //writer.write_position(&self.section)?;
         let v: u64 = Transmutable::<u64>::transmute((self.section.x as i64) << 42)
             | (Transmutable::<u64>::transmute((self.section.y as i64) << 44) >> 44)
             | (Transmutable::<u64>::transmute((self.section.z as i64) << 42) >> 22);
@@ -290,8 +323,9 @@ impl ClientboundPacket for UpdateSectionBlocks {
             debug_assert!(*by <= 15);
             debug_assert!(*bz <= 15);
             let encoded_position: u64 = ((*bx as u64) << 8) | ((*bz as u64) << 4) | (*by as u64);
-            writer
-                .encode(((*id as i64) << 12) | Transmutable::<i64>::transmute(encoded_position))?;
+            writer.encode(
+                ((id.into_id() as i64) << 12) | Transmutable::<i64>::transmute(encoded_position),
+            )?;
         }
         Ok(())
     }

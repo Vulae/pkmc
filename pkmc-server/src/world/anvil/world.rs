@@ -548,12 +548,12 @@ impl SectionDiff {
         self.change.iter().flatten().count()
     }
 
-    fn into_packet_data(self) -> Vec<(u8, u8, u8, i32)> {
+    fn into_packet_data(self) -> Vec<(u8, u8, u8, Block)> {
         self.change
             .into_iter()
             .enumerate()
             .flat_map(|(i, b)| Some((section_index_block_pos(i), b?)))
-            .map(|((x, y, z), block)| (x, y, z, block.into_id()))
+            .map(|((x, y, z), block)| (x, y, z, block))
             .collect()
     }
 }

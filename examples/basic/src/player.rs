@@ -14,6 +14,7 @@ use pkmc_server::{
 };
 use pkmc_util::{
     connection::{Connection, ConnectionError, ConnectionSender},
+    nbt::NBT,
     Position, Vec3, UUID,
 };
 use thiserror::Error;
@@ -103,8 +104,8 @@ impl Player {
                 .0 as i32,
             dimension_name: dimension,
             hashed_seed: 0,
-            game_mode: 1,
-            previous_game_mode: -1,
+            game_mode: packet::play::Gamemode::Creative,
+            previous_game_mode: None,
             is_debug: false,
             is_flat: false,
             death: None,
@@ -264,6 +265,30 @@ impl Player {
         Ok(())
     }
 
+    fn resend_block(
+        &mut self,
+        location: Position,
+        sequence: Option<i32>,
+    ) -> Result<(), PlayerError> {
+        let mut world = self.server_state.world.lock().unwrap();
+        if let Some(block) = world.get_block(location)? {
+            self.connection
+                .send(&packet::play::BlockUpdate { location, block })?;
+            if let Some(sequence) = sequence {
+                self.connection
+                    .send(&packet::play::AcknowledgeBlockChange(sequence))?;
+            }
+            if let Some(data) = world.query_block_data(location)? {
+                self.connection.send(&packet::play::BlockEntityData {
+                    location,
+                    r#type: data.r#type(),
+                    data: NBT::Compound(data.data.clone()),
+                })?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn update(&mut self) -> Result<(), PlayerError> {
         if std::time::Instant::now().duration_since(self.keepalive_time) >= KEEPALIVE_PING_TIME {
             self.keepalive_time = std::time::Instant::now();
@@ -338,56 +363,55 @@ impl Player {
                     self.update_flyspeed()?;
                     self.slot = new_slot;
                 }
-                packet::play::PlayPacket::SwingArm(packet::play::SwingArm(is_offhand)) => {
+                packet::play::PlayPacket::SwingArm(packet::play::SwingArm(hand)) => {
                     self.player_entity
                         .handler()
                         .lock()
                         .unwrap()
-                        .animate(if !is_offhand {
-                            EntityAnimationType::SwingMainArm
-                        } else {
-                            EntityAnimationType::SwingOffhand
+                        .animate(match hand {
+                            packet::play::Hand::Mainhand => EntityAnimationType::SwingMainArm,
+                            packet::play::Hand::Offhand => EntityAnimationType::SwingOffhand,
                         });
-
-                    //let mut world = self.server_state.world.lock().unwrap();
-                    //if let Some(position) = Position::iter_ray(
-                    //    self.position + Vec3::new(0.0, 1.5, 0.0),
-                    //    Vec3::get_vector_for_rotation(self.pitch.into(), self.yaw.into()),
-                    //    5000.0,
-                    //)
-                    //.find(|p| {
-                    //    world
-                    //        .get_block(*p)
-                    //        .ok()
-                    //        .flatten()
-                    //        .map(|b| !b.is_air())
-                    //        .unwrap_or(false)
-                    //}) {
-                    //    //self.connection.send(&packet::play::LevelParticles {
-                    //    //    long_distance: true,
-                    //    //    always_visible: false,
-                    //    //    position: Vec3::new(
-                    //    //        position.x.into(),
-                    //    //        position.y.into(),
-                    //    //        position.z.into(),
-                    //    //    ),
-                    //    //    offset: Vec3::all(12.0),
-                    //    //    max_speed: 0.0,
-                    //    //    particle_count: 64,
-                    //    //    particle: Particle::ExplosionEmitter,
-                    //    //})?;
-                    //    Position::iter_offset(Position::iter_sphere(48.0), position)
-                    //        .try_for_each(|p| world.set_block(p, Block::Air))?;
-                    //}
                 }
                 packet::play::PlayPacket::UseItemOn(use_item_on) => {
-                    let mut world = self.server_state.world.lock().unwrap();
-                    if let Some(data) = world.query_block_data(use_item_on.location)? {
-                        println!("{:#?}", data);
-                        self.connection.send(&packet::play::SystemChat {
-                            content: TextComponent::new(format!("{:#?}", data)),
-                            overlay: false,
-                        })?;
+                    {
+                        let mut world = self.server_state.world.lock().unwrap();
+                        if let Some(data) = world.query_block_data(use_item_on.location)? {
+                            println!("{:#?}", data);
+                            self.connection.send(&packet::play::SystemChat {
+                                content: TextComponent::new(format!("{:#?}", data)),
+                                overlay: false,
+                            })?;
+                        }
+                    }
+                    self.resend_block(use_item_on.location, Some(use_item_on.sequence))?;
+                }
+                packet::play::PlayPacket::PlayerAction(player_action) => {
+                    match player_action.status {
+                        packet::play::PlayerActionStatus::FinishedDigging
+                        | packet::play::PlayerActionStatus::StartedDigging => {
+                            self.resend_block(player_action.location, Some(player_action.sequence));
+                        }
+                        packet::play::PlayerActionStatus::SwapItemInHand => {
+                            let mut world = self.server_state.world.lock().unwrap();
+                            if let Some(position) = Position::iter_ray(
+                                self.position + Vec3::new(0.0, 1.5, 0.0),
+                                Vec3::get_vector_for_rotation(self.pitch.into(), self.yaw.into()),
+                                5000.0,
+                            )
+                            .find(|p| {
+                                world
+                                    .get_block(*p)
+                                    .ok()
+                                    .flatten()
+                                    .map(|b| !b.is_air())
+                                    .unwrap_or(false)
+                            }) {
+                                Position::iter_offset(Position::iter_sphere(32.0), position)
+                                    .try_for_each(|p| world.set_block(p, Block::Air))?;
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 packet::play::PlayPacket::ChatMessage(chat_message) => {

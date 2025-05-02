@@ -11,7 +11,14 @@ use pkmc_util::{
     Position, ReadExt as _, UUID,
 };
 
-use crate::text_component::TextComponent;
+use crate::{generate_id_enum, text_component::TextComponent};
+
+generate_id_enum!(pub Gamemode;
+    Survival => 0,
+    Creative => 1,
+    Adventure => 2,
+    Spectator => 3,
+);
 
 #[derive(Debug)]
 pub struct Login {
@@ -27,8 +34,8 @@ pub struct Login {
     pub dimension_type: i32,
     pub dimension_name: String,
     pub hashed_seed: i64,
-    pub game_mode: u8,
-    pub previous_game_mode: i8,
+    pub game_mode: Gamemode,
+    pub previous_game_mode: Option<Gamemode>,
     pub is_debug: bool,
     pub is_flat: bool,
     pub death: Option<(String, Position)>,
@@ -54,8 +61,10 @@ impl ClientboundPacket for Login {
         writer.encode(self.dimension_type)?;
         writer.encode(&self.dimension_name)?;
         writer.write_all(&self.hashed_seed.to_be_bytes())?;
-        writer.write_all(&self.game_mode.to_be_bytes())?;
-        writer.write_all(&self.previous_game_mode.to_be_bytes())?;
+        writer.encode(self.game_mode)?;
+        writer.write_all(
+            &(self.previous_game_mode.map(|gm| gm.into_id()).unwrap_or(-1) as i8).to_be_bytes(),
+        )?;
         writer.encode(self.is_debug)?;
         writer.encode(self.is_flat)?;
         if let Some(death) = &self.death {
@@ -86,7 +95,7 @@ impl ClientboundPacket for Disconnect {
 
 #[derive(Debug)]
 pub enum GameEvent {
-    ChangeGamemode(u8),
+    ChangeGamemode(Gamemode),
     StartWaitingForLevelChunks,
 }
 
@@ -97,7 +106,7 @@ impl ClientboundPacket for GameEvent {
         match self {
             GameEvent::ChangeGamemode(gamemode) => {
                 writer.write_all(&3u8.to_be_bytes())?;
-                writer.write_all(&(*gamemode as f32).to_be_bytes())?;
+                writer.write_all(&(gamemode.into_id() as f32).to_be_bytes())?;
             }
             GameEvent::StartWaitingForLevelChunks => {
                 writer.write_all(&13u8.to_be_bytes())?;
@@ -343,39 +352,17 @@ impl ServerboundPacket for PlayerAbilities_Serverbound {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlayerCommandAction {
-    StartSneaking,
-    StopSneaking,
-    LeaveBed,
-    StartSprinting,
-    StopSprinting,
-    StartJumpWithHorse,
-    StopJumpWithHorse,
-    OpenVehicleInventory,
-    StartFlyingWithElytra,
-}
-
-impl TryFrom<i32> for PlayerCommandAction {
-    type Error = ConnectionError;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(PlayerCommandAction::StartSneaking),
-            1 => Ok(PlayerCommandAction::StopSneaking),
-            2 => Ok(PlayerCommandAction::LeaveBed),
-            3 => Ok(PlayerCommandAction::StartSprinting),
-            4 => Ok(PlayerCommandAction::StopSprinting),
-            5 => Ok(PlayerCommandAction::StartJumpWithHorse),
-            6 => Ok(PlayerCommandAction::StopJumpWithHorse),
-            7 => Ok(PlayerCommandAction::OpenVehicleInventory),
-            8 => Ok(PlayerCommandAction::StartFlyingWithElytra),
-            _ => Err(ConnectionError::Other(
-                "packet::play::PlayerActionCommand invalid varint value".into(),
-            )),
-        }
-    }
-}
+generate_id_enum!(pub PlayerCommandAction;
+    StartSneaking => 0,
+    StopSneaking => 1,
+    LeaveBed => 2,
+    StartSprinting => 3,
+    StopSprinting => 4,
+    StartJumpWithHorse => 5,
+    StopJumpWithHorse => 6,
+    OpenVehicleInventory => 7,
+    StartFlyingWithElytra => 8,
+);
 
 #[derive(Debug)]
 pub struct PlayerCommand {
@@ -393,7 +380,7 @@ impl ServerboundPacket for PlayerCommand {
     {
         Ok(Self {
             entity_id: reader.decode()?,
-            action: PlayerCommandAction::try_from(reader.decode::<i32>()?)?,
+            action: reader.decode()?,
             jump_boost: reader.decode()?,
         })
     }
@@ -413,8 +400,13 @@ impl ServerboundPacket for SetCarriedItem {
     }
 }
 
+generate_id_enum!(pub Hand;
+    Mainhand => 0,
+    Offhand => 1,
+);
+
 #[derive(Debug)]
-pub struct SwingArm(pub bool);
+pub struct SwingArm(pub Hand);
 
 impl ServerboundPacket for SwingArm {
     const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_SWING;
@@ -423,52 +415,22 @@ impl ServerboundPacket for SwingArm {
     where
         Self: Sized,
     {
-        Ok(Self(match reader.decode::<i32>()? {
-            0 => false,
-            1 => true,
-            _ => return Err(ConnectionError::Other("Invalid swing arm".into())),
-        }))
+        Ok(Self(reader.decode()?))
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlockFace {
-    Bottom,
-    Top,
-    North,
-    South,
-    West,
-    East,
-}
-
-impl BlockFace {
-    pub fn to_id(&self) -> i32 {
-        match self {
-            BlockFace::Bottom => 0,
-            BlockFace::Top => 1,
-            BlockFace::North => 2,
-            BlockFace::South => 3,
-            BlockFace::West => 4,
-            BlockFace::East => 5,
-        }
-    }
-
-    pub fn from_id(id: i32) -> Option<Self> {
-        Some(match id {
-            0 => BlockFace::Bottom,
-            1 => BlockFace::Top,
-            2 => BlockFace::North,
-            3 => BlockFace::South,
-            4 => BlockFace::West,
-            5 => BlockFace::East,
-            _ => return None,
-        })
-    }
-}
+generate_id_enum!(pub BlockFace;
+    Bottom => 0,
+    Top => 1,
+    North => 2,
+    South => 3,
+    West => 4,
+    East => 5,
+);
 
 #[derive(Debug)]
 pub struct UseItemOn {
-    pub is_offhand: bool,
+    pub hand: Hand,
     pub location: Position,
     pub face: BlockFace,
     pub cursor_x: f32,
@@ -487,15 +449,9 @@ impl ServerboundPacket for UseItemOn {
         Self: Sized,
     {
         Ok(Self {
-            is_offhand: match reader.decode::<i32>()? {
-                0 => false,
-                1 => true,
-                _ => return Err(ConnectionError::Other("Invalid interaction arm".into())),
-            },
+            hand: reader.decode()?,
             location: reader.decode()?,
-            face: BlockFace::from_id(reader.decode()?).ok_or(ConnectionError::Other(
-                "Invalid interaction block face".into(),
-            ))?,
+            face: reader.decode()?,
             cursor_x: f32::from_le_bytes(reader.read_const()?),
             cursor_y: f32::from_le_bytes(reader.read_const()?),
             cursor_z: f32::from_le_bytes(reader.read_const()?),
@@ -503,6 +459,52 @@ impl ServerboundPacket for UseItemOn {
             world_border_hit: reader.decode()?,
             sequence: reader.decode()?,
         })
+    }
+}
+
+generate_id_enum!(pub PlayerActionStatus;
+    StartedDigging => 0,
+    CancelledDigging => 1,
+    FinishedDigging => 2,
+    DropItemStack => 3,
+    DropItem => 4,
+    ShootArrow => 5,
+    SwapItemInHand => 6,
+);
+
+#[derive(Debug)]
+pub struct PlayerAction {
+    pub status: PlayerActionStatus,
+    pub location: Position,
+    pub face: BlockFace,
+    pub sequence: i32,
+}
+
+impl ServerboundPacket for PlayerAction {
+    const SERVERBOUND_ID: i32 = pkmc_generated::packet::play::SERVERBOUND_PLAYER_ACTION;
+
+    fn packet_read(mut reader: impl Read) -> Result<Self, ConnectionError>
+    where
+        Self: Sized,
+    {
+        Ok(Self {
+            status: reader.decode()?,
+            location: reader.decode()?,
+            face: reader.decode()?,
+            sequence: reader.decode()?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct AcknowledgeBlockChange(pub i32);
+
+impl ClientboundPacket for AcknowledgeBlockChange {
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_BLOCK_CHANGED_ACK;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.encode(self.0)?;
+        Ok(())
     }
 }
 

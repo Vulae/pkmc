@@ -30,10 +30,7 @@ pub fn quantize_angle(angle: f32) -> u8 {
 }
 
 pub trait Entity: Debug {
-    const TYPE: EntityType;
-    fn r#type(&self) -> EntityType {
-        Self::TYPE
-    }
+    fn r#type(&self) -> EntityType;
 }
 
 #[derive(Debug)]
@@ -118,6 +115,7 @@ pub struct EntityHandler {
     last_yaw_pitch: (f32, f32),
     pub on_ground: bool,
     pub metadata: EntityMetadataBundle,
+    metadata_updated: bool,
     pub head_yaw: f32,
     last_head_yaw: f32,
     animations: Vec<EntityAnimationType>,
@@ -138,6 +136,7 @@ impl EntityHandler {
             last_yaw_pitch: (0.0, 0.0),
             on_ground: false,
             metadata: EntityMetadataBundle::empty(),
+            metadata_updated: false,
             head_yaw: 0.0,
             last_head_yaw: 0.0,
             animations: Vec::new(),
@@ -151,22 +150,28 @@ impl EntityHandler {
         }
         self.animations.push(animation);
     }
+
+    pub fn set_metadata_updated(&mut self) {
+        self.metadata_updated = true;
+    }
 }
 
 #[derive(Debug)]
 pub struct EntityViewer {
     connection: ConnectionSender,
     uuid: UUID,
+    entity_id: Option<i32>,
     pub position: Vec3<f64>,
     pub radius: f64,
     viewing: HashSet<i32>,
 }
 
 impl EntityViewer {
-    fn new(connection: ConnectionSender, uuid: UUID) -> Self {
+    fn new(connection: ConnectionSender, uuid: UUID, entity_id: Option<i32>) -> Self {
         Self {
             connection,
             uuid,
+            entity_id,
             position: Vec3::zero(),
             radius: 256.0,
             viewing: HashSet::new(),
@@ -185,9 +190,10 @@ impl EntityManager {
         &mut self,
         connection: ConnectionSender,
         uuid: UUID,
+        entity_id: Option<i32>,
     ) -> Arc<Mutex<EntityViewer>> {
         self.viewers
-            .push(Mutex::new(EntityViewer::new(connection, uuid)))
+            .push(Mutex::new(EntityViewer::new(connection, uuid, entity_id)))
     }
 
     pub fn update_viewers(&mut self, force_sync: bool) -> Result<(), ConnectionError> {
@@ -218,29 +224,29 @@ impl EntityManager {
                 .into_iter()
                 .try_for_each(|entity| {
                     viewer.viewing.insert(entity.id);
-                    viewer.connection.send(&packet::play::BundleDelimiter)?;
-                    viewer.connection.send(&packet::play::AddEntity {
-                        id: entity.id,
-                        uuid: entity.uuid,
-                        r#type: entity.r#type,
-                        position: entity.position,
-                        pitch: 0,
-                        yaw: 0,
-                        head_yaw: 0,
-                        data: 0,
-                        velocity_x: 0,
-                        velocity_y: 0,
-                        velocity_z: 0,
-                    })?;
-                    viewer.connection.send(&packet::play::SetHeadRotation {
-                        entity_id: entity.id,
-                        yaw: quantize_angle(entity.head_yaw),
-                    })?;
+                    if Some(entity.id) != viewer.entity_id {
+                        viewer.connection.send(&packet::play::AddEntity {
+                            id: entity.id,
+                            uuid: entity.uuid,
+                            r#type: entity.r#type,
+                            position: entity.position,
+                            pitch: 0,
+                            yaw: 0,
+                            head_yaw: 0,
+                            data: 0,
+                            velocity_x: 0,
+                            velocity_y: 0,
+                            velocity_z: 0,
+                        })?;
+                        viewer.connection.send(&packet::play::SetHeadRotation {
+                            entity_id: entity.id,
+                            yaw: quantize_angle(entity.head_yaw),
+                        })?;
+                    }
                     viewer.connection.send(&packet::play::SetEntityMetadata {
                         entity_id: entity.id,
                         metadata: entity.metadata.clone(),
                     })?;
-                    viewer.connection.send(&packet::play::BundleDelimiter)?;
                     Ok::<_, ConnectionError>(())
                 })?;
 
@@ -266,6 +272,7 @@ impl EntityManager {
         viewers.iter().try_for_each(|viewer| {
             entities
                 .values()
+                .filter(|entity| Some(entity.id) != viewer.entity_id)
                 .filter(|entity| viewer.viewing.contains(&entity.id))
                 .try_for_each(|entity| {
                     if force_sync {
@@ -356,18 +363,35 @@ impl EntityManager {
 
         // Entity animation
         viewers.iter().try_for_each(|viewer| {
-            entities.iter().try_for_each(|(entity_id, entity)| {
-                if !viewer.viewing.contains(entity_id) {
-                    return Ok(());
-                }
-                for animation in entity.animations.iter() {
-                    viewer.connection.send(&packet::play::EntityAnimation {
-                        entity_id: **entity_id,
-                        r#type: *animation,
+            entities
+                .values()
+                .filter(|entity| Some(entity.id) != viewer.entity_id)
+                .try_for_each(|entity| {
+                    if !viewer.viewing.contains(&entity.id) {
+                        return Ok(());
+                    }
+                    for animation in entity.animations.iter() {
+                        viewer.connection.send(&packet::play::EntityAnimation {
+                            entity_id: entity.id,
+                            r#type: *animation,
+                        })?;
+                    }
+                    Ok::<_, ConnectionError>(())
+                })
+        })?;
+
+        // Entity metadata
+        viewers.iter().try_for_each(|viewer| {
+            entities
+                .values()
+                .filter(|entity| entity.metadata_updated)
+                .try_for_each(|entity| {
+                    viewer.connection.send(&packet::play::SetEntityMetadata {
+                        entity_id: entity.id,
+                        metadata: entity.metadata.clone(),
                     })?;
-                }
-                Ok::<_, ConnectionError>(())
-            })
+                    Ok::<_, ConnectionError>(())
+                })
         })?;
 
         // End of processing cleanup.
@@ -376,13 +400,18 @@ impl EntityManager {
             entity.last_yaw_pitch = (entity.yaw, entity.pitch);
             entity.last_head_yaw = entity.head_yaw;
             entity.animations.drain(..);
+            entity.metadata_updated = false;
         });
 
         Ok(())
     }
 
-    pub fn add_entity<T: Entity>(&mut self, entity: T, uuid: UUID) -> EntityBase<T> {
-        let id = new_entity_id();
+    pub fn add_entity_with_id<T: Entity>(
+        &mut self,
+        entity: T,
+        uuid: UUID,
+        id: i32,
+    ) -> EntityBase<T> {
         EntityBase {
             handler: self.entities.insert_ignored(
                 id,
@@ -391,5 +420,9 @@ impl EntityManager {
             inner: entity,
             uuid,
         }
+    }
+
+    pub fn add_entity<T: Entity>(&mut self, entity: T, uuid: UUID) -> EntityBase<T> {
+        self.add_entity_with_id(entity, uuid, new_entity_id())
     }
 }

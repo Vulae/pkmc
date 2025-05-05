@@ -11,7 +11,7 @@ use pkmc_util::{
     Position, ReadExt as _, UUID,
 };
 
-use crate::{generate_id_enum, text_component::TextComponent};
+use crate::{generate_id_enum, packet, text_component::TextComponent};
 
 generate_id_enum!(pub Gamemode;
     Survival => 0,
@@ -516,7 +516,7 @@ pub enum PlayerInfoUpdateAction {
     },
     // TODO:
     InitializeChat,
-    UpdateGamemode(i32),
+    UpdateGamemode(packet::play::Gamemode),
     UpdateListed(bool),
     UpdateLatency(i32),
     UpdateDisplayName(Option<TextComponent>),

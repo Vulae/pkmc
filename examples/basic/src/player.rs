@@ -9,7 +9,7 @@ use pkmc_defs::{
 use pkmc_generated::{block::Block, registry::EntityType};
 use pkmc_server::{
     entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
-    tab_list::{TabListPlayer, TabListViewer},
+    tab_list::{TabListPlayer, TabListPlayerProperty, TabListViewer},
     world::{anvil::AnvilError, World, WorldViewer},
 };
 use pkmc_util::{
@@ -41,7 +41,9 @@ pub enum PlayerError {
 struct PlayerEntity {}
 
 impl Entity for PlayerEntity {
-    const TYPE: EntityType = EntityType::Player;
+    fn r#type(&self) -> EntityType {
+        EntityType::Player
+    }
 }
 
 #[derive(Debug)]
@@ -54,11 +56,11 @@ pub struct Player {
     _tab_list_viewer: Arc<Mutex<TabListViewer>>,
     _tab_list_player: Arc<Mutex<TabListPlayer>>,
     _server_tab_list_info_viewer: Arc<Mutex<ConnectionSender>>,
-    player_name: String,
-    _player_uuid: UUID,
-    _uuid: UUID,
+    name: String,
+    uuid: UUID,
     keepalive_time: std::time::Instant,
     keepalive_id: Option<i64>,
+    entity_id: i32,
     position: Vec3<f64>,
     pitch: f32,
     yaw: f32,
@@ -68,19 +70,23 @@ pub struct Player {
 }
 
 impl Player {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         connection: Connection,
         server_state: ServerState,
-        player_name: String,
-        player_uuid: UUID,
+        name: String,
         uuid: UUID,
+        player_properties: Vec<packet::login::FinishedProperty>,
+        player_info: packet::configuration::ClientInformation,
         view_distance: u8,
         entity_distance: f64,
     ) -> Result<Self, PlayerError> {
+        let entity_id = new_entity_id();
+
         let dimension = server_state.world.lock().unwrap().identifier().to_owned();
 
         connection.send(&packet::play::Login {
-            entity_id: new_entity_id(),
+            entity_id,
             is_hardcore: false,
             dimensions: REGISTRIES
                 .get("minecraft:dimension_type")
@@ -104,7 +110,7 @@ impl Player {
                 .0 as i32,
             dimension_name: dimension,
             hashed_seed: 0,
-            game_mode: packet::play::Gamemode::Creative,
+            game_mode: packet::play::Gamemode::Survival,
             previous_game_mode: None,
             is_debug: false,
             is_flat: false,
@@ -139,7 +145,7 @@ impl Player {
         })?;
 
         connection.send(&packet::play::SystemChat {
-            content: TextComponent::rainbow(&format!("Hello, {}!", player_name), 0.0),
+            content: TextComponent::rainbow(&format!("Hello, {}!", name), 0.0),
             overlay: false,
         })?;
 
@@ -154,23 +160,23 @@ impl Player {
             .loader
             .update_radius(view_distance.into());
 
-        let entity_viewer = server_state
-            .entities
-            .lock()
-            .unwrap()
-            .add_viewer(connection.sender(), uuid);
+        let entity_viewer = server_state.entities.lock().unwrap().add_viewer(
+            connection.sender(),
+            uuid,
+            Some(entity_id),
+        );
         entity_viewer.lock().unwrap().radius = entity_distance;
-        let player_entity = server_state
-            .entities
-            .lock()
-            .unwrap()
-            .add_entity(PlayerEntity {}, uuid);
-        player_entity
-            .handler()
-            .lock()
-            .unwrap()
-            .visibility
-            .exclude(uuid);
+        let player_entity = server_state.entities.lock().unwrap().add_entity_with_id(
+            PlayerEntity {},
+            uuid,
+            entity_id,
+        );
+        {
+            let mut player_entity_handler = player_entity.handler().lock().unwrap();
+            player_entity_handler
+                .metadata
+                .player_skin_parts(player_info.displayed_skin_parts);
+        }
 
         let tab_list_viewer = server_state
             .tab_list
@@ -182,7 +188,18 @@ impl Player {
             .tab_list
             .lock()
             .unwrap()
-            .insert(uuid, player_name.clone());
+            .insert(TabListPlayer::new(
+                uuid,
+                name.clone(),
+                player_properties
+                    .into_iter()
+                    .map(|v| TabListPlayerProperty {
+                        name: v.name,
+                        value: v.value,
+                        signature: v.signature,
+                    })
+                    .collect(),
+            ));
 
         let server_tab_list_info_viewer = server_state
             .server_tab_info
@@ -199,11 +216,11 @@ impl Player {
             _tab_list_viewer: tab_list_viewer,
             _tab_list_player: tab_list_player,
             _server_tab_list_info_viewer: server_tab_list_info_viewer,
-            player_name,
-            _player_uuid: player_uuid,
-            _uuid: uuid,
+            name,
+            uuid,
             keepalive_time: std::time::Instant::now(),
             keepalive_id: None,
+            entity_id,
             position: Vec3::zero(),
             pitch: 0.0,
             yaw: 0.0,
@@ -217,21 +234,14 @@ impl Player {
         Ok(player)
     }
 
-    pub fn player_name(&self) -> &str {
-        &self.player_name
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
-    #[allow(unused)]
-    pub fn player_uuid(&self) -> &UUID {
-        &self._player_uuid
-    }
-
-    #[allow(unused)]
     pub fn uuid(&self) -> &UUID {
-        &self._uuid
+        &self.uuid
     }
 
-    #[allow(unused)]
     pub fn set_view_distance(&mut self, view_distance: u8) -> Result<(), PlayerError> {
         self.world_viewer
             .lock()
@@ -243,7 +253,6 @@ impl Player {
         Ok(())
     }
 
-    #[allow(unused)]
     pub fn kick<T: Into<TextComponent>>(&mut self, text: T) -> Result<(), PlayerError> {
         self.connection
             .send(&packet::play::Disconnect(text.into()))?;
@@ -304,7 +313,7 @@ impl Player {
         while let Some(packet) = match self.connection.recieve_into::<packet::play::PlayPacket>() {
             Ok(packet) => packet,
             Err(err @ ConnectionError::UnsupportedPacket(..)) => {
-                println!("{} {}", self.player_name(), err);
+                println!("{} {}", self.name(), err);
                 None
             }
             Err(err) => Err(err)?,
@@ -318,7 +327,7 @@ impl Player {
                 },
                 packet::play::PlayPacket::Ping(ping) => self.connection.send(&ping)?,
                 packet::play::PlayPacket::PlayerLoaded(_player_loaded) => {
-                    println!("Player {} loaded!", self.player_name());
+                    println!("Player {} loaded!", self.name());
                 }
                 packet::play::PlayPacket::AcceptTeleportation(_accept_teleportation) => {}
                 packet::play::PlayPacket::MovePlayerPosRot(move_player_pos_rot) => {
@@ -418,7 +427,7 @@ impl Player {
                     self.connection.send(&packet::play::DisguisedChatMessage {
                         message: TextComponent::from(chat_message.message),
                         chat_type: 0,
-                        sender_name: TextComponent::from(self.player_name()),
+                        sender_name: TextComponent::from(self.name()),
                         target_name: None,
                     })?;
                 }

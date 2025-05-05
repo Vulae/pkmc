@@ -15,7 +15,6 @@ use pkmc_server::{
 use pkmc_util::{
     connection::{Connection, ConnectionSender},
     convert_ampersand_formatting_codes, normalize_identifier, retain_returned_vec, Color, WeakList,
-    UUID,
 };
 
 use crate::{
@@ -235,11 +234,12 @@ impl Server {
                     self.state.clone(),
                     player.player_name,
                     player.player_id,
-                    UUID::new_v7(),
+                    player.player_properties,
+                    player.player_info,
                     self.config.view_distance,
                     self.config.entity_distance,
                 )?;
-                println!("{} Connected", player.player_name());
+                println!("{} Connected", player.name());
                 self.players.push(player);
                 Ok::<_, Box<dyn Error>>(())
             })?;
@@ -251,7 +251,7 @@ impl Server {
         retain_returned_vec(&mut self.players, |player| !player.is_closed())
             .into_iter()
             .for_each(|player| {
-                println!("{} Disconnected", player.player_name());
+                println!("{} Disconnected", player.name());
             });
 
         self.players

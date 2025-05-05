@@ -103,7 +103,7 @@ impl ClientboundPacket for Compression {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FinishedProperty {
     pub name: String,
     pub value: String,

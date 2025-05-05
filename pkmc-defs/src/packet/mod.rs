@@ -40,6 +40,7 @@ macro_rules! generate_id_enum {
             Self: Sized,
         {
             fn packet_decode(mut reader: impl ::std::io::Read) -> ::std::io::Result<Self> {
+                use ::pkmc_util::connection::PacketDecoder as _;
                 let id: i32 = reader.decode()?;
                 Self::from_id(id).ok_or_else(|| ::std::io::Error::new(
                     ::std::io::ErrorKind::InvalidData,
@@ -49,3 +50,12 @@ macro_rules! generate_id_enum {
         }
     };
 }
+
+/// 0x01 Cape
+/// 0x02 Jacket
+/// 0x04 Left sleeve
+/// 0x08 Right sleeve
+/// 0x10 Left pants
+/// 0x20 Right pants
+/// 0x40 Hat
+pub type SkinParts = u8;

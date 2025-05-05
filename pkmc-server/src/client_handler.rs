@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 
 use pkmc_defs::{packet, registry::Registries};
+use pkmc_generated::consts::VERSION_STR;
 use pkmc_util::{
-    IdTable, UUID,
     connection::{
         Connection, ConnectionEncryption, ConnectionError, PacketHandler, ServerboundPacket,
     },
-    crypto::{MinecraftSha1, rsa_encode_public_key},
-    nbt::{NBT, NBTError},
+    crypto::{rsa_encode_public_key, MinecraftSha1},
+    nbt::{NBTError, NBT},
+    IdTable, UUID,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -44,11 +45,14 @@ enum ClientHandlerState {
     Status,
     Login {
         player: Option<(UUID, String)>,
+        player_properties: Vec<packet::login::FinishedProperty>,
         private_key: rsa::RsaPrivateKey,
         verify_token: [u8; 64],
     },
     Configuration {
         player: (UUID, String),
+        player_properties: Vec<packet::login::FinishedProperty>,
+        player_info: packet::configuration::ClientInformation,
         sent_initial_configuration_packets: bool,
         last_packet_time: std::time::Instant,
         can_finalize: bool,
@@ -56,6 +60,8 @@ enum ClientHandlerState {
     },
     Play {
         player: (UUID, String),
+        player_properties: Vec<packet::login::FinishedProperty>,
+        player_info: packet::configuration::ClientInformation,
     },
 }
 
@@ -64,6 +70,8 @@ pub struct ClientHandlerPlay {
     pub connection: Connection,
     pub player_id: UUID,
     pub player_name: String,
+    pub player_properties: Vec<packet::login::FinishedProperty>,
+    pub player_info: packet::configuration::ClientInformation,
 }
 
 #[derive(Debug)]
@@ -173,6 +181,7 @@ impl ClientHandler {
                     packet::handshake::IntentionNextState::Login => {
                         self.state = ClientHandlerState::Login {
                             player: None,
+                            player_properties: Vec::new(),
                             private_key: rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 1024)?,
                             verify_token: rand::random(),
                         };
@@ -210,6 +219,7 @@ impl ClientHandler {
             }
             ClientHandlerState::Login {
                 ref mut player,
+                ref mut player_properties,
                 ref private_key,
                 ref verify_token,
             } => {
@@ -253,6 +263,18 @@ impl ClientHandler {
 
                             // TODO: Non-blocking.
                             let (uuid, name, properties) = if self.online {
+                                let (uuid, name) = player.clone().unwrap();
+
+                                let server_id = {
+                                    let mut hasher = MinecraftSha1::default();
+                                    hasher.update(""); // Minecraft server ID
+                                    hasher.update(&shared_secret);
+                                    hasher.update(rsa_encode_public_key(
+                                        &private_key.to_public_key(),
+                                    ));
+                                    hasher.finalize()
+                                };
+
                                 #[derive(Debug, Deserialize)]
                                 struct SessionMinecraftJoinedProperty {
                                     name: String,
@@ -267,18 +289,6 @@ impl ClientHandler {
                                     #[serde(default)]
                                     properties: Vec<SessionMinecraftJoinedProperty>,
                                 }
-
-                                let (uuid, name) = player.clone().unwrap();
-
-                                let server_id = {
-                                    let mut hasher = MinecraftSha1::default();
-                                    hasher.update(""); // Minecraft server ID
-                                    hasher.update(&shared_secret);
-                                    hasher.update(rsa_encode_public_key(
-                                        &private_key.to_public_key(),
-                                    ));
-                                    hasher.finalize()
-                                };
 
                                 let auth: SessionMinecraftJoined =
                                     reqwest::blocking::get(reqwest::Url::parse_with_params(
@@ -298,7 +308,6 @@ impl ClientHandler {
                                 (
                                     parsed_uuid,
                                     auth.name,
-                                    // FIXME: Skins dont work :(
                                     auth.properties
                                         .into_iter()
                                         .map(|prop| packet::login::FinishedProperty {
@@ -312,6 +321,8 @@ impl ClientHandler {
                                 let (uuid, name) = player.clone().unwrap();
                                 (uuid, name, Vec::new())
                             };
+
+                            *player_properties = properties.clone();
 
                             if let Some((threshold, compression_level)) = self.compression {
                                 self.connection.send(&packet::login::Compression {
@@ -334,6 +345,8 @@ impl ClientHandler {
                                 player: player
                                     .clone()
                                     .ok_or(ClientHandlerError::InvalidLoginPlayer)?,
+                                player_properties: player_properties.clone(),
+                                player_info: Default::default(),
                                 sent_initial_configuration_packets: false,
                                 last_packet_time: std::time::Instant::now(),
                                 can_finalize: false,
@@ -345,6 +358,8 @@ impl ClientHandler {
             }
             ClientHandlerState::Configuration {
                 ref player,
+                ref player_properties,
+                ref player_info,
                 ref mut sent_initial_configuration_packets,
                 ref mut last_packet_time,
                 ref mut can_finalize,
@@ -362,9 +377,9 @@ impl ClientHandler {
                         self.connection
                             .send(&packet::configuration::SelectKnownPacks {
                                 packs: vec![packet::configuration::KnownPack {
-                                    namespace: "minecraft:core".to_owned(),
-                                    id: "".to_owned(),
-                                    version: "1.21".to_owned(),
+                                    namespace: "minecraft".to_owned(),
+                                    id: "core".to_owned(),
+                                    version: VERSION_STR.to_owned(),
                                 }],
                             })?;
                     }
@@ -456,6 +471,8 @@ impl ClientHandler {
 
                     self.state = ClientHandlerState::Play {
                         player: player.clone(),
+                        player_properties: player_properties.clone(),
+                        player_info: player_info.clone(),
                     };
                 }
             }
@@ -475,10 +492,14 @@ impl ClientHandler {
         match self.state {
             ClientHandlerState::Play {
                 player: (player_id, player_name),
+                player_properties,
+                player_info,
             } => Some(ClientHandlerPlay {
                 connection: self.connection,
                 player_id,
                 player_name,
+                player_properties,
+                player_info,
             }),
             _ => None,
         }

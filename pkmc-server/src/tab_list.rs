@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use pkmc_defs::{packet, text_component::TextComponent};
 use pkmc_util::{
@@ -9,30 +6,47 @@ use pkmc_util::{
     WeakList, WeakMap, UUID,
 };
 
+#[derive(Debug, Clone)]
+pub struct TabListPlayerProperty {
+    pub name: String,
+    pub value: String,
+    pub signature: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct TabListPlayer {
     uuid: UUID,
     name: String,
-    pub game_mode: i32,
+    pub game_mode: packet::play::Gamemode,
     pub listed: bool,
     pub latency: i32,
     pub display_name: Option<TextComponent>,
     pub priority: i32,
     pub hat: bool,
+    pub properties: Vec<TabListPlayerProperty>,
 }
 
 impl TabListPlayer {
-    pub fn new(uuid: UUID, name: String) -> Self {
+    pub fn new(uuid: UUID, name: String, properties: Vec<TabListPlayerProperty>) -> Self {
         Self {
             uuid,
             name,
-            game_mode: 0,
+            game_mode: packet::play::Gamemode::Survival,
             listed: true,
             latency: 0,
             display_name: None,
             priority: 0,
             hat: true,
+            properties,
         }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn uuid(&self) -> &UUID {
+        &self.uuid
     }
 }
 
@@ -67,7 +81,12 @@ impl TabList {
                         vec![
                             packet::play::PlayerInfoUpdateAction::AddPlayer {
                                 name: entry.name.clone(),
-                                properties: HashMap::new(),
+                                properties: entry
+                                    .properties
+                                    .clone()
+                                    .into_iter()
+                                    .map(|v| (v.name, (v.value, v.signature)))
+                                    .collect(),
                             },
                             packet::play::PlayerInfoUpdateAction::InitializeChat,
                             packet::play::PlayerInfoUpdateAction::UpdateGamemode(entry.game_mode),
@@ -124,7 +143,12 @@ impl TabList {
                             vec![
                                 packet::play::PlayerInfoUpdateAction::AddPlayer {
                                     name: entry.name.clone(),
-                                    properties: HashMap::new(),
+                                    properties: entry
+                                        .properties
+                                        .clone()
+                                        .into_iter()
+                                        .map(|v| (v.name, (v.value, v.signature)))
+                                        .collect(),
                                 },
                                 packet::play::PlayerInfoUpdateAction::InitializeChat,
                                 packet::play::PlayerInfoUpdateAction::UpdateGamemode(
@@ -149,9 +173,9 @@ impl TabList {
         Ok(())
     }
 
-    pub fn insert(&mut self, uuid: UUID, name: String) -> Arc<Mutex<TabListPlayer>> {
+    pub fn insert(&mut self, tab_list_player: TabListPlayer) -> Arc<Mutex<TabListPlayer>> {
         self.force_update = true;
         self.entries
-            .insert_ignored(uuid, Mutex::new(TabListPlayer::new(uuid, name)))
+            .insert_ignored(tab_list_player.uuid, Mutex::new(tab_list_player))
     }
 }

@@ -12,6 +12,10 @@ use pkmc_util::{
     serverbound_packet_enum, ReadExt as _,
 };
 
+use crate::generate_id_enum;
+
+use super::SkinParts;
+
 #[derive(Debug)]
 pub enum CustomPayload {
     Unknown { channel: String, data: Box<[u8]> },
@@ -53,16 +57,50 @@ impl ClientboundPacket for CustomPayload {
     }
 }
 
-#[derive(Debug)]
+generate_id_enum!(pub ChatMode;
+    Enabled => 0,
+    CommandsOnly => 1,
+    Hidden => 2,
+);
+
+generate_id_enum!(pub Hand;
+    Left => 0,
+    Right => 1,
+);
+
+generate_id_enum!(pub ParticleStatus;
+    All => 0,
+    Decreased => 1,
+    Minimal => 2,
+);
+
+#[derive(Debug, Clone)]
 pub struct ClientInformation {
     pub locale: String,
     pub view_distance: i8,
-    pub chat_mode: i32,
+    pub chat_mode: ChatMode,
     pub chat_colors: bool,
-    pub displayed_skin_parts: u8,
-    pub left_handed: bool,
+    pub displayed_skin_parts: SkinParts,
+    pub main_hand: Hand,
     pub enable_text_filtering: bool,
     pub allow_server_listings: bool,
+    pub particle_status: ParticleStatus,
+}
+
+impl Default for ClientInformation {
+    fn default() -> Self {
+        Self {
+            locale: "en_US".to_owned(),
+            view_distance: 16,
+            chat_mode: ChatMode::Enabled,
+            chat_colors: true,
+            displayed_skin_parts: 0x7F,
+            main_hand: Hand::Right,
+            enable_text_filtering: false,
+            allow_server_listings: true,
+            particle_status: ParticleStatus::All,
+        }
+    }
 }
 
 impl ServerboundPacket for ClientInformation {
@@ -79,10 +117,10 @@ impl ServerboundPacket for ClientInformation {
             chat_mode: reader.decode()?,
             chat_colors: reader.decode()?,
             displayed_skin_parts: u8::from_be_bytes(reader.read_const()?),
-            // TODO: Is this correct?
-            left_handed: reader.decode::<i32>()? == 0,
+            main_hand: reader.decode()?,
             enable_text_filtering: reader.decode()?,
             allow_server_listings: reader.decode()?,
+            particle_status: reader.decode()?,
         })
     }
 }

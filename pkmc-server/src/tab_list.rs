@@ -1,17 +1,13 @@
 use std::sync::{Arc, Mutex};
 
-use pkmc_defs::{packet, text_component::TextComponent};
+use pkmc_defs::{
+    packet::{self, play::PlayerInfoPlayerProperties},
+    text_component::TextComponent,
+};
 use pkmc_util::{
     connection::{ConnectionError, ConnectionSender},
     WeakList, WeakMap, UUID,
 };
-
-#[derive(Debug, Clone)]
-pub struct TabListPlayerProperty {
-    pub name: String,
-    pub value: String,
-    pub signature: Option<String>,
-}
 
 #[derive(Debug)]
 pub struct TabListPlayer {
@@ -23,11 +19,11 @@ pub struct TabListPlayer {
     pub display_name: Option<TextComponent>,
     pub priority: i32,
     pub hat: bool,
-    pub properties: Vec<TabListPlayerProperty>,
+    pub properties: PlayerInfoPlayerProperties,
 }
 
 impl TabListPlayer {
-    pub fn new(uuid: UUID, name: String, properties: Vec<TabListPlayerProperty>) -> Self {
+    pub fn new(uuid: UUID, name: String, properties: PlayerInfoPlayerProperties) -> Self {
         Self {
             uuid,
             name,
@@ -74,19 +70,14 @@ impl TabList {
         connection.send(&packet::play::PlayerInfoUpdate(
             self.entries
                 .lock()
-                .into_values()
+                .values()
                 .map(|entry| {
                     (
                         entry.uuid,
                         vec![
                             packet::play::PlayerInfoUpdateAction::AddPlayer {
                                 name: entry.name.clone(),
-                                properties: entry
-                                    .properties
-                                    .clone()
-                                    .into_iter()
-                                    .map(|v| (v.name, (v.value, v.signature)))
-                                    .collect(),
+                                properties: &entry.properties,
                             },
                             packet::play::PlayerInfoUpdateAction::InitializeChat,
                             packet::play::PlayerInfoUpdateAction::UpdateGamemode(entry.game_mode),
@@ -143,12 +134,7 @@ impl TabList {
                             vec![
                                 packet::play::PlayerInfoUpdateAction::AddPlayer {
                                     name: entry.name.clone(),
-                                    properties: entry
-                                        .properties
-                                        .clone()
-                                        .into_iter()
-                                        .map(|v| (v.name, (v.value, v.signature)))
-                                        .collect(),
+                                    properties: &entry.properties,
                                 },
                                 packet::play::PlayerInfoUpdateAction::InitializeChat,
                                 packet::play::PlayerInfoUpdateAction::UpdateGamemode(

@@ -255,7 +255,7 @@ pub struct AnvilBlockEntity {
     // Set every time this block entity is queried.
     r#type: BlockEntityType,
     pub components: HashMap<String, NBT>,
-    pub data: HashMap<String, NBT>,
+    pub data: NBT,
 }
 
 impl AnvilBlockEntity {
@@ -263,7 +263,7 @@ impl AnvilBlockEntity {
         AnvilBlockEntity {
             r#type,
             components: HashMap::new(),
-            data: HashMap::new(),
+            data: NBT::Compound(HashMap::new()),
         }
     }
 
@@ -349,7 +349,7 @@ impl Chunk {
                             r#type: BlockEntityType::from_str(&b.id)
                                 .ok_or(AnvilError::InvalidBlockEntityType(b.id))?,
                             components: b.components,
-                            data: b.data,
+                            data: NBT::Compound(b.data),
                         },
                     ))
                 })
@@ -435,7 +435,7 @@ impl Chunk {
                                 y: *y,
                                 z: *z,
                                 r#type: block_entity.r#type(),
-                                data: NBT::Compound(block_entity.data.clone()),
+                                data: &block_entity.data,
                             })
                     })
                     .collect(),

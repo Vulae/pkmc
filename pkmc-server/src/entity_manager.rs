@@ -245,7 +245,7 @@ impl EntityManager {
                     }
                     viewer.connection.send(&packet::play::SetEntityMetadata {
                         entity_id: entity.id,
-                        metadata: entity.metadata.clone(),
+                        metadata: &entity.metadata,
                     })?;
                     Ok::<_, ConnectionError>(())
                 })?;
@@ -388,7 +388,7 @@ impl EntityManager {
                 .try_for_each(|entity| {
                     viewer.connection.send(&packet::play::SetEntityMetadata {
                         entity_id: entity.id,
-                        metadata: entity.metadata.clone(),
+                        metadata: &entity.metadata,
                     })?;
                     Ok::<_, ConnectionError>(())
                 })

@@ -5,9 +5,9 @@ use std::{
 
 use pkmc_generated::{block::Block, registry::EntityType};
 use pkmc_util::{
-    Position, UUID, Vec3,
     connection::{ClientboundPacket, ConnectionError, PacketEncoder as _},
     nbt::NBT,
+    Position, Vec3, UUID,
 };
 
 use crate::text_component::TextComponent;
@@ -407,12 +407,12 @@ impl EntityMetadataBundle {
 }
 
 #[derive(Debug)]
-pub struct SetEntityMetadata {
+pub struct SetEntityMetadata<'a> {
     pub entity_id: i32,
-    pub metadata: EntityMetadataBundle,
+    pub metadata: &'a EntityMetadataBundle,
 }
 
-impl ClientboundPacket for SetEntityMetadata {
+impl ClientboundPacket for SetEntityMetadata<'_> {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_SET_ENTITY_DATA;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {

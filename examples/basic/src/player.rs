@@ -9,7 +9,7 @@ use pkmc_defs::{
 use pkmc_generated::{block::Block, registry::EntityType};
 use pkmc_server::{
     entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
-    tab_list::{TabListPlayer, TabListPlayerProperty, TabListViewer},
+    tab_list::{TabListPlayer, TabListViewer},
     world::{anvil::AnvilError, World, WorldViewer},
 };
 use pkmc_util::{
@@ -193,10 +193,14 @@ impl Player {
                 name.clone(),
                 player_properties
                     .into_iter()
-                    .map(|v| TabListPlayerProperty {
-                        name: v.name,
-                        value: v.value,
-                        signature: v.signature,
+                    .map(|v| {
+                        (
+                            v.name,
+                            packet::play::PlayerInfoPlayerProperty {
+                                value: v.value,
+                                signature: v.signature,
+                            },
+                        )
                     })
                     .collect(),
             ));
@@ -291,7 +295,7 @@ impl Player {
                 self.connection.send(&packet::play::BlockEntityData {
                     location,
                     r#type: data.r#type(),
-                    data: NBT::Compound(data.data.clone()),
+                    data: &data.data,
                 })?;
             }
         }

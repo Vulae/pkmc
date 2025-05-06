@@ -509,10 +509,18 @@ impl ClientboundPacket for AcknowledgeBlockChange {
 }
 
 #[derive(Debug)]
-pub enum PlayerInfoUpdateAction {
+pub struct PlayerInfoPlayerProperty {
+    pub value: String,
+    pub signature: Option<String>,
+}
+
+pub type PlayerInfoPlayerProperties = HashMap<String, PlayerInfoPlayerProperty>;
+
+#[derive(Debug)]
+pub enum PlayerInfoUpdateAction<'a> {
     AddPlayer {
         name: String,
-        properties: HashMap<String, (String, Option<String>)>,
+        properties: &'a PlayerInfoPlayerProperties,
     },
     // TODO:
     InitializeChat,
@@ -524,7 +532,7 @@ pub enum PlayerInfoUpdateAction {
     UpdateHat(bool),
 }
 
-impl PlayerInfoUpdateAction {
+impl PlayerInfoUpdateAction<'_> {
     fn flag(&self) -> u8 {
         match self {
             PlayerInfoUpdateAction::AddPlayer { .. } => 0x01,
@@ -540,9 +548,9 @@ impl PlayerInfoUpdateAction {
 }
 
 #[derive(Debug)]
-pub struct PlayerInfoUpdate(pub HashMap<UUID, Vec<PlayerInfoUpdateAction>>);
+pub struct PlayerInfoUpdate<'a>(pub HashMap<UUID, Vec<PlayerInfoUpdateAction<'a>>>);
 
-impl ClientboundPacket for PlayerInfoUpdate {
+impl ClientboundPacket for PlayerInfoUpdate<'_> {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_PLAYER_INFO_UPDATE;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
@@ -583,7 +591,9 @@ impl ClientboundPacket for PlayerInfoUpdate {
                     PlayerInfoUpdateAction::AddPlayer { name, properties } => {
                         writer.encode(name)?;
                         writer.encode(properties.len() as i32)?;
-                        for (key, (value, signature)) in properties {
+                        for (key, PlayerInfoPlayerProperty { value, signature }) in
+                            properties.iter()
+                        {
                             writer.encode(key)?;
                             writer.encode(value)?;
                             writer.encode(signature.as_ref())?;

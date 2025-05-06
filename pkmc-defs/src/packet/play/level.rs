@@ -63,7 +63,7 @@ impl LevelChunkHeightmapType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LevelChunkHeightmap {
     world_height: u16,
     packed: PackedArray<Vec<u64>>,
@@ -87,23 +87,23 @@ impl LevelChunkHeightmap {
 }
 
 #[derive(Debug)]
-pub struct BlockEntity {
+pub struct BlockEntity<'a> {
     pub x: u8,
     pub z: u8,
     pub y: i16,
     pub r#type: BlockEntityType,
-    pub data: NBT,
+    pub data: &'a NBT,
 }
 
 #[derive(Debug)]
-pub struct LevelChunkData {
-    // TODO: Is this entirely correct?
+pub struct LevelChunkData<'a> {
+    // TODO: Is heightmaps entirely correct?
     pub heightmaps: HashMap<LevelChunkHeightmapType, LevelChunkHeightmap>,
     pub data: Box<[u8]>,
-    pub block_entities: Vec<BlockEntity>,
+    pub block_entities: Box<[BlockEntity<'a>]>,
 }
 
-impl LevelChunkData {
+impl LevelChunkData<'_> {
     fn write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         // TODO: Heightmaps
         writer.encode(self.heightmaps.len() as i32)?;
@@ -124,7 +124,7 @@ impl LevelChunkData {
             writer.write_all(&((block_entity.x << 4) | block_entity.z).to_be_bytes())?;
             writer.write_all(&block_entity.y.to_be_bytes())?;
             writer.encode(block_entity.r#type.to_id())?;
-            writer.encode(&block_entity.data)?;
+            writer.encode(block_entity.data)?;
         }
         //println!("{:#?}", self.block_entities);
         Ok(())
@@ -194,14 +194,14 @@ impl LevelLightData {
 }
 
 #[derive(Debug)]
-pub struct LevelChunkWithLight {
+pub struct LevelChunkWithLight<'a> {
     pub chunk_x: i32,
     pub chunk_z: i32,
-    pub chunk_data: LevelChunkData,
+    pub chunk_data: LevelChunkData<'a>,
     pub light_data: LevelLightData,
 }
 
-impl LevelChunkWithLight {
+impl LevelChunkWithLight<'_> {
     pub fn generate_test(chunk_x: i32, chunk_z: i32, num_sections: usize) -> std::io::Result<Self> {
         Ok(Self {
             chunk_x,
@@ -233,14 +233,14 @@ impl LevelChunkWithLight {
 
                     writer.into_boxed_slice()
                 },
-                block_entities: Vec::new(),
+                block_entities: Vec::new().into_boxed_slice(),
             },
             light_data: LevelLightData::full_dark(num_sections),
         })
     }
 }
 
-impl ClientboundPacket for LevelChunkWithLight {
+impl ClientboundPacket for LevelChunkWithLight<'_> {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_LEVEL_CHUNK_WITH_LIGHT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
@@ -285,19 +285,19 @@ impl ClientboundPacket for BlockUpdate {
 }
 
 #[derive(Debug)]
-pub struct BlockEntityData {
+pub struct BlockEntityData<'a> {
     pub location: Position,
     pub r#type: BlockEntityType,
-    pub data: NBT,
+    pub data: &'a NBT,
 }
 
-impl ClientboundPacket for BlockEntityData {
+impl ClientboundPacket for BlockEntityData<'_> {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_BLOCK_ENTITY_DATA;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         writer.encode(&self.location)?;
         writer.encode(self.r#type.to_id())?;
-        writer.encode(&self.data)?;
+        writer.encode(self.data)?;
         Ok(())
     }
 }

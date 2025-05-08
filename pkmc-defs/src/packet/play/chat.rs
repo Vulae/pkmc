@@ -82,7 +82,6 @@ impl ClientboundPacket for DisguisedChatMessage {
     const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_DISGUISED_CHAT;
 
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
-        // FIXME: Minecraft doesn't like decoding this, and I have no idea why.
         writer.encode(&self.message.to_nbt())?;
         writer.encode(self.chat_type + 1)?;
         writer.encode(&self.sender_name.to_nbt())?;

@@ -116,7 +116,7 @@ mod test {
     fn test_debug_mode_world() -> Result<(), AnvilError> {
         // 1.21.5 debug world
         // https://minecraft.wiki/w/Debug_mode
-        const WORLD_PATH: &str = "./src/world/anvil-test-server/world/";
+        const WORLD_PATH: &str = "./src/level/anvil-test-server/world/";
         println!(
             "Testing debug world: {:?}",
             std::fs::canonicalize(WORLD_PATH)?

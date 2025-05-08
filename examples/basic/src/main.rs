@@ -1,3 +1,6 @@
+// TODO: Currently the server is setup so that everything except for dimensions is all the same.
+// So that means someone in the overworld can see someone else that is in the same position in the nether.
+
 mod config;
 mod player;
 mod server;

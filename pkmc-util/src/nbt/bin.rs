@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{Read, Write},
+    io::{Read, Seek, Write},
 };
 
 use super::{tag::NBTTag, NBTError, NBTList, NBT};
@@ -65,14 +65,34 @@ impl NBT {
         }
     }
 
-    pub fn read(mut data: impl Read) -> Result<(String, NBT), NBTError> {
-        let tag = NBTTag::try_from(u8::from_be_bytes(data.read_const()?))?;
-        let mut str_bytes = vec![0u8; u16::from_be_bytes(data.read_const()?) as usize];
-        data.read_exact(&mut str_bytes)?;
-        Ok((
-            String::from_utf8(str_bytes)?,
-            NBT::read_tag(&mut data, tag)?,
-        ))
+    pub fn read(mut data: impl Read, is_compressed: bool) -> Result<(String, NBT), NBTError> {
+        if !is_compressed {
+            let tag = NBTTag::try_from(u8::from_be_bytes(data.read_const()?))?;
+            let mut str_bytes = vec![0u8; u16::from_be_bytes(data.read_const()?) as usize];
+            data.read_exact(&mut str_bytes)?;
+            Ok((
+                String::from_utf8(str_bytes)?,
+                NBT::read_tag(&mut data, tag)?,
+            ))
+        } else {
+            let mut data = flate2::read::GzDecoder::new(data);
+            let tag = NBTTag::try_from(u8::from_be_bytes(data.read_const()?))?;
+            let mut str_bytes = vec![0u8; u16::from_be_bytes(data.read_const()?) as usize];
+            data.read_exact(&mut str_bytes)?;
+            Ok((
+                String::from_utf8(str_bytes)?,
+                NBT::read_tag(&mut data, tag)?,
+            ))
+        }
+    }
+
+    pub fn read_maybe_compressed(
+        mut data: impl Read + Seek,
+    ) -> Result<(bool, (String, NBT)), NBTError> {
+        let ident: [u8; 2] = data.read_const()?;
+        data.seek_relative(-2)?;
+        let is_compressed = ident == [0x1F, 0x8B];
+        Ok((is_compressed, NBT::read(data, is_compressed)?))
     }
 
     pub fn read_network(mut data: impl Read) -> Result<NBT, NBTError> {
@@ -152,8 +172,21 @@ impl NBT {
         Ok(())
     }
 
-    pub fn write(&self, name: &str, mut data: impl Write) -> Result<(), NBTError> {
-        self.write_tag(Some(name), true, &mut data)
+    pub fn write(
+        &self,
+        name: &str,
+        mut data: impl Write,
+        is_compressed: bool,
+    ) -> Result<(), NBTError> {
+        if !is_compressed {
+            self.write_tag(Some(name), true, &mut data)?;
+            Ok(())
+        } else {
+            let mut encoder = flate2::write::GzEncoder::new(data, flate2::Compression::best());
+            self.write_tag(Some(name), true, &mut encoder)?;
+            encoder.finish()?;
+            Ok(())
+        }
     }
 
     pub fn write_network(&self, mut data: impl Write) -> Result<(), NBTError> {

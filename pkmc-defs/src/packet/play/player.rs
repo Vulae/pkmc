@@ -94,6 +94,50 @@ impl ClientboundPacket for Disconnect {
 }
 
 #[derive(Debug)]
+pub struct Respawn {
+    pub dimension_type: i32,
+    pub dimension_name: String,
+    pub hashed_seed: i64,
+    pub game_mode: Gamemode,
+    pub previous_game_mode: Option<Gamemode>,
+    pub is_debug: bool,
+    pub is_flat: bool,
+    pub death: Option<(String, Position)>,
+    pub portal_cooldown: i32,
+    pub sea_level: i32,
+    /// 0x01 Keep attributes
+    /// 0x02 Keep metadata
+    pub data_kept: u8,
+}
+
+impl ClientboundPacket for Respawn {
+    const CLIENTBOUND_ID: i32 = pkmc_generated::packet::play::CLIENTBOUND_RESPAWN;
+
+    fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
+        writer.encode(self.dimension_type)?;
+        writer.encode(&self.dimension_name)?;
+        writer.write_all(&self.hashed_seed.to_be_bytes())?;
+        writer.encode(self.game_mode)?;
+        writer.write_all(
+            &(self.previous_game_mode.map(|gm| gm.into_id()).unwrap_or(-1) as i8).to_be_bytes(),
+        )?;
+        writer.encode(self.is_debug)?;
+        writer.encode(self.is_flat)?;
+        if let Some(death) = &self.death {
+            writer.encode(true)?;
+            writer.encode(&death.0)?;
+            writer.encode(&death.1)?;
+        } else {
+            writer.encode(false)?;
+        }
+        writer.encode(self.portal_cooldown)?;
+        writer.encode(self.sea_level)?;
+        writer.write_all(&self.data_kept.to_be_bytes())?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub enum GameEvent {
     ChangeGamemode(Gamemode),
     StartWaitingForLevelChunks,

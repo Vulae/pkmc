@@ -5,12 +5,11 @@ use std::{
 };
 
 use base64::Engine as _;
-use pkmc_defs::{packet, registry::Registries, text_component::TextComponent};
+use pkmc_defs::{
+    dimension::Dimension, packet, registry::Registries, text_component::TextComponent,
+};
 use pkmc_server::{
-    entity_manager::EntityManager,
-    tab_list::TabList,
-    world::{anvil::AnvilWorld, World},
-    ClientHandler,
+    entity_manager::EntityManager, level::anvil::AnvilWorld, tab_list::TabList, ClientHandler,
 };
 use pkmc_util::{
     connection::{Connection, ConnectionSender},
@@ -23,6 +22,8 @@ use crate::{
 };
 
 const TICK_DURATION: std::time::Duration = std::time::Duration::from_millis(1000 / 20);
+
+const PLAYER_DIMENSION: &str = "minecraft:overworld";
 
 pub static REGISTRIES: LazyLock<Registries> =
     LazyLock::new(|| serde_json::from_str(include_str!("./registry.json")).unwrap());
@@ -129,8 +130,6 @@ impl Server {
             state: ServerState {
                 world: Arc::new(Mutex::new(AnvilWorld::new(
                     &config.world,
-                    "minecraft:overworld",
-                    -4..=19,
                     REGISTRIES
                         .get("minecraft:worldgen/biome")
                         .unwrap()
@@ -138,7 +137,8 @@ impl Server {
                         .enumerate()
                         .map(|(i, (k, _v))| (normalize_identifier(k, "minecraft").into(), i as i32))
                         .collect(),
-                ))),
+                    REGISTRIES.get("minecraft:dimension_type").unwrap(),
+                )?)),
                 entities: Arc::new(Mutex::new(EntityManager::default())),
                 tab_list: Arc::new(Mutex::new(TabList::default())),
                 server_tab_info: Arc::new(Mutex::new(ServerTabInfo::new())),
@@ -238,6 +238,7 @@ impl Server {
                     player.player_info,
                     self.config.view_distance,
                     self.config.entity_distance,
+                    Dimension::new(PLAYER_DIMENSION),
                 )?;
                 println!("{} Connected", player.name());
                 self.players.push(player);

@@ -1,16 +1,20 @@
 #![allow(unused)]
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use pkmc_defs::{
+    dimension::Dimension,
     packet::{self, play::EntityAnimationType},
     text_component::TextComponent,
 };
 use pkmc_generated::{block::Block, registry::EntityType};
 use pkmc_server::{
     entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
+    level::{
+        anvil::{AnvilError, AnvilLevel, AnvilWorld},
+        Level, LevelViewer,
+    },
     tab_list::{TabListPlayer, TabListViewer},
-    world::{anvil::AnvilError, World, WorldViewer},
 };
 use pkmc_util::{
     connection::{Connection, ConnectionError, ConnectionSender},
@@ -35,6 +39,8 @@ pub enum PlayerError {
         "Client bad keep alive response (No response, wrong id, or responded when not expected)"
     )]
     BadKeepAliveResponse,
+    #[error("Could not find dimension {0:?}")]
+    CouldNotFindDimension(Dimension),
 }
 
 #[derive(Debug)]
@@ -50,7 +56,9 @@ impl Entity for PlayerEntity {
 pub struct Player {
     connection: Connection,
     server_state: ServerState,
-    world_viewer: Arc<Mutex<WorldViewer>>,
+    view_distance: u8,
+    level: Arc<Mutex<AnvilLevel>>,
+    world_viewer: Arc<Mutex<LevelViewer>>,
     entity_viewer: Arc<Mutex<EntityViewer>>,
     player_entity: EntityBase<PlayerEntity>,
     _tab_list_viewer: Arc<Mutex<TabListViewer>>,
@@ -80,10 +88,16 @@ impl Player {
         player_info: packet::configuration::ClientInformation,
         view_distance: u8,
         entity_distance: f64,
+        dimension: Dimension,
     ) -> Result<Self, PlayerError> {
         let entity_id = new_entity_id();
 
-        let dimension = server_state.world.lock().unwrap().identifier().to_owned();
+        let level = server_state
+            .world
+            .lock()
+            .unwrap()
+            .level(&dimension)
+            .ok_or(PlayerError::CouldNotFindDimension(dimension.clone()))?;
 
         connection.send(&packet::play::Login {
             entity_id,
@@ -105,10 +119,10 @@ impl Player {
                 .unwrap()
                 .keys()
                 .enumerate()
-                .find(|(_, v)| *v == &dimension)
+                .find(|(_, v)| *v == dimension.name())
                 .unwrap()
                 .0 as i32,
-            dimension_name: dimension,
+            dimension_name: dimension.name().to_owned(),
             hashed_seed: 0,
             game_mode: packet::play::Gamemode::Survival,
             previous_game_mode: None,
@@ -149,11 +163,7 @@ impl Player {
             overlay: false,
         })?;
 
-        let world_viewer = server_state
-            .world
-            .lock()
-            .unwrap()
-            .add_viewer(connection.sender());
+        let world_viewer = level.lock().unwrap().add_viewer(connection.sender());
         world_viewer
             .lock()
             .unwrap()
@@ -214,6 +224,8 @@ impl Player {
         let mut player = Self {
             connection,
             server_state,
+            view_distance,
+            level,
             world_viewer,
             entity_viewer,
             player_entity,
@@ -278,20 +290,70 @@ impl Player {
         Ok(())
     }
 
+    fn set_dimension(&mut self, dimension: Dimension) -> Result<(), PlayerError> {
+        self.level = self
+            .server_state
+            .world
+            .lock()
+            .unwrap()
+            .level(&dimension)
+            .ok_or(PlayerError::CouldNotFindDimension(dimension.clone()))?;
+        self.connection.send(&packet::play::Respawn {
+            dimension_type: REGISTRIES
+                .get("minecraft:dimension_type")
+                .unwrap()
+                .keys()
+                .enumerate()
+                .find(|(_, v)| *v == dimension.name())
+                .unwrap()
+                .0 as i32,
+            dimension_name: dimension.name().to_owned(),
+            hashed_seed: 0,
+            game_mode: packet::play::Gamemode::Survival,
+            previous_game_mode: None,
+            is_debug: false,
+            is_flat: false,
+            death: None,
+            portal_cooldown: 0,
+            sea_level: 0,
+            data_kept: 0x03,
+        })?;
+        self.connection
+            .send(&packet::play::GameEvent::StartWaitingForLevelChunks)?;
+        self.world_viewer = self
+            .level
+            .lock()
+            .unwrap()
+            .add_viewer(self.connection.sender());
+        self.world_viewer
+            .lock()
+            .unwrap()
+            .loader
+            .update_radius(self.view_distance.into());
+        self.connection.send(&packet::play::PlayerPosition {
+            x: 0.0,
+            y: 128.0,
+            z: 0.0,
+            ..Default::default()
+        })?;
+        self.update_flyspeed()?;
+        Ok(())
+    }
+
     fn resend_block(
         &mut self,
         location: Position,
         sequence: Option<i32>,
     ) -> Result<(), PlayerError> {
-        let mut world = self.server_state.world.lock().unwrap();
-        if let Some(block) = world.get_block(location)? {
+        let mut level = self.level.lock().unwrap();
+        if let Some(block) = level.get_block(location)? {
             self.connection
                 .send(&packet::play::BlockUpdate { location, block })?;
             if let Some(sequence) = sequence {
                 self.connection
                     .send(&packet::play::AcknowledgeBlockChange(sequence))?;
             }
-            if let Some(data) = world.query_block_data(location)? {
+            if let Some(data) = level.query_block_data(location)? {
                 self.connection.send(&packet::play::BlockEntityData {
                     location,
                     r#type: data.r#type(),
@@ -388,8 +450,8 @@ impl Player {
                 }
                 packet::play::PlayPacket::UseItemOn(use_item_on) => {
                     {
-                        let mut world = self.server_state.world.lock().unwrap();
-                        if let Some(data) = world.query_block_data(use_item_on.location)? {
+                        let mut level = self.level.lock().unwrap();
+                        if let Some(data) = level.query_block_data(use_item_on.location)? {
                             println!("{:#?}", data);
                             self.connection.send(&packet::play::SystemChat {
                                 content: TextComponent::new(format!("{:#?}", data)),
@@ -406,14 +468,14 @@ impl Player {
                             self.resend_block(player_action.location, Some(player_action.sequence));
                         }
                         packet::play::PlayerActionStatus::SwapItemInHand => {
-                            let mut world = self.server_state.world.lock().unwrap();
+                            let mut level = self.level.lock().unwrap();
                             if let Some(position) = Position::iter_ray(
                                 self.position + Vec3::new(0.0, 1.5, 0.0),
                                 Vec3::get_vector_for_rotation(self.pitch.into(), self.yaw.into()),
                                 5000.0,
                             )
                             .find(|p| {
-                                world
+                                level
                                     .get_block(*p)
                                     .ok()
                                     .flatten()
@@ -421,7 +483,7 @@ impl Player {
                                     .unwrap_or(false)
                             }) {
                                 Position::iter_offset(Position::iter_sphere(32.0), position)
-                                    .try_for_each(|p| world.set_block(p, Block::Air))?;
+                                    .try_for_each(|p| level.set_block(p, Block::Air))?;
                             }
                         }
                         _ => {}
@@ -429,11 +491,23 @@ impl Player {
                 }
                 packet::play::PlayPacket::ChatMessage(chat_message) => {
                     self.connection.send(&packet::play::DisguisedChatMessage {
-                        message: TextComponent::from(chat_message.message),
+                        message: TextComponent::rainbow(&chat_message.message, 0.0),
                         chat_type: 0,
                         sender_name: TextComponent::from(self.name()),
                         target_name: None,
                     })?;
+                    match chat_message.message.as_ref() {
+                        "goto overworld" => {
+                            self.set_dimension(Dimension::new("minecraft:overworld"))?;
+                        }
+                        "goto nether" => {
+                            self.set_dimension(Dimension::new("minecraft:the_nether"))?;
+                        }
+                        "goto end" => {
+                            self.set_dimension(Dimension::new("minecraft:the_end"))?;
+                        }
+                        _ => {}
+                    }
                 }
             }
         }

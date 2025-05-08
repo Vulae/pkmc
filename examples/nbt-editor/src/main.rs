@@ -7,7 +7,7 @@ use pkmc_util::nbt::{NBTList, NBT};
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(index = 1, num_args=0.., value_delimiter=' ')]
+    #[arg(index = 1, num_args=0..)]
     files: Vec<PathBuf>,
 }
 
@@ -17,23 +17,31 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut nbts = Vec::new();
 
     args.files.iter().try_for_each(|file| {
-        let nbt = NBT::read(std::fs::File::open(file)?)?;
-        nbts.push(EditableNBTWrapper::from_nbt(Some(nbt.0), nbt.1));
+        let (is_compressed, nbt) = NBT::read_maybe_compressed(std::fs::File::open(file)?)?;
+        nbts.push((
+            is_compressed,
+            EditableNBTWrapper::from_nbt(Some(nbt.0), nbt.1),
+        ));
         Ok::<_, Box<dyn Error>>(())
     })?;
 
     if nbts.is_empty() {
-        nbts.push(EditableNBTWrapper::from_nbt(
-            Some("root".to_owned()),
-            NBT::Compound(HashMap::from([(
-                "message".to_owned(),
-                NBT::String("Hello, World!".to_owned()),
-            )])),
+        nbts.push((
+            false,
+            EditableNBTWrapper::from_nbt(
+                Some("root".to_owned()),
+                NBT::Compound(HashMap::from([(
+                    "message".to_owned(),
+                    NBT::String("Hello, World!".to_owned()),
+                )])),
+            ),
         ));
     }
 
+    let first = nbts.into_iter().next().expect("No NBT specified");
     App {
-        editor: nbts.into_iter().next().expect("No NBT specified."),
+        is_compressed: first.0,
+        editor: first.1,
     }
     .run()?;
 
@@ -561,6 +569,7 @@ impl EditableNBTWrapper {
 
 #[derive(Debug)]
 struct App {
+    is_compressed: bool,
     editor: EditableNBTWrapper,
 }
 
@@ -571,7 +580,7 @@ impl eframe::App for App {
                 if let Some(path) = rfd::FileDialog::new().set_file_name("data.nbt").save_file() {
                     let nbt = self.editor.to_nbt();
                     let mut encoded = Vec::new();
-                    NBT::write(&nbt.1, &nbt.0.unwrap(), &mut encoded).unwrap();
+                    NBT::write(&nbt.1, &nbt.0.unwrap(), &mut encoded, self.is_compressed).unwrap();
                     std::fs::write(path, encoded).unwrap();
                 }
             }

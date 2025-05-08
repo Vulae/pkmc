@@ -7,8 +7,8 @@ use chunk_loader::ChunkLoader;
 use pkmc_defs::packet;
 use pkmc_generated::block::Block;
 use pkmc_util::{
-    connection::{ConnectionError, ConnectionSender},
     Position, Vec3,
+    connection::{ConnectionError, ConnectionSender},
 };
 
 pub mod anvil;
@@ -57,13 +57,13 @@ pub const fn section_index_biome_pos(i: usize) -> (u8, u8, u8) {
 }
 
 #[derive(Debug)]
-pub struct WorldViewer {
+pub struct LevelViewer {
     connection: ConnectionSender,
     pub loader: ChunkLoader,
     pub position: Vec3<f64>,
 }
 
-impl WorldViewer {
+impl LevelViewer {
     pub fn connection(&self) -> &ConnectionSender {
         &self.connection
     }
@@ -79,10 +79,10 @@ impl WorldViewer {
     }
 }
 
-pub trait World: Debug {
+pub trait Level: Debug {
     type Error: std::error::Error;
 
-    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<WorldViewer>>;
+    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<LevelViewer>>;
     fn update_viewers(&mut self) -> Result<(), Self::Error>;
 
     fn get_block(&mut self, position: Position) -> Result<Option<Block>, Self::Error>;

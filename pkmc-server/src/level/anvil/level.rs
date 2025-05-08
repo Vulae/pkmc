@@ -1,15 +1,14 @@
 use std::{
     collections::HashMap,
     fmt::Debug,
-    fs::File,
     hash::Hash,
-    io::{Seek as _, Write},
+    io::Write,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 
 use itertools::Itertools as _;
-use pkmc_defs::{biome::Biome, packet};
+use pkmc_defs::{biome::Biome, dimension::Dimension, packet};
 use pkmc_generated::{
     block::Block,
     consts::{
@@ -19,24 +18,24 @@ use pkmc_generated::{
     registry::BlockEntityType,
 };
 use pkmc_util::{
+    IdTable, PackedArray, Position, Transmutable as _, Vec3, WeakList,
     connection::{
-        paletted_container::{calculate_bpe, to_paletted_data, to_paletted_data_precomputed},
         ConnectionSender,
+        paletted_container::{calculate_bpe, to_paletted_data, to_paletted_data_precomputed},
     },
-    nbt::{from_nbt, NBT},
-    IdTable, PackedArray, Position, ReadExt as _, Transmutable as _, Vec3, WeakList,
+    nbt::{self, NBT},
 };
 
-use crate::world::{
+use crate::level::{
+    CHUNK_SIZE, Level, LevelViewer, SECTION_BIOMES, SECTION_BLOCKS, SECTION_BLOCKS_SIZE,
     chunk_loader::{ChunkLoader, ChunkPosition},
-    section_index_block_pos, section_pos_block_index, World, WorldViewer, CHUNK_SIZE,
-    SECTION_BIOMES, SECTION_BLOCKS, SECTION_BLOCKS_SIZE,
+    section_index_block_pos, section_pos_block_index,
 };
 
-use super::{chunk_format, AnvilError};
-
-pub const REGION_SIZE: usize = 32;
-pub const CHUNKS_PER_REGION: usize = REGION_SIZE * REGION_SIZE;
+use super::{
+    AnvilError, chunk_format,
+    region::{ChunkParser, ChunkReader},
+};
 
 // Each time the world updates & sends new data to client, we either send sections or chunks.
 // Note that when sending sections, the client calculates lighting instead of server.
@@ -446,87 +445,6 @@ impl Chunk {
 }
 
 #[derive(Debug)]
-#[allow(unused)]
-struct Region {
-    file: File,
-    region_x: i32,
-    region_z: i32,
-    locations: [(u32, u32); CHUNKS_PER_REGION],
-}
-
-impl Region {
-    fn load(mut file: File, region_x: i32, region_z: i32) -> Result<Self, AnvilError> {
-        let mut locations = [(0, 0); REGION_SIZE * REGION_SIZE];
-        file.rewind()?;
-        locations.iter_mut().try_for_each(|(offset, length)| {
-            let data = u32::from_be_bytes(file.read_const()?);
-            *offset = ((data & 0xFFFFFF00) >> 8) * 0x1000;
-            *length = (data & 0x000000FF) * 0x1000;
-            Ok::<_, AnvilError>(())
-        })?;
-        Ok(Self {
-            file,
-            region_x,
-            region_z,
-            locations,
-        })
-    }
-
-    fn read(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Box<[u8]>>, AnvilError> {
-        let (offset, length) =
-            self.locations[(chunk_x as usize) + (chunk_z as usize) * REGION_SIZE];
-        if offset == 0 || length == 0 {
-            return Ok(None);
-        }
-        self.file.seek(std::io::SeekFrom::Start(offset as u64))?;
-        let length = u32::from_be_bytes(self.file.read_const()?);
-        if length <= 1 {
-            return Ok(None);
-        }
-        let compression_type = u8::from_be_bytes(self.file.read_const()?);
-        let compressed_data = self.file.read_var((length as usize) - 1)?;
-        match compression_type {
-            1 => Err(AnvilError::RegionUnsupportedCompression("GZip".to_owned())),
-            2 => Ok(Some(
-                flate2::read::ZlibDecoder::new(std::io::Cursor::new(compressed_data)).read_all()?,
-            )),
-            3 => Ok(Some(compressed_data)),
-            4 => Err(AnvilError::RegionUnsupportedCompression("LZ4".to_owned())),
-            127 => {
-                let mut data = std::io::Cursor::new(&compressed_data);
-                let string_length = u16::from_be_bytes(data.read_const()?);
-                let string_buf = data.read_var(string_length as usize)?;
-                Err(AnvilError::RegionUnsupportedCompression(format!(
-                    "Custom {}",
-                    String::from_utf8_lossy(&string_buf)
-                )))
-            }
-            _ => Err(AnvilError::RegionUnknownCompression(compression_type)),
-        }
-    }
-
-    fn read_nbt(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<(String, NBT)>, AnvilError> {
-        Ok(self
-            .read(chunk_x, chunk_z)?
-            .map(|data| NBT::read(std::io::Cursor::new(data)))
-            .transpose()?)
-    }
-
-    fn load_chunk(
-        &mut self,
-        chunk_x: u8,
-        chunk_z: u8,
-        section_y_range: std::ops::RangeInclusive<i8>,
-    ) -> Result<Option<Chunk>, AnvilError> {
-        self.read_nbt(chunk_x, chunk_z)?
-            .map(|(_, nbt)| from_nbt::<chunk_format::Chunk>(nbt))
-            .transpose()?
-            .map(|parsed| Chunk::new(parsed, section_y_range))
-            .transpose()
-    }
-}
-
-#[derive(Debug)]
 struct SectionDiff {
     change: [Option<Block>; SECTION_BLOCKS],
 }
@@ -559,103 +477,84 @@ impl SectionDiff {
 }
 
 #[derive(Debug)]
-pub struct AnvilWorld {
-    root: PathBuf,
-    identifier: String,
-    regions: HashMap<(i32, i32), Option<Region>>,
-    chunks: HashMap<(i32, i32), Option<Chunk>>,
+struct AnvilChunkParser {
     section_y_range: std::ops::RangeInclusive<i8>,
+}
+
+impl ChunkParser for AnvilChunkParser {
+    type Chunk = Chunk;
+    fn parse(
+        &self,
+        chunk_x: i32,
+        chunk_z: i32,
+        nbt: (String, NBT),
+    ) -> Result<Option<Self::Chunk>, AnvilError> {
+        debug_assert!(nbt.0.is_empty());
+        let deserialized_chunk: chunk_format::Chunk = nbt::from_nbt(nbt.1)?;
+        if !matches!(
+            deserialized_chunk.status.as_ref(),
+            // All the commented don't have full world generation (As in blocks, not entities or lighting).
+            //"minecraft:empty"
+            //    | "minecraft:structures_starts"
+            //    | "minecraft:structures_references"
+            //    | "minecraft:biomes"
+            //    | "minecraft:noise"
+            //    | "minecraft:surface"
+            //    | "minecraft:carvers"
+            //    | "minecraft:features"
+            "minecraft:initialize_light" | "minecraft:light" | "minecraft:spawn" | "minecraft:full"
+        ) {
+            return Ok(None);
+        }
+        let parsed_chunk = Chunk::new(deserialized_chunk, self.section_y_range.clone())?;
+        assert_eq!(parsed_chunk.chunk_x, chunk_x);
+        assert_eq!(parsed_chunk.chunk_z, chunk_z);
+        Ok(Some(parsed_chunk))
+    }
+}
+
+#[derive(Debug)]
+pub struct AnvilLevel {
+    dimension: Dimension,
+    loader: ChunkReader<AnvilChunkParser>,
     biome_mapper: IdTable<Biome>,
-    viewers: WeakList<Mutex<WorldViewer>>,
+    section_y_range: std::ops::RangeInclusive<i8>,
+    viewers: WeakList<Mutex<LevelViewer>>,
     diffs: HashMap<(i32, i32), HashMap<i16, SectionDiff>>,
 }
 
-impl AnvilWorld {
+impl AnvilLevel {
     pub fn new<P: Into<PathBuf>>(
         root: P,
-        identifier: &str,
+        dimension: Dimension,
         section_y_range: std::ops::RangeInclusive<i8>,
         biome_mapper: IdTable<Biome>,
     ) -> Self {
         Self {
-            root: root.into(),
-            identifier: identifier.to_owned(),
-            regions: HashMap::new(),
-            chunks: HashMap::new(),
-            section_y_range,
+            dimension,
+            loader: ChunkReader::new(
+                root.into(),
+                AnvilChunkParser {
+                    section_y_range: section_y_range.clone(),
+                },
+            ),
             biome_mapper,
+            section_y_range,
             viewers: WeakList::new(),
             diffs: HashMap::new(),
         }
     }
 
-    pub fn identifier(&self) -> &str {
-        &self.identifier
-    }
-
-    fn section_y_range(&self) -> std::ops::RangeInclusive<i8> {
-        self.section_y_range.clone()
-    }
-
-    fn prepare_region(&mut self, region_x: i32, region_z: i32) -> Result<(), AnvilError> {
-        if self.regions.contains_key(&(region_x, region_z)) {
-            return Ok(());
-        }
-        self.regions.insert((region_x, region_z), None);
-
-        let mut path = self.root.clone();
-        path.push("region");
-        path.push(format!("r.{}.{}.mca", region_x, region_z));
-
-        let file = match std::fs::File::open(path) {
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(());
-            }
-            result => result,
-        }?;
-
-        self.regions.insert(
-            (region_x, region_z),
-            Some(Region::load(file, region_x, region_z)?),
-        );
-
-        Ok(())
-    }
-
-    fn prepare_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> Result<(), AnvilError> {
-        if self.chunks.contains_key(&(chunk_x, chunk_z)) {
-            return Ok(());
-        }
-        self.chunks.insert((chunk_x, chunk_z), None);
-
-        let region_x = chunk_x.div_euclid(REGION_SIZE as i32);
-        let region_z = chunk_z.div_euclid(REGION_SIZE as i32);
-
-        self.prepare_region(region_x, region_z)?;
-
-        let range = self.section_y_range();
-
-        let Some(Some(region)) = self.regions.get_mut(&(region_x, region_z)) else {
-            return Ok(());
-        };
-
-        if let Some(chunk) = region.load_chunk(
-            chunk_x.rem_euclid(REGION_SIZE as i32) as u8,
-            chunk_z.rem_euclid(REGION_SIZE as i32) as u8,
-            range,
-        )? {
-            self.chunks.insert((chunk_x, chunk_z), Some(chunk));
-        }
-
-        Ok(())
+    pub fn dimension(&self) -> &Dimension {
+        &self.dimension
     }
 }
 
-impl World for AnvilWorld {
+impl Level for AnvilLevel {
     type Error = AnvilError;
 
-    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<WorldViewer>> {
-        let viewer = WorldViewer {
+    fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<LevelViewer>> {
+        let viewer = LevelViewer {
             connection,
             loader: ChunkLoader::new(6),
             position: Vec3::new(0.0, 100.0, 0.0),
@@ -718,8 +617,9 @@ impl World for AnvilWorld {
             }
 
             if let Some(to_load) = viewer.loader.next_to_load() {
-                self.prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
-                if let Some(Some(chunk)) = self.chunks.get(&(to_load.chunk_x, to_load.chunk_z)) {
+                self.loader
+                    .prepare_chunk(to_load.chunk_x, to_load.chunk_z)?;
+                if let Some(chunk) = self.loader.get_chunk(to_load.chunk_x, to_load.chunk_z) {
                     viewer
                         .connection()
                         .send(&chunk.to_packet(&self.biome_mapper)?)?;
@@ -729,7 +629,7 @@ impl World for AnvilWorld {
                         .send(&packet::play::LevelChunkWithLight::generate_test(
                             to_load.chunk_x,
                             to_load.chunk_z,
-                            self.section_y_range().count(),
+                            self.section_y_range.len(),
                         )?)?;
                 }
             }
@@ -743,11 +643,11 @@ impl World for AnvilWorld {
     fn get_block(&mut self, position: Position) -> Result<Option<Block>, Self::Error> {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
-        self.prepare_chunk(chunk_x, chunk_z)?;
-        let Some(Some(chunk)) = self.chunks.get(&(
+        self.loader.prepare_chunk(chunk_x, chunk_z)?;
+        let Some(chunk) = self.loader.get_chunk(
             position.x.div_euclid(CHUNK_SIZE as i32),
             position.z.div_euclid(CHUNK_SIZE as i32),
-        )) else {
+        ) else {
             return Ok(None);
         };
         Ok(chunk.get_block(
@@ -760,11 +660,11 @@ impl World for AnvilWorld {
     fn set_block(&mut self, position: Position, block: Block) -> Result<(), Self::Error> {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
-        self.prepare_chunk(chunk_x, chunk_z)?;
-        let Some(Some(chunk)) = self.chunks.get_mut(&(
+        self.loader.prepare_chunk(chunk_x, chunk_z)?;
+        let Some(chunk) = self.loader.get_mut_chunk(
             position.x.div_euclid(CHUNK_SIZE as i32),
             position.z.div_euclid(CHUNK_SIZE as i32),
-        )) else {
+        ) else {
             return Ok(());
         };
         if chunk.set_block(
@@ -798,11 +698,11 @@ impl World for AnvilWorld {
     ) -> Result<Option<&mut AnvilBlockEntity>, Self::Error> {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
-        self.prepare_chunk(chunk_x, chunk_z)?;
-        let Some(Some(chunk)) = self.chunks.get_mut(&(
+        self.loader.prepare_chunk(chunk_x, chunk_z)?;
+        let Some(chunk) = self.loader.get_mut_chunk(
             position.x.div_euclid(CHUNK_SIZE as i32),
             position.z.div_euclid(CHUNK_SIZE as i32),
-        )) else {
+        ) else {
             return Ok(None);
         };
         Ok(chunk.query_block_entity(
@@ -810,76 +710,5 @@ impl World for AnvilWorld {
             position.y,
             (position.z.rem_euclid(CHUNK_SIZE as i32)) as u8,
         ))
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use pkmc_defs::block::BLOCKS_TO_IDS;
-    use pkmc_util::Position;
-
-    use crate::world::{anvil::AnvilWorld, World as _};
-
-    use super::AnvilError;
-
-    #[test]
-    fn test_debug_mode_world() -> Result<(), AnvilError> {
-        // 1.21.5 debug world
-        // https://minecraft.wiki/w/Debug_mode
-        const WORLD_PATH: &str = "./src/world/anvil-test-server/world/";
-        println!(
-            "Testing debug world: {:?}",
-            std::fs::canonicalize(WORLD_PATH)?
-        );
-
-        let mut world = AnvilWorld::new(
-            WORLD_PATH,
-            "minecraft:overworld",
-            -4..=20,
-            Default::default(),
-        );
-
-        let max_block_id = *BLOCKS_TO_IDS.values().max().unwrap();
-
-        let start = std::time::Instant::now();
-        println!("Total block ids: {}", max_block_id);
-
-        let block_grid_width = (max_block_id as f32).sqrt().ceil() as i32;
-        let _block_grid_height = (max_block_id as f32 / block_grid_width as f32).ceil() as i32;
-
-        for block_id in 0..max_block_id {
-            if block_id % 1024 == 0 {
-                println!("Checking {} / {}", block_id, max_block_id);
-            }
-
-            let grid_x = block_id % block_grid_width;
-            let grid_z = block_id / block_grid_width;
-
-            let position = Position::new(1 + grid_z * 2, 70, 1 + grid_x * 2);
-
-            let Some(block) = world.get_block(position)? else {
-                panic!("Expected loaded block at {:?}", position);
-            };
-
-            if block.into_id() != block_id {
-                panic!(
-                    "Block at {:?} is {:?} with ID {:?}, but our ID is {}",
-                    position,
-                    block,
-                    block.into_id(),
-                    block_id,
-                );
-            }
-        }
-
-        println!(
-            "Checked all {} block ids in {:.2} seconds",
-            max_block_id,
-            std::time::Instant::now()
-                .duration_since(start)
-                .as_secs_f64()
-        );
-
-        Ok(())
     }
 }

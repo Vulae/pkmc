@@ -1,11 +1,11 @@
 use std::io::{Read, Write};
 
 use pkmc_util::{
-    FixedBitSet, ReadExt as _,
     connection::{
         ClientboundPacket, ConnectionError, PacketDecoder as _, PacketEncoder as _,
         ServerboundPacket,
     },
+    FixedBitSet, ReadExt as _,
 };
 
 use crate::text_component::TextComponent;
@@ -84,7 +84,7 @@ impl ClientboundPacket for DisguisedChatMessage {
     fn packet_write(&self, mut writer: impl Write) -> Result<(), ConnectionError> {
         // FIXME: Minecraft doesn't like decoding this, and I have no idea why.
         writer.encode(&self.message.to_nbt())?;
-        writer.encode(self.chat_type)?;
+        writer.encode(self.chat_type + 1)?;
         writer.encode(&self.sender_name.to_nbt())?;
         if let Some(target_name) = &self.target_name {
             writer.encode(true)?;

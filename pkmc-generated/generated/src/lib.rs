@@ -45,6 +45,8 @@ pub mod registry {
 
     report_registry_generate_enum!("assets/reports/registries.json", "minecraft:entity_type", pub EntityType);
     report_registry_generate_enum!("assets/reports/registries.json", "minecraft:particle_type", pub ParticleType);
+
+    report_registry_generate_enum!("assets/reports/registries.json", "minecraft:command_argument_type", pub CommandArgumentType);
 }
 
 pub mod block {

@@ -28,6 +28,7 @@ serverbound_packet_enum!(pub PlayPacket;
     UseItemOn, UseItemOn;
     PlayerAction, PlayerAction;
     ChatMessage, ChatMessage;
+    ChatCommand, ChatCommand;
 );
 
 use pkmc_util::{

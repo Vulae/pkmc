@@ -255,9 +255,15 @@ impl Server {
                 println!("{} Disconnected", player.name());
             });
 
-        self.players
-            .iter_mut()
-            .try_for_each(|player| player.update())?;
+        self.players.retain_mut(|player| {
+            if let Err(err) = player.update() {
+                let _ = player.kick(format!("{}", err));
+                println!("{} Error: {}", player.name(), err);
+                false
+            } else {
+                true
+            }
+        });
 
         Ok(())
     }

@@ -163,6 +163,29 @@ impl Player {
             overlay: false,
         })?;
 
+        connection.send(&packet::play::CommandsTree {
+            children: vec![
+                packet::play::CommandNode::Literal {
+                    name: "goto".to_owned(),
+                    children: vec![packet::play::CommandNode::Argument {
+                        name: "dimension".to_owned(),
+                        children: vec![],
+                        parser: packet::play::CommandParser::ResourceKey(
+                            "minecraft:dimension_type".to_owned(),
+                        ),
+                    }],
+                },
+                packet::play::CommandNode::Literal {
+                    name: "data".to_owned(),
+                    children: vec![packet::play::CommandNode::Argument {
+                        name: "position".to_owned(),
+                        children: vec![],
+                        parser: packet::play::CommandParser::BlockPos,
+                    }],
+                },
+            ],
+        })?;
+
         let world_viewer = level.lock().unwrap().add_viewer(connection.sender());
         world_viewer
             .lock()
@@ -287,6 +310,14 @@ impl Player {
                 flying_speed: self.fly_speed,
                 field_of_view_modifier: 0.1,
             })?;
+        Ok(())
+    }
+
+    fn system_message<T: Into<TextComponent>>(&mut self, message: T) -> Result<(), PlayerError> {
+        self.connection.send(&packet::play::SystemChat {
+            content: message.into(),
+            overlay: false,
+        })?;
         Ok(())
     }
 
@@ -449,16 +480,6 @@ impl Player {
                         });
                 }
                 packet::play::PlayPacket::UseItemOn(use_item_on) => {
-                    {
-                        let mut level = self.level.lock().unwrap();
-                        if let Some(data) = level.query_block_data(use_item_on.location)? {
-                            println!("{:#?}", data);
-                            self.connection.send(&packet::play::SystemChat {
-                                content: TextComponent::new(format!("{:#?}", data)),
-                                overlay: false,
-                            })?;
-                        }
-                    }
                     self.resend_block(use_item_on.location, Some(use_item_on.sequence))?;
                 }
                 packet::play::PlayPacket::PlayerAction(player_action) => {
@@ -496,17 +517,48 @@ impl Player {
                         sender_name: TextComponent::from(self.name()),
                         target_name: None,
                     })?;
-                    match chat_message.message.as_ref() {
-                        "goto overworld" => {
-                            self.set_dimension(Dimension::new("minecraft:overworld"))?;
+                }
+                packet::play::PlayPacket::ChatCommand(packet::play::ChatCommand(command)) => {
+                    match command.split(' ').collect::<Vec<_>>().as_slice() {
+                        ["goto", dimension] => {
+                            match self.set_dimension(Dimension::new(dimension)) {
+                                Err(PlayerError::CouldNotFindDimension(dimension)) => {
+                                    self.system_message("Could not find dimension")?;
+                                    Ok(())
+                                }
+                                res => res,
+                            }?
                         }
-                        "goto nether" => {
-                            self.set_dimension(Dimension::new("minecraft:the_nether"))?;
+                        ["data", pos_x, pos_y, pos_z] => {
+                            if let Some(pos) = (|| {
+                                Some(Position::new(
+                                    pos_x.parse().ok()?,
+                                    pos_y.parse().ok()?,
+                                    pos_z.parse().ok()?,
+                                ))
+                            })() {
+                                let mut level = self.level.lock().unwrap();
+                                if let Some(data) = level.query_block_data(pos)? {
+                                    println!("{:#?}", data);
+                                    self.connection.send(&packet::play::SystemChat {
+                                        content: TextComponent::new(format!("{:#?}", data)),
+                                        overlay: false,
+                                    })?;
+                                }
+                            } else {
+                                self.system_message("Invalid arguments")?;
+                            }
                         }
-                        "goto end" => {
-                            self.set_dimension(Dimension::new("minecraft:the_end"))?;
+                        ["goto", ..] | ["data", ..] => {
+                            self.connection.send(&packet::play::SystemChat {
+                                content: TextComponent::new("Malformed command"),
+                                overlay: false,
+                            })?
                         }
-                        _ => {}
+                        _ => self.connection.send(&packet::play::SystemChat {
+                            content: TextComponent::new("Invalid command"),
+                            overlay: false,
+                        })?,
                     }
                 }
             }

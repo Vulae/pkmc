@@ -1,13 +1,13 @@
 # [pkmc](https://github.com/Vulae/pkmc)
 
-Simple modular building blocks for Minecraft minigame-like servers.
+Simple modular building blocks for Minecraft Java Edition minigame-like servers.
 See [examples/basic](./examples/basic) for example server.
 
 > [!WARNING]
 > This project is in early development, expect ALOT of code to change.
 
 > [!IMPORTANT]
-> This will only ever support the latest Minecraft version (currently 1.21.5)
+> This will only ever support the latest Minecraft Java Edition release version (currently 1.21.5)
 
 This will **NOT** make anything use any async code (tokio/futures).
 This was originally built to be fully single-threaded, but that _may_ change in the future.
@@ -30,14 +30,14 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 | World Editing         | ✅          |                                            |
 | World Lighting        | ❌          |                                            |
 | World Saving          | ❌          | (Probably never)                           |
-| Dimensions/Multiworld | ❌          |                                            |
+| Dimensions/Multiworld | ✅          |                                            |
 | Entities              | ❌          |                                            |
 | Inventories           | ❌          |                                            |
 | Resource Pack         | ❌          |                                            |
 | Online Mode           | ✅          |                                            |
 | Packet Compression    | ✅          |                                            |
-| Players & Chat        | ❌          |                                            |
-| Commands Definitions  | ❌          |                                            |
+| Players & Chat        | ✅          | (Unsigned chat)                            |
+| Commands              | ✅          | (Basic implementation)                     |
 | Cookies 🍪            | ❌          |                                            |
 
 Some extra features may be implemented inside the example server.

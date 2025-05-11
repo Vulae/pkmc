@@ -1,10 +1,12 @@
 mod chat;
+mod command;
 mod entity;
 mod level;
 mod particle;
 mod player;
 
 pub use chat::*;
+pub use command::*;
 pub use entity::*;
 pub use level::*;
 pub use particle::*;
@@ -32,8 +34,9 @@ serverbound_packet_enum!(pub PlayPacket;
 );
 
 use pkmc_util::{
+    ReadExt as _,
     connection::{ClientboundPacket, ConnectionError, PacketEncoder as _, ServerboundPacket},
-    serverbound_packet_enum, ReadExt as _,
+    serverbound_packet_enum,
 };
 use std::io::{Read, Write};
 

@@ -37,7 +37,7 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 | Online Mode           | ✅          |                                            |
 | Packet Compression    | ✅          |                                            |
 | Players & Chat        | ✅          | (Unsigned chat)                            |
-| Commands              | ✅          | (Basic implementation)                     |
+| Commands              | ✅          |                                            |
 | Cookies 🍪            | ❌          |                                            |
 
 Some extra features may be implemented inside the example server.

@@ -1,4 +1,5 @@
 pub mod client_handler;
+pub mod command;
 pub mod entity_manager;
 pub mod level;
 pub mod tab_list;

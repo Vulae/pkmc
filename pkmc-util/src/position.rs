@@ -52,8 +52,27 @@ impl Position {
         ))
     }
 
+    pub fn length2(&self) -> f32 {
+        (self.x as f32).powi(2) + (self.y as f32).powi(2) + (self.z as f32).powi(2)
+    }
+
     pub fn length(&self) -> f32 {
-        ((self.x as f32).powi(2) + (self.y as f32).powi(2) + (self.z as f32).powi(2)).sqrt()
+        self.length2().sqrt()
+    }
+
+    pub fn fix_boundaries(pos1: Position, pos2: Position) -> (Position, Position) {
+        (
+            Position::new(
+                i32::min(pos1.x, pos2.x),
+                i16::min(pos1.y, pos2.y),
+                i32::min(pos1.z, pos2.z),
+            ),
+            Position::new(
+                i32::max(pos1.x, pos2.x),
+                i16::max(pos1.y, pos2.y),
+                i32::max(pos1.z, pos2.z),
+            ),
+        )
     }
 }
 
@@ -93,6 +112,7 @@ impl Position {
     }
 
     pub fn iter_sphere(radius: f32) -> impl Iterator<Item = Position> {
+        let radius2 = radius.powi(2);
         Position::iter_offset(
             Position::iter_cube(
                 (radius.ceil() as i32) * 2,
@@ -100,12 +120,12 @@ impl Position {
                 (radius.ceil() as i32) * 2,
             ),
             Position::new(
-                -radius.round() as i32,
-                -radius.round() as i16,
-                -radius.round() as i32,
+                -radius.trunc() as i32,
+                -radius.trunc() as i16,
+                -radius.trunc() as i32,
             ),
         )
-        .filter(move |p| p.length() <= radius)
+        .filter(move |p| p.length2() <= radius2)
     }
 
     pub fn iter_ray(
@@ -174,6 +194,12 @@ impl Position {
         offset: Position,
     ) -> impl Iterator<Item = Position> {
         iter.flat_map(move |p| p.checked_add(offset))
+    }
+}
+
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} {}", self.x, self.y, self.z)
     }
 }
 

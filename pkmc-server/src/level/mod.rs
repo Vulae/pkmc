@@ -7,8 +7,8 @@ use chunk_loader::ChunkLoader;
 use pkmc_defs::packet;
 use pkmc_generated::block::Block;
 use pkmc_util::{
-    Position, Vec3,
     connection::{ConnectionError, ConnectionSender},
+    Position, Vec3,
 };
 
 pub mod anvil;
@@ -64,6 +64,14 @@ pub struct LevelViewer {
 }
 
 impl LevelViewer {
+    pub fn fake(connection: ConnectionSender) -> Self {
+        Self {
+            connection,
+            loader: ChunkLoader::new(0),
+            position: Vec3::zero(),
+        }
+    }
+
     pub fn connection(&self) -> &ConnectionSender {
         &self.connection
     }

@@ -1,6 +1,3 @@
-// TODO: Currently the server is setup so that everything except for dimensions is all the same.
-// So that means someone in the overworld can see someone else that is in the same position in the nether.
-
 mod config;
 mod player;
 mod server;
@@ -11,7 +8,7 @@ use std::{
 };
 
 use config::Config;
-use pkmc_defs::packet;
+use pkmc_defs::{dimension::Dimension, packet};
 use pkmc_generated::registry::EntityType;
 use pkmc_server::entity_manager::{Entity, EntityManager};
 use pkmc_util::{Vec3, UUID};
@@ -107,9 +104,15 @@ fn test_entities(entity_manager: Arc<Mutex<EntityManager>>) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let config = Config::load(&["config.toml", "examples/basic/config.toml"])?;
+    let config = Config::load(&["config.toml", "examples/server/config.toml"])?;
     let mut server = Server::new(config)?;
-    test_entities(server.state().entities);
+    test_entities(
+        server
+            .state()
+            .get_level_state(&Dimension::new("minecraft:overworld"))
+            .unwrap()
+            .entities,
+    );
     server.run()?;
     Ok(())
 }

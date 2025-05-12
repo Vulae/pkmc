@@ -7,7 +7,7 @@ members = [
     "pkmc-defs",
     "pkmc-server",
     # Examples on this type of project layout *seem* impossible, so we just include it as a member instead.
-    "examples/basic",
+    "examples/server",
     "examples/nbt-editor",
 ]
 resolver = "3"

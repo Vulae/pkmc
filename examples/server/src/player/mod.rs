@@ -1,36 +1,27 @@
-#![allow(unused)]
+pub mod command;
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
+use command::CommandDestroy;
 use pkmc_defs::{
     dimension::Dimension,
-    packet::{
-        self,
-        play::{CommandNode, CommandNodeParser, EntityAnimationType},
-    },
+    packet::{self, play::EntityAnimationType},
     text_component::TextComponent,
 };
-use pkmc_generated::{block::Block, registry::EntityType};
+use pkmc_generated::registry::EntityType;
 use pkmc_server::{
-    command::{
-        CommandCoordinateTransform, CommandListener, CommandManager, CommandParsableCoordinate,
-        CommandParseError, CommandParser,
-    },
+    command::CommandManager,
     entity_manager::{new_entity_id, Entity, EntityBase, EntityViewer},
-    level::{
-        anvil::{AnvilError, AnvilLevel, AnvilWorld},
-        Level, LevelViewer,
-    },
+    level::{anvil::AnvilError, Level, LevelViewer},
     tab_list::{TabListPlayer, TabListViewer},
 };
 use pkmc_util::{
     connection::{Connection, ConnectionError, ConnectionSender},
-    nbt::NBT,
     Position, Vec3, UUID,
 };
 use thiserror::Error;
 
-use crate::server::{ServerState, REGISTRIES};
+use crate::server::{ServerState, ServerStateLevel, REGISTRIES};
 
 const KEEPALIVE_PING_TIME: std::time::Duration = std::time::Duration::from_millis(10000);
 
@@ -51,7 +42,7 @@ pub enum PlayerError {
 }
 
 #[derive(Debug)]
-struct PlayerEntity {}
+struct PlayerEntity;
 
 impl Entity for PlayerEntity {
     fn r#type(&self) -> EntityType {
@@ -59,210 +50,34 @@ impl Entity for PlayerEntity {
     }
 }
 
-pub trait PlayerExecutableCommand: CommandListener {
-    fn execute(self, player: &mut Player) -> Result<(), PlayerError>;
-}
-
-#[derive(Debug)]
-struct CommandGoto {
-    position: Vec3<f64>,
-    dimension: Option<String>,
-}
-
-impl CommandListener for CommandGoto {
-    fn node() -> CommandNode {
-        CommandNode::new_literal("goto").with_child(
-            CommandNode::new(CommandNodeParser::Vec3).with_child(
-                CommandNode::new_literal("in").with_child(CommandNode::new(
-                    CommandNodeParser::ResourceKey("minecraft:dimension_type".to_owned()),
-                )),
-            ),
-        )
-    }
-
-    type ParseArg = CommandCoordinateTransform;
-    fn try_parse(
-        parser: &mut CommandParser<'_>,
-        arg: &Self::ParseArg,
-    ) -> Result<Option<Self>, CommandParseError> {
-        if parser.consume_literal("goto").is_err() {
-            return Ok(None);
-        }
-        Ok(Some(Self {
-            position: parser
-                .consume::<CommandParsableCoordinate>()?
-                .to_coordinates(arg),
-            dimension: if parser.consume_until_space_or_end(false)? == "in" {
-                Some(parser.consume_until_space_or_end(true)?.to_owned())
-            } else {
-                None
-            },
-        }))
-    }
-}
-
-impl PlayerExecutableCommand for CommandGoto {
-    fn execute(self, player: &mut Player) -> Result<(), PlayerError> {
-        if let Some(dimension) = self.dimension {
-            match player.set_dimension(dimension.into(), self.position) {
-                Err(PlayerError::CouldNotFindDimension(dimension)) => {
-                    player.system_message(format!(
-                        "Could not find dimension \"{:?}\"",
-                        dimension.name()
-                    ))?;
-                }
-                res => res?,
-            }
-        } else {
-            player.teleport(self.position)?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct CommandData {
-    position: Position,
-}
-
-impl CommandListener for CommandData {
-    fn node() -> CommandNode {
-        CommandNode::new_literal("data")
-            .with_child(CommandNode::new(CommandNodeParser::BlockPosition))
-    }
-
-    type ParseArg = CommandCoordinateTransform;
-    fn try_parse(
-        parser: &mut CommandParser<'_>,
-        arg: &Self::ParseArg,
-    ) -> Result<Option<Self>, CommandParseError> {
-        if parser.consume_literal("data").is_err() {
-            return Ok(None);
-        }
-        Ok(Some(Self {
-            position: parser
-                .consume::<CommandParsableCoordinate>()?
-                .to_position(arg)?,
-        }))
-    }
-}
-
-impl PlayerExecutableCommand for CommandData {
-    fn execute(self, player: &mut Player) -> Result<(), PlayerError> {
-        let mut level_mutex = player.level.clone();
-        let mut level = level_mutex.lock().unwrap();
-        if let Some(data) = level.query_block_data(self.position)? {
-            player.system_message(format!("Block data at {}: {:#?}", self.position, data.data))?;
-        } else {
-            player.system_message(format!("No block data at {}", self.position))?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-enum CommandDestroy {
-    Sphere { radius: f32 },
-    Cube { pos1: Position, pos2: Position },
-}
-
-impl CommandListener for CommandDestroy {
-    fn node() -> CommandNode {
-        CommandNode::new_literal("destroy")
-            .with_child(
-                CommandNode::new_literal("sphere").with_child(CommandNode::new(
-                    CommandNodeParser::Float {
-                        min: None,
-                        max: Some(256.0),
-                    },
-                )),
-            )
-            .with_child(
-                CommandNode::new_literal("cube").with_child(
-                    CommandNode::new(CommandNodeParser::BlockPosition)
-                        .with_child(CommandNode::new(CommandNodeParser::BlockPosition)),
-                ),
-            )
-    }
-
-    type ParseArg = CommandCoordinateTransform;
-    fn try_parse(
-        parser: &mut CommandParser<'_>,
-        arg: &Self::ParseArg,
-    ) -> Result<Option<Self>, CommandParseError> {
-        if parser.consume_literal("destroy").is_err() {
-            return Ok(None);
-        }
-        match parser.consume_until_space_or_end(true)? {
-            "sphere" => Ok(Some(Self::Sphere {
-                radius: parser.consume_until_space_or_end(true)?.parse()?,
-            })),
-            "cube" => Ok(Some(Self::Cube {
-                pos1: parser
-                    .consume::<CommandParsableCoordinate>()?
-                    .to_position(arg)?,
-                pos2: parser
-                    .consume::<CommandParsableCoordinate>()?
-                    .to_position(arg)?,
-            })),
-            _ => Err(CommandParseError::Custom(
-                "Expected valid literal argument".to_owned(),
-            )),
-        }
-    }
-}
-
-impl PlayerExecutableCommand for CommandDestroy {
-    fn execute(self, player: &mut Player) -> Result<(), PlayerError> {
-        let mut level = player.level.lock().unwrap();
-        match self {
-            CommandDestroy::Sphere { radius } => {
-                if let Some(position) = Position::iter_ray(
-                    player.position + Vec3::new(0.0, 1.5, 0.0),
-                    Vec3::get_vector_for_rotation(player.pitch.into(), player.yaw.into()),
-                    5000.0,
-                )
-                .find(|p| {
-                    level
-                        .get_block(*p)
-                        .ok()
-                        .flatten()
-                        .map(|b| !b.is_air())
-                        .unwrap_or(false)
-                }) {
-                    Position::iter_offset(Position::iter_sphere(radius), position)
-                        .try_for_each(|p| level.set_block(p, Block::Air))?;
-                }
-            }
-            CommandDestroy::Cube { pos1, pos2 } => {
-                let (min, max) = Position::fix_boundaries(pos1, pos2);
-                let size = max - min;
-                Position::iter_offset(Position::iter_cube(size.x + 1, size.y + 1, size.z + 1), min)
-                    .try_for_each(|p| level.set_block(p, Block::Air))?;
-            }
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug)]
 pub struct Player {
     connection: Connection,
+
     server_state: ServerState,
-    view_distance: u8,
-    level: Arc<Mutex<AnvilLevel>>,
+    server_state_level: ServerStateLevel,
+
+    player_info: packet::configuration::ClientInformation,
+    command_manager: CommandManager,
+
     world_viewer: Arc<Mutex<LevelViewer>>,
     entity_viewer: Arc<Mutex<EntityViewer>>,
     player_entity: EntityBase<PlayerEntity>,
     _tab_list_viewer: Arc<Mutex<TabListViewer>>,
     _tab_list_player: Arc<Mutex<TabListPlayer>>,
     _server_tab_list_info_viewer: Arc<Mutex<ConnectionSender>>,
-    command_manager: CommandManager,
+
     name: String,
     uuid: UUID,
+    entity_id: i32,
+    dimension: Dimension,
+
     keepalive_time: std::time::Instant,
     keepalive_id: Option<i64>,
-    entity_id: i32,
+
+    view_distance: u8,
+    entity_distance: f64,
+
     position: Vec3<f64>,
     pitch: f32,
     yaw: f32,
@@ -286,11 +101,8 @@ impl Player {
     ) -> Result<Self, PlayerError> {
         let entity_id = new_entity_id();
 
-        let level = server_state
-            .world
-            .lock()
-            .unwrap()
-            .level(&dimension)
+        let server_state_level = server_state
+            .get_level_state(&dimension)
             .ok_or(PlayerError::CouldNotFindDimension(dimension.clone()))?;
 
         connection.send(&packet::play::Login {
@@ -357,30 +169,34 @@ impl Player {
             overlay: false,
         })?;
 
-        let world_viewer = level.lock().unwrap().add_viewer(connection.sender());
+        let world_viewer = server_state_level
+            .level
+            .lock()
+            .unwrap()
+            .add_viewer(connection.sender());
         world_viewer
             .lock()
             .unwrap()
             .loader
             .update_radius(view_distance.into());
 
-        let entity_viewer = server_state.entities.lock().unwrap().add_viewer(
+        let entity_viewer = server_state_level.entities.lock().unwrap().add_viewer(
             connection.sender(),
             uuid,
             Some(entity_id),
         );
         entity_viewer.lock().unwrap().radius = entity_distance;
-        let player_entity = server_state.entities.lock().unwrap().add_entity_with_id(
-            PlayerEntity {},
-            uuid,
-            entity_id,
-        );
-        {
-            let mut player_entity_handler = player_entity.handler().lock().unwrap();
-            player_entity_handler
-                .metadata
-                .player_skin_parts(player_info.displayed_skin_parts);
-        }
+        let player_entity = server_state_level
+            .entities
+            .lock()
+            .unwrap()
+            .add_entity_with_id(PlayerEntity, uuid, entity_id);
+        player_entity
+            .handler()
+            .lock()
+            .unwrap()
+            .metadata
+            .player_skin_parts(player_info.displayed_skin_parts);
 
         let tab_list_viewer = server_state
             .tab_list
@@ -417,21 +233,31 @@ impl Player {
 
         let mut player = Self {
             connection,
+
             server_state,
-            view_distance,
-            level,
+            server_state_level,
+
+            player_info,
+            command_manager: CommandManager::default(),
+
             world_viewer,
             entity_viewer,
             player_entity,
             _tab_list_viewer: tab_list_viewer,
             _tab_list_player: tab_list_player,
             _server_tab_list_info_viewer: server_tab_list_info_viewer,
-            command_manager: CommandManager::default(),
+
             name,
             uuid,
+            entity_id,
+            dimension,
+
             keepalive_time: std::time::Instant::now(),
             keepalive_id: None,
-            entity_id,
+
+            view_distance,
+            entity_distance,
+
             position: Vec3::zero(),
             pitch: 0.0,
             yaw: 0.0,
@@ -448,68 +274,6 @@ impl Player {
 
     pub fn name(&self) -> &str {
         &self.name
-    }
-
-    pub fn uuid(&self) -> &UUID {
-        &self.uuid
-    }
-
-    pub fn coordinate_transform(&self) -> CommandCoordinateTransform {
-        CommandCoordinateTransform::new_partial(
-            self.position,
-            self.position + Vec3::new(0.0, 1.5, 0.0),
-            Vec3::get_vector_for_rotation(self.pitch.into(), self.yaw.into()),
-        )
-    }
-
-    pub fn execute_command<C: PlayerExecutableCommand>(
-        &mut self,
-        command: C,
-    ) -> Result<(), PlayerError> {
-        command.execute(self)
-    }
-
-    fn try_parse_then_execute_command<C: PlayerExecutableCommand>(
-        &mut self,
-        packet: &packet::play::ChatCommand,
-        arg: &C::ParseArg,
-    ) -> Result<(), PlayerError> {
-        self.command_manager
-            .try_parse::<C>(packet, arg, &self.connection.sender())?
-            .map(|c| c.execute(self))
-            .transpose()?;
-        Ok(())
-    }
-
-    pub fn define_commands(&mut self) -> Result<(), PlayerError> {
-        self.command_manager.register::<CommandGoto>();
-        self.command_manager.register::<CommandData>();
-        self.command_manager.register::<CommandDestroy>();
-        self.command_manager
-            .update_client_command_list(&self.connection.sender())?;
-        Ok(())
-    }
-
-    pub fn parse_then_execute_command(
-        &mut self,
-        packet: &packet::play::ChatCommand,
-    ) -> Result<(), PlayerError> {
-        let transform = self.coordinate_transform();
-        self.try_parse_then_execute_command::<CommandGoto>(packet, &transform)?;
-        self.try_parse_then_execute_command::<CommandData>(packet, &transform)?;
-        self.try_parse_then_execute_command::<CommandDestroy>(packet, &transform)?;
-        Ok(())
-    }
-
-    pub fn set_view_distance(&mut self, view_distance: u8) -> Result<(), PlayerError> {
-        self.world_viewer
-            .lock()
-            .unwrap()
-            .loader
-            .update_radius(view_distance.into());
-        self.connection
-            .send(&packet::play::SetChunkChacheRadius(view_distance as i32))?;
-        Ok(())
     }
 
     pub fn kick<T: Into<TextComponent>>(&mut self, text: T) -> Result<(), PlayerError> {
@@ -553,28 +317,72 @@ impl Player {
         Ok(())
     }
 
+    fn initialize_viewers(&mut self) -> Result<(), PlayerError> {
+        self.world_viewer = self
+            .server_state_level
+            .level
+            .lock()
+            .unwrap()
+            .add_viewer(self.connection.sender());
+        self.world_viewer
+            .lock()
+            .unwrap()
+            .loader
+            .update_radius(self.view_distance.into());
+
+        self.entity_viewer = self.server_state_level.entities.lock().unwrap().add_viewer(
+            self.connection.sender(),
+            self.uuid,
+            Some(self.entity_id),
+        );
+        self.entity_viewer.lock().unwrap().radius = self.entity_distance;
+        self.player_entity = self
+            .server_state_level
+            .entities
+            .lock()
+            .unwrap()
+            .add_entity_with_id(PlayerEntity, self.uuid, self.entity_id);
+        self.player_entity
+            .handler()
+            .lock()
+            .unwrap()
+            .metadata
+            .player_skin_parts(self.player_info.displayed_skin_parts);
+
+        Ok(())
+    }
+
     fn set_dimension(
         &mut self,
         dimension: Dimension,
         position: Vec3<f64>,
     ) -> Result<(), PlayerError> {
-        self.level = self
+        if self.dimension == dimension {
+            self.teleport(position)?;
+            return Ok(());
+        }
+
+        self.dimension = dimension;
+
+        // Set the world viewer to a fake one temporarily, so the loader thread doesn't try loading
+        // chunks while we are being sent to the other dimension.
+        self.world_viewer = Arc::new(Mutex::new(LevelViewer::fake(self.connection.sender())));
+
+        self.server_state_level = self
             .server_state
-            .world
-            .lock()
-            .unwrap()
-            .level(&dimension)
-            .ok_or(PlayerError::CouldNotFindDimension(dimension.clone()))?;
+            .get_level_state(&self.dimension)
+            .ok_or(PlayerError::CouldNotFindDimension(self.dimension.clone()))?;
+
         self.connection.send(&packet::play::Respawn {
             dimension_type: REGISTRIES
                 .get("minecraft:dimension_type")
                 .unwrap()
                 .keys()
                 .enumerate()
-                .find(|(_, v)| *v == dimension.name())
+                .find(|(_, v)| *v == self.dimension.name())
                 .unwrap()
                 .0 as i32,
-            dimension_name: dimension.name().to_owned(),
+            dimension_name: self.dimension.name().to_owned(),
             hashed_seed: 0,
             game_mode: packet::play::Gamemode::Survival,
             previous_game_mode: None,
@@ -587,18 +395,11 @@ impl Player {
         })?;
         self.connection
             .send(&packet::play::GameEvent::StartWaitingForLevelChunks)?;
-        self.world_viewer = self
-            .level
-            .lock()
-            .unwrap()
-            .add_viewer(self.connection.sender());
-        self.world_viewer
-            .lock()
-            .unwrap()
-            .loader
-            .update_radius(self.view_distance.into());
+
+        self.initialize_viewers()?;
         self.teleport(position)?;
         self.update_flyspeed()?;
+
         Ok(())
     }
 
@@ -607,7 +408,7 @@ impl Player {
         location: Position,
         sequence: Option<i32>,
     ) -> Result<(), PlayerError> {
-        let mut level = self.level.lock().unwrap();
+        let mut level = self.server_state_level.level.lock().unwrap();
         if let Some(block) = level.get_block(location)? {
             self.connection
                 .send(&packet::play::BlockUpdate { location, block })?;
@@ -715,7 +516,10 @@ impl Player {
                     match player_action.status {
                         packet::play::PlayerActionStatus::FinishedDigging
                         | packet::play::PlayerActionStatus::StartedDigging => {
-                            self.resend_block(player_action.location, Some(player_action.sequence));
+                            self.resend_block(
+                                player_action.location,
+                                Some(player_action.sequence),
+                            )?;
                         }
                         packet::play::PlayerActionStatus::SwapItemInHand => {
                             self.execute_command(CommandDestroy::Sphere { radius: 32.0 })?;

@@ -7,7 +7,7 @@ use std::{
 use pkmc_defs::{biome::Biome, dimension::Dimension, registry::Registry};
 use thiserror::Error;
 
-use pkmc_util::{connection::ConnectionError, nbt::NBTError, IdTable};
+use pkmc_util::{IdTable, connection::ConnectionError, nbt::NBTError};
 
 mod chunk_format;
 mod level;
@@ -92,6 +92,10 @@ impl AnvilWorld {
         })
     }
 
+    pub fn iter_levels(&self) -> impl Iterator<Item = (&Dimension, &Arc<Mutex<AnvilLevel>>)> {
+        self.levels.iter()
+    }
+
     pub fn level(&self, dimension: &Dimension) -> Option<Arc<Mutex<AnvilLevel>>> {
         self.levels.get(dimension).cloned()
     }
@@ -108,7 +112,7 @@ mod test {
     use pkmc_defs::{block::BLOCKS_TO_IDS, dimension::Dimension};
     use pkmc_util::Position;
 
-    use crate::level::{anvil::AnvilWorld, Level as _};
+    use crate::level::{Level as _, anvil::AnvilWorld};
 
     use super::AnvilError;
 

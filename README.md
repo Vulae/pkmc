@@ -16,10 +16,10 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 
 1. Clone repo
 2. Extract Minecraft data `cargo run -p pkmc-generated-extractor -- --release 1.21.5 --output pkmc-generated/assets/`
-3. Start the server `cargo run -p example-basic --release`
+3. Start the server `cargo run -p example-server --release`
 4. Join the server (Default IP is `[::1]:52817`)
 
-[examples/basic/config.toml](./examples/basic/config.toml) to configure.
+[examples/server/config.toml](./examples/server/config.toml) to configure.
 
 ## [Features](#features)
 

@@ -1,97 +1,25 @@
-use std::{
-    error::Error,
-    net::TcpListener,
-    sync::{Arc, LazyLock, Mutex},
-};
+mod state;
+mod tab_info;
+
+use std::{error::Error, net::TcpListener, sync::LazyLock};
 
 use base64::Engine as _;
-use pkmc_defs::{
-    dimension::Dimension, packet, registry::Registries, text_component::TextComponent,
-};
-use pkmc_server::{
-    entity_manager::EntityManager, level::anvil::AnvilWorld, tab_list::TabList, ClientHandler,
-};
+use pkmc_defs::{dimension::Dimension, registry::Registries};
+use pkmc_server::{level::anvil::AnvilWorld, ClientHandler};
 use pkmc_util::{
-    connection::{Connection, ConnectionSender},
-    convert_ampersand_formatting_codes, normalize_identifier, retain_returned_vec, Color, WeakList,
+    connection::Connection, convert_ampersand_formatting_codes, normalize_identifier,
+    retain_returned_vec, UUID,
 };
+pub use state::*;
 
-use crate::{
-    config::Config,
-    player::{Player, PlayerError},
-};
+use crate::{config::Config, player::Player};
 
 const TICK_DURATION: std::time::Duration = std::time::Duration::from_millis(1000 / 20);
 
 const PLAYER_DIMENSION: &str = "minecraft:overworld";
 
 pub static REGISTRIES: LazyLock<Registries> =
-    LazyLock::new(|| serde_json::from_str(include_str!("./registry.json")).unwrap());
-
-#[derive(Debug)]
-pub struct ServerTabInfo {
-    sys: sysinfo::System,
-    pid: sysinfo::Pid,
-    viewers: WeakList<Mutex<ConnectionSender>>,
-}
-
-impl ServerTabInfo {
-    fn new() -> Self {
-        Self {
-            sys: sysinfo::System::new_with_specifics(
-                sysinfo::RefreshKind::nothing().with_processes(
-                    sysinfo::ProcessRefreshKind::nothing()
-                        .with_cpu()
-                        .with_memory(),
-                ),
-            ),
-            pid: sysinfo::get_current_pid().unwrap(),
-            viewers: WeakList::new(),
-        }
-    }
-
-    pub fn add_viewer(&mut self, connection: ConnectionSender) -> Arc<Mutex<ConnectionSender>> {
-        self.viewers.push(Mutex::new(connection))
-    }
-
-    fn update(&mut self) -> Result<(), PlayerError> {
-        self.sys
-            .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[self.pid]), true);
-        let process = self.sys.process(self.pid).unwrap();
-        self.viewers.iter().try_for_each(|viewer| {
-            viewer.send(&packet::play::SetTabListHeaderAndFooter {
-                header: None,
-                footer: Some(
-                    TextComponent::empty()
-                        .with_child(|child| child.with_content("CPU: ").with_color(Color::GOLD))
-                        .with_child(|child| {
-                            child
-                                .with_content(format!("{:.1}%", process.cpu_usage()))
-                                .with_color(Color::YELLOW)
-                        })
-                        .with_child(|child| child.with_content(" - ").with_color(Color::DARK_GRAY))
-                        .with_child(|child| {
-                            child.with_content("MEM: ").with_color(Color::DARK_PURPLE)
-                        })
-                        .with_child(|child| {
-                            child
-                                .with_content(format!("{}MiB", process.memory() / 1048576))
-                                .with_color(Color::LIGHT_PURPLE)
-                        }),
-                ),
-            })
-        })?;
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ServerState {
-    pub world: Arc<Mutex<AnvilWorld>>,
-    pub entities: Arc<Mutex<EntityManager>>,
-    pub tab_list: Arc<Mutex<TabList>>,
-    pub server_tab_info: Arc<Mutex<ServerTabInfo>>,
-}
+    LazyLock::new(|| serde_json::from_str(include_str!("../registry.json")).unwrap());
 
 #[derive(Debug)]
 pub struct Server {
@@ -127,22 +55,17 @@ impl Server {
             } else {
                 None
             },
-            state: ServerState {
-                world: Arc::new(Mutex::new(AnvilWorld::new(
-                    &config.world,
-                    REGISTRIES
-                        .get("minecraft:worldgen/biome")
-                        .unwrap()
-                        .iter()
-                        .enumerate()
-                        .map(|(i, (k, _v))| (normalize_identifier(k, "minecraft").into(), i as i32))
-                        .collect(),
-                    REGISTRIES.get("minecraft:dimension_type").unwrap(),
-                )?)),
-                entities: Arc::new(Mutex::new(EntityManager::default())),
-                tab_list: Arc::new(Mutex::new(TabList::default())),
-                server_tab_info: Arc::new(Mutex::new(ServerTabInfo::new())),
-            },
+            state: ServerState::new(AnvilWorld::new(
+                &config.world,
+                REGISTRIES
+                    .get("minecraft:worldgen/biome")
+                    .unwrap()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (k, _v))| (normalize_identifier(k, "minecraft").into(), i as i32))
+                    .collect(),
+                REGISTRIES.get("minecraft:dimension_type").unwrap(),
+            )?),
             config,
             tcp_listener,
             connecting: Vec::new(),
@@ -188,11 +111,13 @@ impl Server {
                 last_tick = std::time::Instant::now();
 
                 self.state.tab_list.lock().unwrap().update_viewers()?;
-                self.state
-                    .entities
-                    .lock()
-                    .unwrap()
-                    .update_viewers((num_ticks % 60) == 0)?;
+                self.state.iter_levels().try_for_each(|(_, state_level)| {
+                    state_level
+                        .entities
+                        .lock()
+                        .unwrap()
+                        .update_viewers((num_ticks % 60) == 0)
+                })?;
 
                 num_ticks += 1;
             }
@@ -233,7 +158,13 @@ impl Server {
                     player.connection,
                     self.state.clone(),
                     player.player_name,
-                    player.player_id,
+                    // Offline mode keeps players UUIDs the same, so we have to use a fake UUID for
+                    // the players for everything to work properly.
+                    if self.config.online {
+                        player.player_id
+                    } else {
+                        UUID::new_v7()
+                    },
                     player.player_properties,
                     player.player_info,
                     self.config.view_distance,

@@ -18,23 +18,24 @@ use pkmc_generated::{
     registry::BlockEntityType,
 };
 use pkmc_util::{
-    IdTable, PackedArray, Position, Transmutable as _, Vec3, WeakList,
     connection::{
-        ConnectionSender,
         paletted_container::{calculate_bpe, to_paletted_data, to_paletted_data_precomputed},
+        ConnectionSender,
     },
     nbt::{self, NBT},
+    IdTable, PackedArray, Position, Transmutable as _, Vec3, WeakList,
 };
 
 use crate::level::{
-    CHUNK_SIZE, Level, LevelViewer, SECTION_BIOMES, SECTION_BLOCKS, SECTION_BLOCKS_SIZE,
     chunk_loader::{ChunkLoader, ChunkPosition},
-    section_index_block_pos, section_pos_block_index,
+    section_index_block_pos, section_pos_block_index, Level, LevelViewer, CHUNK_SIZE,
+    SECTION_BIOMES, SECTION_BLOCKS, SECTION_BLOCKS_SIZE,
 };
 
 use super::{
-    AnvilError, chunk_format,
+    chunk_format,
     region::{ChunkParser, ChunkReader},
+    AnvilError,
 };
 
 // Each time the world updates & sends new data to client, we either send sections or chunks.
@@ -494,7 +495,8 @@ impl ChunkParser for AnvilChunkParser {
         if !matches!(
             deserialized_chunk.status.as_ref(),
             // All the commented don't have full world generation (As in blocks, not entities or lighting).
-            //"minecraft:empty"
+            // minecraft:empty is kept because when upgrading a world all chunks are set to empty even though they may not be.
+            "minecraft:empty"
             //    | "minecraft:structures_starts"
             //    | "minecraft:structures_references"
             //    | "minecraft:biomes"
@@ -502,7 +504,7 @@ impl ChunkParser for AnvilChunkParser {
             //    | "minecraft:surface"
             //    | "minecraft:carvers"
             //    | "minecraft:features"
-            "minecraft:initialize_light" | "minecraft:light" | "minecraft:spawn" | "minecraft:full"
+            | "minecraft:initialize_light" | "minecraft:light" | "minecraft:spawn" | "minecraft:full"
         ) {
             return Ok(None);
         }

@@ -1,7 +1,7 @@
 # [pkmc](https://github.com/Vulae/pkmc)
 
 Simple modular building blocks for Minecraft Java Edition minigame-like servers.
-See [examples/basic](./examples/basic) for example server.
+See [examples/server](./examples/server) for example server.
 
 > [!WARNING]
 > This project is in early development, expect ALOT of code to change.

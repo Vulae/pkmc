@@ -7,7 +7,7 @@ use std::{
 use pkmc_defs::{biome::Biome, dimension::Dimension, registry::Registry};
 use thiserror::Error;
 
-use pkmc_util::{IdTable, connection::ConnectionError, nbt::NBTError};
+use pkmc_util::{connection::ConnectionError, nbt::NBTError, IdTable};
 
 mod chunk_format;
 mod level;
@@ -31,7 +31,7 @@ pub enum AnvilError {
 
 pub use level::*;
 
-use super::Level;
+use super::{Level, SECTION_BLOCKS_SIZE};
 
 pub trait AnvilDimension {
     fn relative_directory(&self) -> Option<PathBuf>;
@@ -83,7 +83,8 @@ impl AnvilWorld {
                             path.canonicalize().ok()?
                         },
                         dimension,
-                        (min_y.div_euclid(16) as i8)..=(height.div_euclid(16) as i8),
+                        (min_y.div_euclid(SECTION_BLOCKS_SIZE as i64) as i8)
+                            ..=(height.div_euclid(SECTION_BLOCKS_SIZE as i64) as i8),
                         biome_mapper.clone(),
                     ))),
                 ))
@@ -112,7 +113,7 @@ mod test {
     use pkmc_defs::{block::BLOCKS_TO_IDS, dimension::Dimension};
     use pkmc_util::Position;
 
-    use crate::level::{Level as _, anvil::AnvilWorld};
+    use crate::level::{anvil::AnvilWorld, Level as _};
 
     use super::AnvilError;
 

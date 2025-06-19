@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 pub use de::from_nbt;
 
+use itertools::Itertools;
 use number_arena::BestMatchingNumberType;
 use serde::{de::Visitor, Deserialize};
 use tag::NBTTag;
@@ -247,6 +248,51 @@ impl std::fmt::Debug for NBT {
     }
 }
 
+// TODO: nbt! macro
+// Something like:
+// ```Rust
+// nbt! { 1b } // NBT::Byte(1)
+// nbt! {{
+//     "field1": "Hello, World!",
+//     "field2": [0, 1, 2, 3, 4]i,
+//     "field3": [
+//         {},
+//         { "test": "hi" },
+//         {},
+//         { "test": 123.456f },
+//     ],
+// }} // NBT::Compound(..)
+// ```
+
+macro_rules! from_nbt_simple {
+    ($type:ty, $ident:ident) => {
+        impl From<$type> for NBT {
+            fn from(value: $type) -> Self {
+                Self::$ident(value)
+            }
+        }
+    };
+}
+
+from_nbt_simple!(i8, Byte);
+from_nbt_simple!(i16, Short);
+from_nbt_simple!(i32, Int);
+from_nbt_simple!(i64, Long);
+from_nbt_simple!(f32, Float);
+from_nbt_simple!(f64, Double);
+
+impl From<String> for NBT {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<&str> for NBT {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_owned())
+    }
+}
+
 impl NBT {
     fn tag(&self) -> NBTTag {
         match self {
@@ -262,6 +308,50 @@ impl NBT {
             NBT::ByteArray(..) => NBTTag::ByteArray,
             NBT::IntArray(..) => NBTTag::IntArray,
             NBT::LongArray(..) => NBTTag::LongArray,
+        }
+    }
+
+    pub fn to_string_pretty(&self) -> String {
+        fn pad_string(string: &str) -> String {
+            const PAD: &str = "  ";
+            string
+                .lines()
+                .map(|l| format!("{}{}", PAD, l))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        match self {
+            NBT::Byte(byte) => format!("{}b", byte),
+            NBT::Short(short) => format!("{}s", short),
+            NBT::Int(int) => format!("{}i", int),
+            NBT::Long(long) => format!("{}l", long),
+            NBT::Float(float) => format!("{}f", float),
+            NBT::Double(double) => format!("{}d", double),
+            NBT::String(string) => format!("\"{}\"", string),
+            NBT::List(nbtlist) => format!(
+                "[\n{}\n]",
+                pad_string(
+                    &nbtlist
+                        .iter()
+                        .map(|value| value.to_string_pretty())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            ),
+            NBT::Compound(hash_map) => format!(
+                "{{\n{}\n}}",
+                pad_string(
+                    &hash_map
+                        .iter()
+                        .sorted_by(|(k1, _), (k2, _)| k1.cmp(k2))
+                        .map(|(key, value)| format!("\"{}\": {}", key, value.to_string_pretty()))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            ),
+            NBT::ByteArray(bytes) => format!("{:?}", bytes),
+            NBT::IntArray(ints) => format!("{:?}", ints),
+            NBT::LongArray(longs) => format!("{:?}", longs),
         }
     }
 }

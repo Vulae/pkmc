@@ -14,16 +14,24 @@ pub(super) struct Region {
 }
 
 impl Region {
-    fn load(mut file: File) -> Result<Self, AnvilError> {
-        let mut locations = [(0, 0); REGION_SIZE * REGION_SIZE];
+    fn load(mut file: File) -> Result<Option<Self>, AnvilError> {
         file.rewind()?;
-        locations.iter_mut().try_for_each(|(offset, length)| {
-            let data = u32::from_be_bytes(file.read_const()?);
-            *offset = ((data & 0xFFFFFF00) >> 8) * 0x1000;
-            *length = (data & 0x000000FF) * 0x1000;
-            Ok::<_, AnvilError>(())
-        })?;
-        Ok(Self { file, locations })
+        let raw: [u8; 8 * CHUNKS_PER_REGION] = match file.read_const() {
+            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+            Err(err) => Err(err)?,
+            Ok(raw) => raw,
+        };
+        Ok(Some(Self {
+            file,
+            locations: std::array::from_fn(|i| {
+                let offset = ((raw[i * 4 + 2] as u32)
+                    | ((raw[i * 4 + 1] as u32) << 8)
+                    | ((raw[i * 4] as u32) << 16))
+                    * 0x1000;
+                let length = (raw[i * 4 + 3] as u32) * 0x1000;
+                (offset, length)
+            }),
+        }))
     }
 
     fn read(&mut self, chunk_x: u8, chunk_z: u8) -> Result<Option<Box<[u8]>>, AnvilError> {
@@ -112,7 +120,7 @@ impl<Parser: ChunkParser> ChunkReader<Parser> {
         }?;
 
         self.regions
-            .insert((region_x, region_z), Some(Region::load(file)?));
+            .insert((region_x, region_z), Region::load(file)?);
 
         Ok(())
     }

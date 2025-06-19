@@ -19,7 +19,10 @@ use pkmc_generated::{
 };
 use pkmc_util::{
     connection::{
-        paletted_container::{calculate_bpe, to_paletted_data, to_paletted_data_precomputed},
+        paletted_container::{
+            calculate_bpe, to_paletted_data, to_paletted_data_precomputed,
+            to_paletted_data_singular,
+        },
         ConnectionSender,
     },
     nbt::{self, NBT},
@@ -42,6 +45,8 @@ use super::{
 // Note that when sending sections, the client calculates lighting instead of server.
 pub const UPDATE_SECTION_CHUNK_SWITCH_NUM_SECTIONS: usize = 4;
 pub const UPDATE_SECTION_CHUNK_SWITCH_NUM_BLOCKS: usize = 1024;
+
+const FORCE_SECTION_REENCODE: bool = false;
 
 #[derive(Debug)]
 struct PalettedData<T: Debug, const N: usize, const I_S: u8, const I_E: u8> {
@@ -95,18 +100,15 @@ impl<T: Debug + Clone + Eq + Hash, const N: usize, const I_S: u8, const I_E: u8>
             return false;
         }
 
+        // Data is already in the palette, so we just set the palette index.
         if let Some(palette_index) = self.palette.iter().position(|v| *v == value) {
-            match Self::bpe(self.palette.len()) {
-                // Previous check should have caught this.
-                0 => unreachable!(),
-                bpe => {
-                    PackedArray::from_inner(self.data.as_mut().transmute(), bpe, N)
-                        .set(index, palette_index as u64);
-                    return true;
-                }
-            }
+            let bpe = Self::bpe(self.palette.len());
+            PackedArray::from_inner(self.data.as_mut().transmute(), bpe, N)
+                .set(index, palette_index as u64);
+            return true;
         }
 
+        // Data isn't already in the palette, so we need to rebuild palette & data.
         let mut parsed: [T; N] = (0..N)
             .map(|i| self.get(i))
             .cloned()
@@ -159,7 +161,15 @@ type ChunkSectionBlockStates = PalettedData<
 
 impl ChunkSectionBlockStates {
     fn write(&self, mut writer: impl Write) -> Result<(), AnvilError> {
-        // TODO: Special case for if there's only 1 block state.
+        match self.palette.as_ref() {
+            [] => panic!("Cannot write empty paletted data"),
+            [block] => {
+                writer.write_all(&(if block.is_air() { 0u16 } else { 4096u16 }).to_be_bytes())?;
+                writer.write_all(&to_paletted_data_singular(block.into_id())?)?;
+                return Ok(());
+            }
+            [..] => {}
+        }
 
         let block_ids = self
             .palette
@@ -172,8 +182,6 @@ impl ChunkSectionBlockStates {
             .count();
 
         writer.write_all(&(block_count as u16).to_be_bytes())?;
-
-        const FORCE_SECTION_REENCODE: bool = false;
 
         if !FORCE_SECTION_REENCODE
             // Data stored in the anvil format doesn't have direct paletting.
@@ -211,6 +219,17 @@ type ChunkSectionBiomes = PalettedData<
 
 impl ChunkSectionBiomes {
     fn write(&self, mut writer: impl Write, mapper: &IdTable<Biome>) -> Result<(), AnvilError> {
+        match self.palette.as_ref() {
+            [] => panic!("Cannot write empty paletted data"),
+            [biome] => {
+                writer.write_all(&to_paletted_data_singular(
+                    biome.id(mapper).unwrap_or_default(),
+                )?)?;
+                return Ok(());
+            }
+            [..] => {}
+        }
+
         let biome_ids = self
             .palette
             .iter()
@@ -252,7 +271,6 @@ struct ChunkSection {
 
 #[derive(Debug)]
 pub struct AnvilBlockEntity {
-    // Set every time this block entity is queried.
     r#type: BlockEntityType,
     pub components: HashMap<String, NBT>,
     pub data: NBT,
@@ -339,7 +357,10 @@ impl Chunk {
                 .block_entities
                 .into_iter()
                 .map(|b| {
-                    Ok((
+                    if b.id == "DUMMY" {
+                        return Ok(None);
+                    }
+                    Ok(Some((
                         (
                             b.x.rem_euclid(CHUNK_SIZE as i32) as u8,
                             b.y,
@@ -351,9 +372,12 @@ impl Chunk {
                             components: b.components,
                             data: NBT::Compound(b.data),
                         },
-                    ))
+                    )))
                 })
-                .collect::<Result<_, AnvilError>>()?,
+                .collect::<Result<Vec<_>, AnvilError>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
         })
     }
 

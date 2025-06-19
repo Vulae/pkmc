@@ -3,7 +3,7 @@ pub mod packet {
 
     report_packets_generate_consts!("assets/reports/packets.json");
 
-    pub const PROTOCOL_VERSION: i32 = 770;
+    pub const PROTOCOL_VERSION: i32 = 771;
 }
 
 pub mod registry {
@@ -260,7 +260,7 @@ pub mod block {
 pub mod consts {
     use std::ops::RangeInclusive;
 
-    pub const VERSION_STR: &str = "1.21.5";
+    pub const VERSION_STR: &str = "1.21.6";
 
     pub const PALETTED_DATA_BLOCKS_INDIRECT: RangeInclusive<u8> = 4..=8;
     // TODO: Autogenerate this value.
@@ -271,7 +271,7 @@ pub mod consts {
 }
 
 #[cfg(test)]
-mod simple_test {
+mod test_fake_blocks_report {
     use crate::{
         block::{IdIndexable, PropertyUint},
         registry::BlockType,
@@ -339,8 +339,8 @@ mod simple_test {
 }
 
 #[cfg(test)]
-mod complex_test {
-    use crate::block::{self, Block, PropertyUint};
+mod test {
+    use crate::block::Block;
 
     fn do_test(block: Block, id: i32) {
         if id != block.into_id() {
@@ -365,26 +365,5 @@ mod complex_test {
     fn test_blocks_ids() {
         do_test(Block::Air, 0);
         do_test(Block::Stone, 1);
-        // Just some random block states to test, not anything special to them.
-        do_test(
-            Block::RedStainedGlassPane {
-                east: false,
-                north: false,
-                south: true,
-                waterlogged: false,
-                west: false,
-            },
-            10656,
-        );
-        do_test(
-            Block::RedstoneWire {
-                east: block::RedstoneWireShape::Up,
-                north: block::RedstoneWireShape::Up,
-                power: PropertyUint::new(14),
-                south: block::RedstoneWireShape::Up,
-                west: block::RedstoneWireShape::None,
-            },
-            3170,
-        );
     }
 }

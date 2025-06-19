@@ -23,6 +23,8 @@ use varint::try_read_varint_ret_bytes;
 
 use crate::ReadExt as _;
 
+const PACKET_RECIEVE_BUFFER_SIZE: usize = 1024;
+
 #[derive(Error, Debug)]
 pub enum ConnectionError {
     #[error(transparent)]
@@ -151,8 +153,7 @@ impl Connection {
     }
 
     fn recieve_bytes(&mut self) -> Result<(), ConnectionError> {
-        // TODO: What is best size for this?
-        let mut buf = [0u8; 1024];
+        let mut buf = [0u8; PACKET_RECIEVE_BUFFER_SIZE];
         let mut inner = self.inner.lock().unwrap();
         loop {
             match if let Some(stream) = inner.stream.as_mut() {

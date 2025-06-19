@@ -156,7 +156,11 @@ impl PlayerExecutableCommand for CommandData {
         let level_mutex = player.server_state_level.level.clone();
         let mut level = level_mutex.lock().unwrap();
         if let Some(data) = level.query_block_data(self.position)? {
-            player.system_message(format!("Block data at {}: {:#?}", self.position, data.data))?;
+            player.system_message(format!(
+                "Block data at {}: {}",
+                self.position,
+                data.data.to_string_pretty()
+            ))?;
         } else {
             player.system_message(format!("No block data at {}", self.position))?;
         }

@@ -7,7 +7,7 @@ See [examples/server](./examples/server) for example server.
 > This project is in early development, expect ALOT of code to change.
 
 > [!IMPORTANT]
-> This will only ever support the latest Minecraft Java Edition release version (currently 1.21.5)
+> This will only ever support the latest Minecraft Java Edition release version (currently 1.21.6)
 
 This will **NOT** make anything use any async code (tokio/futures).
 This was originally built to be fully single-threaded, but that _may_ change in the future.
@@ -15,7 +15,7 @@ This was originally built to be fully single-threaded, but that _may_ change in 
 ## [Running Example Server](#running-example-server)
 
 1. Clone repo
-2. Extract Minecraft data `cargo run -p pkmc-generated-extractor -- --release 1.21.5 --output pkmc-generated/assets/`
+2. Extract Minecraft data `cargo run -p pkmc-generated-extractor -- --release 1.21.6 --output pkmc-generated/assets/`
 3. Start the server `cargo run -p example-server --release`
 4. Join the server (Default IP is `[::1]:52817`)
 

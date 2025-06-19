@@ -30,7 +30,7 @@ pub const fn section_pos_block_index(x: u8, y: u8, z: u8) -> usize {
 }
 
 pub const fn section_index_block_pos(i: usize) -> (u8, u8, u8) {
-    debug_assert!(i < SECTION_BLOCKS_SIZE);
+    debug_assert!(i < SECTION_BLOCKS);
     (
         (i % SECTION_BLOCKS_SIZE) as u8,
         ((i / (SECTION_BLOCKS_SIZE * SECTION_BLOCKS_SIZE)) % SECTION_BLOCKS_SIZE) as u8,

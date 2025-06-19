@@ -119,7 +119,7 @@ mod test {
 
     #[test]
     fn test_debug_mode_world() -> Result<(), AnvilError> {
-        // 1.21.5 debug world
+        // 1.21.6 debug world
         // https://minecraft.wiki/w/Debug_mode
         const WORLD_PATH: &str = "./src/level/anvil-test-server/world/";
         println!(
